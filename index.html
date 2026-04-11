@@ -4,15 +4,27 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>NeonArcade - Premium Gaming Platform</title>
+
+    <!-- SEO Meta Tags -->
+    <meta name="description" content="NeonArcade - Premium browser gaming platform with stunning neon visuals">
+    <meta name="theme-color" content="#b347d9">
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎮</text></svg>">
+
+    <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Rajdhani:wght@300;400;500;600;700&family=Exo+2:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <!-- Styles -->
     <link rel="stylesheet" href="css/main.css">
     <link rel="stylesheet" href="css/animations.css">
     <link rel="stylesheet" href="css/games.css">
 </head>
 <body>
-    <!-- Loading Screen -->
+
+    <!-- ===================== LOADING SCREEN ===================== -->
     <div id="loading-screen" class="loading-screen">
         <div class="loader-container">
             <div class="neon-loader">
@@ -20,109 +32,137 @@
                 <div class="loader-ring"></div>
                 <div class="loader-ring"></div>
             </div>
-            <h1 class="loader-title">NEON<span class="glow-text">ARCADE</span></h1>
+            <h1 class="loader-title">
+                NEON<span class="glow-text">ARCADE</span>
+            </h1>
             <div class="loader-bar">
-                <div class="loader-progress"></div>
+                <div class="loading-bar-fill" id="loading-bar-fill"></div>
             </div>
-            <p class="loader-text">Loading Premium Experience...</p>
+            <p class="loading-text" id="loading-text">Loading Premium Experience...</p>
         </div>
     </div>
 
-    <!-- Particle Background -->
+    <!-- ===================== PARTICLE BACKGROUND ===================== -->
     <canvas id="particles-canvas"></canvas>
 
-    <!-- Main Container -->
+    <!-- ===================== MAIN APP ===================== -->
     <div id="app" class="app hidden">
-        <!-- Navigation -->
-        <nav class="navbar">
+
+        <!-- ===== NAVBAR ===== -->
+        <nav class="navbar" id="navbar">
             <div class="nav-container">
+
+                <!-- Logo -->
                 <a href="#" class="logo" data-page="home">
                     <span class="logo-icon">🎮</span>
                     <span class="logo-text">NEON<span class="accent">ARCADE</span></span>
                 </a>
+
+                <!-- Desktop Nav Links -->
                 <ul class="nav-links">
-                    <li><a href="#" class="nav-link active" data-page="home">
-                        <span class="nav-icon">🏠</span>Home
-                    </a></li>
-                    <li><a href="#" class="nav-link" data-page="games">
-                        <span class="nav-icon">🎯</span>Games
-                    </a></li>
-                    <li><a href="#" class="nav-link" data-page="leaderboard">
-                        <span class="nav-icon">🏆</span>Leaderboard
-                    </a></li>
-                    <li><a href="#" class="nav-link" data-page="about">
-                        <span class="nav-icon">ℹ️</span>About
-                    </a></li>
+                    <li>
+                        <a href="#" class="nav-link active" data-page="home">
+                            <span class="nav-icon">🏠</span>
+                            Home
+                        </a>
+                    </li>
+                    <li>
+                        <a href="#" class="nav-link" data-page="games">
+                            <span class="nav-icon">🎯</span>
+                            Games
+                        </a>
+                    </li>
+                    <li>
+                        <a href="#" class="nav-link" data-page="leaderboard">
+                            <span class="nav-icon">🏆</span>
+                            Leaderboard
+                        </a>
+                    </li>
+                    <li>
+                        <a href="#" class="nav-link" data-page="about">
+                            <span class="nav-icon">ℹ️</span>
+                            About
+                        </a>
+                    </li>
                 </ul>
+
+                <!-- Nav Actions -->
                 <div class="nav-actions">
-                    <button class="sound-toggle" id="sound-toggle">
+                    <button class="sound-toggle" id="sound-toggle" title="Toggle Sound">
                         <span class="sound-on">🔊</span>
                         <span class="sound-off hidden">🔇</span>
                     </button>
-                    <button class="hamburger" id="hamburger">
+                    <button class="hamburger" id="hamburger" aria-label="Menu">
                         <span></span>
                         <span></span>
                         <span></span>
                     </button>
                 </div>
+
             </div>
         </nav>
 
-        <!-- Mobile Menu -->
+        <!-- ===== MOBILE MENU ===== -->
         <div class="mobile-menu" id="mobile-menu">
             <ul class="mobile-nav-links">
-                <li><a href="#" class="mobile-nav-link" data-page="home">🏠 Home</a></li>
-                <li><a href="#" class="mobile-nav-link" data-page="games">🎯 Games</a></li>
-                <li><a href="#" class="mobile-nav-link" data-page="leaderboard">🏆 Leaderboard</a></li>
-                <li><a href="#" class="mobile-nav-link" data-page="about">ℹ️ About</a></li>
+                <li>
+                    <a href="#" class="mobile-nav-link" data-page="home">
+                        <span class="nav-icon">🏠</span> Home
+                    </a>
+                </li>
+                <li>
+                    <a href="#" class="mobile-nav-link" data-page="games">
+                        <span class="nav-icon">🎯</span> Games
+                    </a>
+                </li>
+                <li>
+                    <a href="#" class="mobile-nav-link" data-page="leaderboard">
+                        <span class="nav-icon">🏆</span> Leaderboard
+                    </a>
+                </li>
+                <li>
+                    <a href="#" class="mobile-nav-link" data-page="about">
+                        <span class="nav-icon">ℹ️</span> About
+                    </a>
+                </li>
             </ul>
         </div>
 
-        <!-- Pages Container -->
+        <!-- ===== MAIN CONTENT ===== -->
         <main class="main-content">
-            <!-- Home Page -->
+
+            <!-- ==================== HOME PAGE ==================== -->
             <section id="home-page" class="page active">
+
+                <!-- Hero Section -->
                 <div class="hero-section">
                     <div class="hero-content">
+
                         <h1 class="hero-title">
                             <span class="line1">WELCOME TO</span>
                             <span class="line2 glitch" data-text="NEONARCADE">NEONARCADE</span>
                         </h1>
-                        <p class="hero-subtitle">Experience the future of arcade gaming with stunning visuals and addictive gameplay</p>
+
+                        <p class="hero-subtitle">
+                            Experience the future of arcade gaming with
+                            stunning neon visuals and addictive gameplay
+                        </p>
+
                         <div class="hero-buttons">
                             <button class="btn btn-primary" data-page="games">
-                                <span class="btn-text">PLAY NOW</span>
-                                <span class="btn-icon">🚀</span>
+                                <span>🚀</span>
+                                <span>PLAY NOW</span>
                             </button>
                             <button class="btn btn-secondary" data-page="about">
-                                <span class="btn-text">LEARN MORE</span>
+                                <span>LEARN MORE</span>
                             </button>
                         </div>
-                        <div class="hero-stats">
-                            <div class="stat-item">
-                                <span class="stat-number" data-count="10">0</span>
-                                <span class="stat-label">Games</span>
-                            </div>
-                            <div class="stat-item">
-                                <span class="stat-number" data-count="1000">0</span>
-                                <span class="stat-label">Players</span>
-                            </div>
-                            <div class="stat-item">
-                                <span class="stat-number" data-count="50000">0</span>
-                                <span class="stat-label">High Scores</span>
-                            </div>
-                        </div>
+
                     </div>
-                    <div class="hero-visual">
-                        <div class="floating-cards">
-                            <div class="floating-card card1">🎯</div>
-                            <div class="floating-card card2">🎮</div>
-                            <div class="floating-card card3">🏆</div>
-                            <div class="floating-card card4">⭐</div>
-                        </div>
-                    </div>
+                    <!-- Hero Visual removed as requested -->
                 </div>
 
+                <!-- Featured Games Section -->
                 <div class="featured-section">
                     <h2 class="section-title">
                         <span class="title-icon">⚡</span>
@@ -130,66 +170,141 @@
                     </h2>
                     <div class="featured-games-grid" id="featured-games"></div>
                 </div>
+
             </section>
 
-            <!-- Games Page -->
+            <!-- ==================== GAMES PAGE ==================== -->
             <section id="games-page" class="page">
+
                 <div class="page-header">
                     <h1 class="page-title">Game Library</h1>
-                    <p class="page-subtitle">Choose your adventure from our premium collection</p>
+                    <p class="page-subtitle">
+                        Choose your adventure from our premium collection
+                    </p>
+
+                    <!-- Search Bar -->
+                    <div class="search-container">
+                        <span class="search-icon">🔍</span>
+                        <input
+                            type="text"
+                            id="game-search"
+                            placeholder="Search games..."
+                            autocomplete="off"
+                        />
+                        <button id="search-clear">✕</button>
+                    </div>
+
+                    <!-- Filter Buttons -->
                     <div class="games-filter">
-                        <button class="filter-btn active" data-filter="all">All Games</button>
-                        <button class="filter-btn" data-filter="puzzle">Puzzle</button>
-                        <button class="filter-btn" data-filter="action">Action</button>
-                        <button class="filter-btn" data-filter="arcade">Arcade</button>
+                        <button class="filter-btn active" data-filter="all">
+                            🎮 All Games
+                        </button>
+                        <button class="filter-btn" data-filter="puzzle">
+                            🧩 Puzzle
+                        </button>
+                        <button class="filter-btn" data-filter="action">
+                            ⚔️ Action
+                        </button>
+                        <button class="filter-btn" data-filter="arcade">
+                            🕹️ Arcade
+                        </button>
+                        <button class="filter-btn" data-filter="favorites">
+                            ❤️ Favorites
+                        </button>
                     </div>
                 </div>
+
+                <!-- No Results Message -->
+                <div id="no-results" style="display:none;">
+                    No games found. Try a different search!
+                </div>
+
+                <!-- Games Grid -->
                 <div class="games-grid" id="games-grid"></div>
+
             </section>
 
-            <!-- Leaderboard Page -->
+            <!-- ==================== LEADERBOARD PAGE ==================== -->
             <section id="leaderboard-page" class="page">
+
                 <div class="page-header">
                     <h1 class="page-title">🏆 Leaderboard</h1>
                     <p class="page-subtitle">Top players across all games</p>
                 </div>
+
                 <div class="leaderboard-container">
                     <div class="leaderboard-tabs">
-                        <button class="leaderboard-tab active" data-game="all">All Games</button>
+                        <button class="leaderboard-tab active" data-game="all">
+                            🎮 All Games
+                        </button>
                     </div>
                     <div class="leaderboard-content" id="leaderboard-content"></div>
                 </div>
+
             </section>
 
-            <!-- About Page -->
+            <!-- ==================== ABOUT PAGE ==================== -->
             <section id="about-page" class="page">
+
                 <div class="about-container">
                     <div class="about-header">
                         <h1 class="page-title">About NeonArcade</h1>
-                        <p class="page-subtitle">The future of browser-based gaming</p>
+                        <p class="page-subtitle">
+                            The future of browser-based gaming
+                        </p>
                     </div>
+
                     <div class="about-content">
                         <div class="about-card">
-                            <div class="about-icon">🎮</div>
+                            <span class="about-icon">🎮</span>
                             <h3>Premium Games</h3>
-                            <p>Handcrafted games with smooth animations, engaging gameplay, and stunning visuals.</p>
+                            <p>
+                                Handcrafted games with smooth animations,
+                                engaging gameplay, and stunning visuals.
+                            </p>
                         </div>
                         <div class="about-card">
-                            <div class="about-icon">⚡</div>
+                            <span class="about-icon">⚡</span>
                             <h3>Lightning Fast</h3>
-                            <p>Optimized performance for seamless gaming experience on any device.</p>
+                            <p>
+                                Optimized performance for seamless gaming
+                                experience on any device.
+                            </p>
                         </div>
                         <div class="about-card">
-                            <div class="about-icon">🏆</div>
+                            <span class="about-icon">🏆</span>
                             <h3>Compete & Win</h3>
-                            <p>Track your scores and compete with players worldwide on our leaderboards.</p>
+                            <p>
+                                Track your scores and compete with players
+                                worldwide on our leaderboards.
+                            </p>
                         </div>
                         <div class="about-card">
-                            <div class="about-icon">📱</div>
+                            <span class="about-icon">📱</span>
                             <h3>Play Anywhere</h3>
-                            <p>Fully responsive design - play on desktop, tablet, or mobile.</p>
+                            <p>
+                                Fully responsive design - play on desktop,
+                                tablet, or mobile seamlessly.
+                            </p>
+                        </div>
+                        <div class="about-card">
+                            <span class="about-icon">🪙</span>
+                            <h3>Earn Rewards</h3>
+                            <p>
+                                Collect coins and diamonds while playing.
+                                Unlock power-ups and special abilities.
+                            </p>
+                        </div>
+                        <div class="about-card">
+                            <span class="about-icon">🎁</span>
+                            <h3>Daily Rewards</h3>
+                            <p>
+                                Come back every day for bigger bonuses.
+                                Build your streak for maximum rewards!
+                            </p>
                         </div>
                     </div>
+
                     <div class="tech-stack">
                         <h3>Built With</h3>
                         <div class="tech-badges">
@@ -201,67 +316,100 @@
                         </div>
                     </div>
                 </div>
+
             </section>
 
-            <!-- Game Player Page -->
+            <!-- ==================== GAME PLAYER PAGE ==================== -->
             <section id="game-page" class="page">
+
                 <div class="game-container">
+
+                    <!-- Game Header -->
                     <div class="game-header">
                         <button class="back-btn" id="back-to-games">
-                            <span>←</span> Back to Games
+                            ← Back
                         </button>
+
                         <div class="game-info">
-                            <h2 class="game-title" id="current-game-title">Game Name</h2>
+                            <h2 class="game-title" id="current-game-title">
+                                Game
+                            </h2>
                             <div class="game-score">
                                 <span class="score-label">Score:</span>
                                 <span class="score-value" id="game-score">0</span>
                             </div>
                         </div>
+
                         <div class="game-controls">
-                            <button class="game-btn" id="pause-btn">⏸️ Pause</button>
-                            <button class="game-btn" id="restart-btn">🔄 Restart</button>
+                            <button class="game-btn" id="pause-btn">⏸️</button>
+                            <button class="game-btn" id="restart-btn">🔄</button>
+                            <button class="game-btn" id="favorite-btn">🤍</button>
                         </div>
                     </div>
-                    <div class="game-wrapper">
+
+                    <!-- Canvas Wrapper -->
+                    <div class="game-wrapper" id="game-wrapper">
                         <canvas id="game-canvas"></canvas>
+
+                        <!-- Game Overlay (Pause / Game Over) -->
                         <div class="game-overlay hidden" id="game-overlay">
                             <div class="overlay-content">
-                                <h2 class="overlay-title" id="overlay-title">PAUSED</h2>
-                                <p class="overlay-score" id="overlay-score"></p>
+                                <h2 class="overlay-title" id="overlay-title">
+                                    PAUSED
+                                </h2>
+                                <div class="overlay-score" id="overlay-score"></div>
                                 <div class="overlay-buttons">
-                                    <button class="btn btn-primary" id="resume-btn">Resume</button>
-                                    <button class="btn btn-secondary" id="overlay-restart-btn">Restart</button>
+                                    <button class="btn btn-primary" id="resume-btn">
+                                        ▶ Resume
+                                    </button>
+                                    <button class="btn btn-secondary" id="overlay-restart-btn">
+                                        🔄 Restart
+                                    </button>
                                 </div>
                             </div>
                         </div>
+
                     </div>
+
+                    <!-- Game Instructions -->
                     <div class="game-instructions" id="game-instructions"></div>
+
                 </div>
             </section>
+
         </main>
 
-        <!-- Footer -->
+        <!-- ===== FOOTER ===== -->
         <footer class="footer">
             <div class="footer-content">
+
                 <div class="footer-brand">
-                    <span class="logo-text">NEON<span class="accent">ARCADE</span></span>
+                    <span class="logo-text">
+                        NEON<span class="accent">ARCADE</span>
+                    </span>
                     <p>Premium Gaming Experience</p>
                 </div>
+
                 <div class="footer-links">
                     <a href="#" data-page="home">Home</a>
                     <a href="#" data-page="games">Games</a>
+                    <a href="#" data-page="leaderboard">Leaderboard</a>
                     <a href="#" data-page="about">About</a>
                 </div>
+
                 <div class="footer-social">
                     <span>Made with 💜 for gamers</span>
                 </div>
+
             </div>
             <div class="footer-bottom">
                 <p>&copy; 2024 NeonArcade. All rights reserved.</p>
             </div>
         </footer>
-    </div>
 
+    </div><!-- end #app -->
+
+    <!-- ===================== SCRIPTS ===================== -->
     <script src="js/particles.js"></script>
     <script src="js/audio.js"></script>
     <script src="js/games/bubble-shooter.js"></script>
@@ -275,5 +423,6 @@
     <script src="js/games/snake-neon.js"></script>
     <script src="js/games/breakout.js"></script>
     <script src="js/main.js"></script>
+
 </body>
 </html>
