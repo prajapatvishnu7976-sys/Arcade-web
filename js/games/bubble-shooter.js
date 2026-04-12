@@ -17,24 +17,22 @@ class BubbleShooter {
         ];
 
         this.LEVELS = [
-            { colors: 3, rows: 4, emptyTubes: 0 },
-            { colors: 4, rows: 5, emptyTubes: 0 },
-            { colors: 5, rows: 5, emptyTubes: 0 },
-            { colors: 6, rows: 6, emptyTubes: 0 },
-            { colors: 7, rows: 6, emptyTubes: 0 },
-            { colors: 8, rows: 7, emptyTubes: 0 },
-            { colors: 8, rows: 8, emptyTubes: 0 },
-            { colors: 8, rows: 9, emptyTubes: 0 },
-            { colors: 8, rows: 10, emptyTubes: 0 },
-            { colors: 8, rows: 11, emptyTubes: 0 },
+            { colors: 3, rows: 5, speed: 8 },
+            { colors: 4, rows: 6, speed: 9 },
+            { colors: 5, rows: 6, speed: 9 },
+            { colors: 5, rows: 7, speed: 10 },
+            { colors: 6, rows: 7, speed: 10 },
+            { colors: 6, rows: 8, speed: 11 },
+            { colors: 7, rows: 8, speed: 11 },
+            { colors: 7, rows: 9, speed: 12 },
+            { colors: 8, rows: 9, speed: 12 },
+            { colors: 8, rows: 10, speed: 13 },
         ];
 
         const isMobile = window.innerWidth < 768 || ('ontouchstart' in window);
         this.isMobile = isMobile;
-
-        // ✅ Mobile: DPR=1 for game objects, real DPR for text
         this.DPR = isMobile ? 1 : Math.min(window.devicePixelRatio || 1, 2);
-        this.textDPR = window.devicePixelRatio || 1; // Always HD text
+        this.textDPR = Math.min(window.devicePixelRatio || 1, 2);
 
         // Game state
         this.grid = [];
@@ -61,10 +59,16 @@ class BubbleShooter {
         this.colorsInPlay = [];
         this.aimDots = [];
 
+        // ✅ Color change feature
+        this.colorChangesLeft = 3;
+        this.colorChangeCooldown = 0;
+        this.colorChangeAnim = 0;
+        this.colorChangeFlash = 0;
+
         // Layout
         this.COLS = 10;
         this.ROWS = 14;
-        this.BUBBLE_R = 20;
+        this.BUBBLE_R = 18;
         this.offsetX = 0;
         this.offsetY = 0;
         this.shooterX = 0;
@@ -72,20 +76,13 @@ class BubbleShooter {
         this.HUD_H = 0;
         this.BOTTOM_H = 0;
 
-        // FX - reduced for mobile
+        // FX
         this.particles = [];
         this.fallingBubbles = [];
         this.popRings = [];
         this.textPopups = [];
         this.floatingTexts = [];
-        this.MAX_PARTICLES = isMobile ? 25 : 100;
-
-        // Power-ups
-        this.powerUps = {
-            bomb: { count: 1, name: 'Bomb', color: '#FF7700' },
-            precision: { count: 2, name: 'Aim+', color: '#00EE66' },
-        };
-        this.activePowerUp = null;
+        this.MAX_PARTICLES = isMobile ? 30 : 100;
 
         // Anim & render
         this.globalTime = 0;
@@ -98,7 +95,6 @@ class BubbleShooter {
         this.shootRecoil = 0;
         this.hoverX = -1;
         this.hoverY = -1;
-        this.bgCache = null;
         this._bubbleCache = new Map();
         this._glowCache = new Map();
         this._gradCache = new Map();
@@ -106,28 +102,21 @@ class BubbleShooter {
         this.animationFrameId = null;
         this.swapAnim = 0;
 
-        // Daily reward
-        this.showDailyReward = false;
-        this.dailyRewardClaimed = false;
-        this.dailyAnim = 0;
-        this._checkDailyReward();
-
         // Level complete overlay
         this.showLevelComplete = false;
         this.levelCompleteTimer = 0;
         this.starRating = 0;
-        this.levelCoins = 0;
-        this.levelDiamonds = 0;
 
         // Player data
-        this.saveKey = 'neonBubble_v10';
+        this.saveKey = 'neonBubble_v12';
         this.playerData = this._loadPlayerData();
 
-        // ✅ FPS tracking for adaptive mode
+        // FPS tracking
         this.fpsHistory = [];
         this.adaptiveMode = false;
+        this.lastFpsCheck = 0;
 
-        // ✅ Sound Engine
+        // Sound
         this.audioCtx = null;
         this.soundEnabled = true;
         this._initAudio();
@@ -149,7 +138,6 @@ class BubbleShooter {
         this._setupCanvas();
         const savedLevel = this.playerData.currentLevel || 0;
         this._startLevel(savedLevel);
-        this._preCacheBubbles();
 
         this.canvas.addEventListener('click', this._handleClick, { passive: false });
         this.canvas.addEventListener('touchend', this._handleClick, { passive: false });
@@ -197,20 +185,17 @@ class BubbleShooter {
 
     resize() { this._setupCanvas(); }
     togglePause() { return false; }
-
     toggleSound() {
         this.soundEnabled = !this.soundEnabled;
         return this.soundEnabled;
     }
 
-    // ══════════════════ SOUND ENGINE ══════════════════
+    // ══════════════════ AUDIO ══════════════════
 
     _initAudio() {
         try {
             this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        } catch (e) {
-            this.audioCtx = null;
-        }
+        } catch (e) { this.audioCtx = null; }
     }
 
     _playTone(freq, dur, type = 'sine', vol = 0.1) {
@@ -219,244 +204,126 @@ class BubbleShooter {
             const t = this.audioCtx.currentTime;
             const osc = this.audioCtx.createOscillator();
             const gain = this.audioCtx.createGain();
-            osc.connect(gain);
-            gain.connect(this.audioCtx.destination);
+            osc.connect(gain); gain.connect(this.audioCtx.destination);
             osc.frequency.setValueAtTime(freq, t);
             osc.type = type;
             gain.gain.setValueAtTime(vol, t);
             gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
-            osc.start(t);
-            osc.stop(t + dur);
+            osc.start(t); osc.stop(t + dur);
         } catch (e) {}
     }
 
-    // ✅ Rich sound effects
     _playShoot() {
         if (!this.soundEnabled || !this.audioCtx) return;
-        const ctx = this.audioCtx, t = ctx.currentTime;
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        const filter = ctx.createBiquadFilter();
-        filter.type = 'bandpass';
-        filter.frequency.value = 900;
-        filter.Q.value = 1.2;
-        osc.connect(filter);
-        filter.connect(gain);
-        gain.connect(ctx.destination);
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(600, t);
-        osc.frequency.exponentialRampToValueAtTime(320, t + 0.1);
-        gain.gain.setValueAtTime(0.15, t);
-        gain.gain.exponentialRampToValueAtTime(0.001, t + 0.14);
-        osc.start(t);
-        osc.stop(t + 0.15);
-    }
-
-    _playPop() {
-        if (!this.soundEnabled || !this.audioCtx) return;
-        const ctx = this.audioCtx, t = ctx.currentTime;
-        // Pop bubble sound
-        const osc1 = ctx.createOscillator();
-        const gain1 = ctx.createGain();
-        osc1.connect(gain1);
-        gain1.connect(ctx.destination);
-        osc1.type = 'sine';
-        osc1.frequency.setValueAtTime(880, t);
-        osc1.frequency.exponentialRampToValueAtTime(440, t + 0.08);
-        gain1.gain.setValueAtTime(0.18, t);
-        gain1.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
-        osc1.start(t);
-        osc1.stop(t + 0.13);
-
-        // High sparkle
-        const osc2 = ctx.createOscillator();
-        const gain2 = ctx.createGain();
-        osc2.connect(gain2);
-        gain2.connect(ctx.destination);
-        osc2.type = 'sine';
-        osc2.frequency.setValueAtTime(1320, t + 0.06);
-        gain2.gain.setValueAtTime(0, t);
-        gain2.gain.linearRampToValueAtTime(0.1, t + 0.07);
-        gain2.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
-        osc2.start(t + 0.06);
-        osc2.stop(t + 0.2);
-    }
-
-    _playSwap() {
-        if (!this.soundEnabled || !this.audioCtx) return;
-        const ctx = this.audioCtx, t = ctx.currentTime;
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.type = 'triangle';
-        osc.frequency.setValueAtTime(400, t);
-        osc.frequency.exponentialRampToValueAtTime(700, t + 0.08);
-        gain.gain.setValueAtTime(0.12, t);
-        gain.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
-        osc.start(t);
-        osc.stop(t + 0.11);
-    }
-
-    _playError() {
-        if (!this.soundEnabled || !this.audioCtx) return;
-        const ctx = this.audioCtx, t = ctx.currentTime;
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.type = 'square';
-        osc.frequency.setValueAtTime(180, t);
-        osc.frequency.exponentialRampToValueAtTime(80, t + 0.15);
-        gain.gain.setValueAtTime(0.08, t);
-        gain.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
-        osc.start(t);
-        osc.stop(t + 0.22);
-    }
-
-    _playCombo() {
-        if (!this.soundEnabled || !this.audioCtx) return;
-        const ctx = this.audioCtx, t = ctx.currentTime;
-        const notes = [523, 659, 784, 1047];
-        notes.forEach((freq, i) => {
+        try {
+            const ctx = this.audioCtx, t = ctx.currentTime;
             const osc = ctx.createOscillator();
             const gain = ctx.createGain();
-            osc.connect(gain);
-            gain.connect(ctx.destination);
+            osc.connect(gain); gain.connect(ctx.destination);
             osc.type = 'sine';
-            osc.frequency.setValueAtTime(freq, t + i * 0.06);
-            gain.gain.setValueAtTime(0, t + i * 0.06);
-            gain.gain.linearRampToValueAtTime(0.12, t + i * 0.06 + 0.02);
-            gain.gain.exponentialRampToValueAtTime(0.001, t + i * 0.06 + 0.18);
-            osc.start(t + i * 0.06);
-            osc.stop(t + i * 0.06 + 0.2);
-        });
+            osc.frequency.setValueAtTime(600, t);
+            osc.frequency.exponentialRampToValueAtTime(320, t + 0.1);
+            gain.gain.setValueAtTime(0.15, t);
+            gain.gain.exponentialRampToValueAtTime(0.001, t + 0.14);
+            osc.start(t); osc.stop(t + 0.15);
+        } catch(e) {}
+    }
+
+    _playPop(pitch = 1) {
+        if (!this.soundEnabled || !this.audioCtx) return;
+        try {
+            const ctx = this.audioCtx, t = ctx.currentTime;
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.connect(gain); gain.connect(ctx.destination);
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(880 * pitch, t);
+            osc.frequency.exponentialRampToValueAtTime(440 * pitch, t + 0.08);
+            gain.gain.setValueAtTime(0.16, t);
+            gain.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+            osc.start(t); osc.stop(t + 0.13);
+        } catch(e) {}
+    }
+
+    _playSwap() { this._playTone(500, 0.08, 'triangle', 0.1); }
+    _playError() { this._playTone(150, 0.2, 'square', 0.06); }
+    _playBounce() { this._playTone(300, 0.05, 'sine', 0.06); }
+
+    // ✅ Color change sound — satisfying whoosh
+    _playColorChange() {
+        if (!this.soundEnabled || !this.audioCtx) return;
+        try {
+            const ctx = this.audioCtx, t = ctx.currentTime;
+            const notes = [400, 600, 900, 1200];
+            notes.forEach((freq, i) => {
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.connect(gain); gain.connect(ctx.destination);
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(freq, t + i * 0.04);
+                gain.gain.setValueAtTime(0, t + i * 0.04);
+                gain.gain.linearRampToValueAtTime(0.12, t + i * 0.04 + 0.01);
+                gain.gain.exponentialRampToValueAtTime(0.001, t + i * 0.04 + 0.12);
+                osc.start(t + i * 0.04);
+                osc.stop(t + i * 0.04 + 0.13);
+            });
+        } catch(e) {}
+    }
+
+    _playCombo(level) {
+        if (!this.soundEnabled || !this.audioCtx) return;
+        const notes = [523, 659, 784, 1047];
+        const ctx = this.audioCtx, t = ctx.currentTime;
+        const count = Math.min(level + 1, notes.length);
+        for (let i = 0; i < count; i++) {
+            try {
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.connect(gain); gain.connect(ctx.destination);
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(notes[i], t + i * 0.07);
+                gain.gain.setValueAtTime(0, t + i * 0.07);
+                gain.gain.linearRampToValueAtTime(0.12, t + i * 0.07 + 0.02);
+                gain.gain.exponentialRampToValueAtTime(0.001, t + i * 0.07 + 0.18);
+                osc.start(t + i * 0.07); osc.stop(t + i * 0.07 + 0.2);
+            } catch(e) {}
+        }
     }
 
     _playWin() {
         if (!this.soundEnabled || !this.audioCtx) return;
+        const notes = [523, 659, 784, 1047, 1318];
         const ctx = this.audioCtx, t = ctx.currentTime;
-        const notes = [523, 659, 784, 1047, 1319];
         notes.forEach((freq, i) => {
-            const osc = ctx.createOscillator();
-            const gain = ctx.createGain();
-            osc.connect(gain);
-            gain.connect(ctx.destination);
-            osc.type = i === notes.length - 1 ? 'sine' : 'triangle';
-            osc.frequency.setValueAtTime(freq, t + i * 0.12);
-            gain.gain.setValueAtTime(0, t + i * 0.12);
-            gain.gain.linearRampToValueAtTime(0.16, t + i * 0.12 + 0.03);
-            gain.gain.exponentialRampToValueAtTime(0.001, t + i * 0.12 + 0.35);
-            osc.start(t + i * 0.12);
-            osc.stop(t + i * 0.12 + 0.38);
-        });
-    }
-
-    _playBomb() {
-        if (!this.soundEnabled || !this.audioCtx) return;
-        const ctx = this.audioCtx, t = ctx.currentTime;
-
-        // Noise burst
-        const bufSize = ctx.sampleRate * 0.35;
-        const buffer = ctx.createBuffer(1, bufSize, ctx.sampleRate);
-        const data = buffer.getChannelData(0);
-        for (let i = 0; i < bufSize; i++) {
-            data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / bufSize, 1.8);
-        }
-        const noise = ctx.createBufferSource();
-        noise.buffer = buffer;
-        const filter = ctx.createBiquadFilter();
-        filter.type = 'lowpass';
-        filter.frequency.setValueAtTime(700, t);
-        filter.frequency.exponentialRampToValueAtTime(80, t + 0.35);
-        const gain = ctx.createGain();
-        gain.gain.setValueAtTime(0.4, t);
-        gain.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
-        noise.connect(filter);
-        filter.connect(gain);
-        gain.connect(ctx.destination);
-        noise.start(t);
-        noise.stop(t + 0.36);
-
-        // Low boom
-        const osc = ctx.createOscillator();
-        const og = ctx.createGain();
-        osc.connect(og);
-        og.connect(ctx.destination);
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(150, t);
-        osc.frequency.exponentialRampToValueAtTime(35, t + 0.2);
-        og.gain.setValueAtTime(0.4, t);
-        og.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
-        osc.start(t);
-        osc.stop(t + 0.28);
-    }
-
-    _playDrop() {
-        if (!this.soundEnabled || !this.audioCtx) return;
-        const ctx = this.audioCtx, t = ctx.currentTime;
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(300, t);
-        osc.frequency.exponentialRampToValueAtTime(100, t + 0.2);
-        gain.gain.setValueAtTime(0.12, t);
-        gain.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
-        osc.start(t);
-        osc.stop(t + 0.24);
-    }
-
-    _playSnap() {
-        if (!this.soundEnabled || !this.audioCtx) return;
-        const ctx = this.audioCtx, t = ctx.currentTime;
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(450, t);
-        osc.frequency.exponentialRampToValueAtTime(550, t + 0.05);
-        gain.gain.setValueAtTime(0.1, t);
-        gain.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
-        osc.start(t);
-        osc.stop(t + 0.09);
-    }
-
-    _playPowerUp() {
-        if (!this.soundEnabled || !this.audioCtx) return;
-        const ctx = this.audioCtx, t = ctx.currentTime;
-        [660, 880, 1100].forEach((f, i) => {
-            const osc = ctx.createOscillator();
-            const gain = ctx.createGain();
-            osc.connect(gain);
-            gain.connect(ctx.destination);
-            osc.type = 'sine';
-            osc.frequency.setValueAtTime(f, t + i * 0.07);
-            gain.gain.setValueAtTime(0, t + i * 0.07);
-            gain.gain.linearRampToValueAtTime(0.1, t + i * 0.07 + 0.02);
-            gain.gain.exponentialRampToValueAtTime(0.001, t + i * 0.07 + 0.15);
-            osc.start(t + i * 0.07);
-            osc.stop(t + i * 0.07 + 0.17);
+            try {
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.connect(gain); gain.connect(ctx.destination);
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(freq, t + i * 0.12);
+                gain.gain.setValueAtTime(0, t + i * 0.12);
+                gain.gain.linearRampToValueAtTime(0.15, t + i * 0.12 + 0.03);
+                gain.gain.exponentialRampToValueAtTime(0.001, t + i * 0.12 + 0.4);
+                osc.start(t + i * 0.12); osc.stop(t + i * 0.12 + 0.42);
+            } catch(e) {}
         });
     }
 
     _playGameOver() {
         if (!this.soundEnabled || !this.audioCtx) return;
+        const notes = [400, 350, 300, 200];
         const ctx = this.audioCtx, t = ctx.currentTime;
-        [440, 370, 311, 220].forEach((f, i) => {
-            const osc = ctx.createOscillator();
-            const gain = ctx.createGain();
-            osc.connect(gain);
-            gain.connect(ctx.destination);
-            osc.type = 'triangle';
-            osc.frequency.setValueAtTime(f, t + i * 0.18);
-            gain.gain.setValueAtTime(0, t + i * 0.18);
-            gain.gain.linearRampToValueAtTime(0.12, t + i * 0.18 + 0.03);
-            gain.gain.exponentialRampToValueAtTime(0.001, t + i * 0.18 + 0.35);
-            osc.start(t + i * 0.18);
-            osc.stop(t + i * 0.18 + 0.38);
+        notes.forEach((freq, i) => {
+            try {
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.connect(gain); gain.connect(ctx.destination);
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(freq, t + i * 0.15);
+                gain.gain.setValueAtTime(0.1, t + i * 0.15);
+                gain.gain.exponentialRampToValueAtTime(0.001, t + i * 0.15 + 0.3);
+                osc.start(t + i * 0.15); osc.stop(t + i * 0.15 + 0.32);
+            } catch(e) {}
         });
     }
 
@@ -464,1478 +331,1318 @@ class BubbleShooter {
 
     _setupCanvas() {
         const parent = this.canvas.parentElement;
-        let cw = parent ? (parent.clientWidth || parent.offsetWidth) : window.innerWidth;
-        let ch = parent ? (parent.clientHeight || parent.offsetHeight) : window.innerHeight;
-        if (cw < 10) cw = window.innerWidth;
-        if (ch < 10) ch = window.innerHeight;
-        cw = Math.max(cw, 320);
-        ch = Math.max(ch, 480);
+        const w = parent ? parent.clientWidth : window.innerWidth;
+        const h = parent ? parent.clientHeight : window.innerHeight;
+        const dpr = this.DPR;
 
-        this.canvas.width = Math.round(cw * this.DPR);
-        this.canvas.height = Math.round(ch * this.DPR);
-        this.canvas.style.width = cw + 'px';
-        this.canvas.style.height = ch + 'px';
+        this.canvas.style.width = w + 'px';
+        this.canvas.style.height = h + 'px';
+        this.canvas.width = Math.round(w * dpr);
+        this.canvas.height = Math.round(h * dpr);
 
-        this.ctx.imageSmoothingEnabled = false;
+        this.W = w;
+        this.H = h;
+        this.cW = this.canvas.width;
+        this.cH = this.canvas.height;
 
-        this.bgCache = null;
+        this.HUD_H = this.isMobile ? 52 : 62;
+        this.BOTTOM_H = this.isMobile ? 95 : 105;
+
+        const playAreaH = this.H - this.HUD_H - this.BOTTOM_H;
+        const playAreaW = this.W;
+
+        const maxR_w = playAreaW / (this.COLS * 2 + 1);
+        const maxR_h = playAreaH / (this.ROWS * 1.8 + 2);
+        this.BUBBLE_R = Math.floor(Math.min(maxR_w, maxR_h, this.isMobile ? 16 : 22));
+        if (this.BUBBLE_R < 10) this.BUBBLE_R = 10;
+
+        const gridW = this.COLS * this.BUBBLE_R * 2;
+        this.offsetX = (this.W - gridW) / 2 + this.BUBBLE_R;
+        this.offsetY = this.HUD_H + this.BUBBLE_R + 5;
+
+        this.shooterX = this.W / 2;
+        this.shooterY = this.H - this.BOTTOM_H / 2;
+
+        this.ceilingY = this.HUD_H;
+        this.deadlineY = this.shooterY - this.BUBBLE_R * 3;
+
         this._bubbleCache.clear();
         this._glowCache.clear();
         this._gradCache.clear();
-        this._calculateLayout();
-        this._preCacheBubbles();
     }
 
-    // ══════════════════ LAYOUT ══════════════════
-
-    _calculateLayout() {
-        const cw = this.canvas.width, ch = this.canvas.height, D = this.DPR;
-
-        this.HUD_H = 72 * D;
-        this.BOTTOM_H = this.isMobile ? 110 * D : 120 * D;
-
-        const gridH = ch - this.HUD_H - this.BOTTOM_H;
-        const gridW = cw;
-
-        this.COLS = this.isMobile ? (this.canvas.width < 340 * D ? 8 : 9) : 10;
-        const lvl = this.LEVELS[Math.min(this.currentLevel, this.LEVELS.length - 1)];
-        this.ROWS = Math.max(12, lvl.rows + 5);
-
-        const maxByW = Math.floor((gridW - 8 * D) / (this.COLS * 2 + 0.5));
-        const maxByH = Math.floor(gridH / (this.ROWS * 1.732));
-        this.BUBBLE_R = Math.min(maxByW, maxByH, this.isMobile ? 18 * D : 22 * D);
-
-        this.cellW = this.BUBBLE_R * 2;
-        this.cellH = this.BUBBLE_R * 1.732;
-        const totalW = this.COLS * this.cellW;
-        this.offsetX = (cw - totalW) / 2 + this.BUBBLE_R;
-        this.offsetY = this.HUD_H + 8 * D;
-
-        this.shooterX = cw / 2;
-        this.shooterY = ch - this.BOTTOM_H / 2;
-    }
-
-    // ══════════════════ HELPERS ══════════════════
-
-    // ✅ Cached color conversion
-    _hexToRgba(hex, a) {
-        const key = hex + a;
-        if (this._colorCache[key]) return this._colorCache[key];
-        if (!hex || hex[0] !== '#') return hex;
-        const r = parseInt(hex.slice(1, 3), 16);
-        const g = parseInt(hex.slice(3, 5), 16);
-        const b = parseInt(hex.slice(5, 7), 16);
-        const result = `rgba(${r},${g},${b},${Math.max(0, Math.min(1, a)).toFixed(2)})`;
-        this._colorCache[key] = result;
-        return result;
-    }
-
-    // ✅ HD Text renderer - uses real device DPR
-    _drawText(ctx, text, x, y, opts = {}) {
-        const {
-            size = 12,
-            weight = 'bold',
-            color = '#fff',
-            align = 'center',
-            baseline = 'middle',
-            family = '"Segoe UI",sans-serif',
-            glow = false,
-            glowColor = null,
-            glowBlur = 0,
-            stroke = false,
-            strokeColor = 'rgba(0,0,0,0.7)',
-            strokeWidth = 2.5,
-            opacity = 1,
-        } = opts;
-
-        if (opacity <= 0) return;
-
-        ctx.save();
-        ctx.globalAlpha = Math.min(1, opacity);
-        ctx.textAlign = align;
-        ctx.textBaseline = baseline;
-
-        // ✅ HD: Use real device DPR for font rendering
-        const tDpr = this.textDPR;
-        const fontSize = Math.round(size * tDpr);
-        ctx.font = `${weight} ${fontSize}px ${family}`;
-
-        // ✅ HD text coords
-        const px = (x * tDpr + 0.5) | 0;
-        const py = (y * tDpr + 0.5) | 0;
-
-        ctx.imageSmoothingEnabled = true;
-
-        if (stroke) {
-            ctx.strokeStyle = strokeColor;
-            ctx.lineWidth = strokeWidth * tDpr;
-            ctx.lineJoin = 'round';
-            ctx.strokeText(text, px, py);
-        }
-
-        if (glow && glowBlur > 0 && !this.isMobile) {
-            ctx.shadowBlur = glowBlur * tDpr;
-            ctx.shadowColor = glowColor || color;
-        }
-
-        ctx.fillStyle = color;
-        ctx.fillText(text, px, py);
-        ctx.shadowBlur = 0;
-        ctx.shadowColor = 'transparent';
-        ctx.restore();
-    }
-
-    // Legacy text with DPR (for non-HD elements - backward compat)
-    _drawTextD(ctx, text, x, y, opts = {}) {
-        const D = this.DPR;
-        this._drawText(ctx, text, x / D, y / D, opts);
-    }
-
-    // ══════════════════ BUBBLE CACHE ══════════════════
-
-    _preCacheBubbles() {
-        this._bubbleCache.clear();
-        this._glowCache.clear();
-        const r = this.BUBBLE_R;
-        if (r <= 0) return;
-
-        this.COLORS.forEach((col, idx) => {
-            const bSize = Math.ceil((r + 3) * 2);
-            const bc = document.createElement('canvas');
-            bc.width = bc.height = bSize;
-            const bctx = bc.getContext('2d');
-            this._renderBubble(bctx, bSize / 2, bSize / 2, r, col);
-            this._bubbleCache.set(idx, bc);
-
-            if (!this.isMobile) {
-                const gs = Math.ceil((r + 14) * 2);
-                const gc = document.createElement('canvas');
-                gc.width = gc.height = gs;
-                const gctx = gc.getContext('2d');
-                const gg = gctx.createRadialGradient(gs / 2, gs / 2, r * 0.1, gs / 2, gs / 2, r + 12);
-                gg.addColorStop(0, col.glow.replace('0.4)', '0.25)'));
-                gg.addColorStop(1, 'rgba(0,0,0,0)');
-                gctx.fillStyle = gg;
-                gctx.beginPath();
-                gctx.arc(gs / 2, gs / 2, r + 12, 0, Math.PI * 2);
-                gctx.fill();
-                this._glowCache.set(idx, gc);
-            }
-        });
-    }
-
-    _renderBubble(ctx, cx, cy, r, col) {
-        const g1 = ctx.createRadialGradient(cx - r * 0.25, cy - r * 0.3, r * 0.05, cx, cy, r);
-        g1.addColorStop(0, col.light);
-        g1.addColorStop(0.4, col.hex);
-        g1.addColorStop(1, col.dark);
-        ctx.beginPath();
-        ctx.arc(cx, cy, r, 0, Math.PI * 2);
-        ctx.fillStyle = g1;
-        ctx.fill();
-
-        const g2 = ctx.createRadialGradient(cx, cy, r * 0.6, cx, cy, r);
-        g2.addColorStop(0, 'rgba(0,0,0,0)');
-        g2.addColorStop(1, 'rgba(0,0,0,0.28)');
-        ctx.fillStyle = g2;
-        ctx.beginPath();
-        ctx.arc(cx, cy, r, 0, Math.PI * 2);
-        ctx.fill();
-
-        const g3 = ctx.createRadialGradient(cx - r * 0.3, cy - r * 0.35, 0, cx - r * 0.15, cy - r * 0.15, r * 0.55);
-        g3.addColorStop(0, 'rgba(255,255,255,0.65)');
-        g3.addColorStop(1, 'rgba(255,255,255,0)');
-        ctx.fillStyle = g3;
-        ctx.beginPath();
-        ctx.arc(cx, cy, r, 0, Math.PI * 2);
-        ctx.fill();
-
-        const g4 = ctx.createRadialGradient(cx - r * 0.35, cy - r * 0.4, 0, cx - r * 0.35, cy - r * 0.4, r * 0.18);
-        g4.addColorStop(0, 'rgba(255,255,255,0.8)');
-        g4.addColorStop(1, 'rgba(255,255,255,0)');
-        ctx.fillStyle = g4;
-        ctx.beginPath();
-        ctx.arc(cx, cy, r, 0, Math.PI * 2);
-        ctx.fill();
-    }
-
-    // ══════════════════ SAVE / LOAD ══════════════════
+    // ══════════════════ PLAYER DATA ══════════════════
 
     _loadPlayerData() {
-        const def = { coins: 0, diamonds: 0, currentLevel: 0, levelStars: {}, dailyStreak: 0, lastDaily: null, powerUps: { bomb: 1, precision: 2 } };
         try {
-            const s = JSON.parse(localStorage.getItem(this.saveKey));
-            if (s) return { ...def, ...s };
+            const d = JSON.parse(localStorage.getItem(this.saveKey));
+            if (d) return d;
         } catch (e) {}
-        return def;
+        return { currentLevel: 0, highScore: 0, totalPopped: 0 };
     }
 
     _savePlayerData() {
-        this.playerData.powerUps = { bomb: this.powerUps.bomb.count, precision: this.powerUps.precision.count };
-        try { localStorage.setItem(this.saveKey, JSON.stringify(this.playerData)); } catch (e) {}
+        try {
+            this.playerData.currentLevel = this.currentLevel;
+            this.playerData.highScore = Math.max(this.playerData.highScore || 0, this.score);
+            localStorage.setItem(this.saveKey, JSON.stringify(this.playerData));
+        } catch (e) {}
     }
 
-    // ══════════════════ DAILY REWARD ══════════════════
+    // ══════════════════ LEVEL MANAGEMENT ══════════════════
 
-    _checkDailyReward() {
-        const today = new Date().toDateString();
-        if (this.playerData?.lastDaily !== today) {
-            this.showDailyReward = true;
-            this.dailyRewardClaimed = false;
-            this.dailyAnim = 0;
-        }
-    }
+    _startLevel(levelIdx) {
+        this.currentLevel = Math.min(levelIdx, this.LEVELS.length - 1);
+        const lvl = this.LEVELS[this.currentLevel];
 
-    _claimDailyReward() {
-        if (this.dailyRewardClaimed) return;
-        const streak = this.playerData.dailyStreak || 0;
-        const coins = Math.floor(50 * Math.min(1 + streak * 0.25, 3));
-        const dias = Math.floor(2 * Math.max(1, Math.floor(streak / 3)));
-        this.playerData.coins = (this.playerData.coins || 0) + coins;
-        this.playerData.diamonds = (this.playerData.diamonds || 0) + dias;
-        this.playerData.lastDaily = new Date().toDateString();
-        this.playerData.dailyStreak = streak + 1;
-        this.dailyRewardClaimed = true;
-        this.showDailyReward = false;
-        this._addFloatingText(this.canvas.width / 2 / this.DPR, this.canvas.height / 2 / this.DPR - 30, `+${coins} Coins`, '#FFD700', 20);
-        this._addFloatingText(this.canvas.width / 2 / this.DPR, this.canvas.height / 2 / this.DPR + 10, `+${dias} Gems`, '#00EEFF', 18);
-        this._playWin();
-        this._savePlayerData();
-    }
-
-    // ══════════════════ LEVEL GENERATION ══════════════════
-
-    _startLevel(lvl) {
-        this.currentLevel = Math.min(lvl, this.LEVELS.length - 1);
-        const cfg = this.LEVELS[this.currentLevel];
+        this.colorsInPlay = this.COLORS.slice(0, lvl.colors);
+        this.grid = [];
+        this.score = 0;
         this.moves = 0;
         this.combo = 0;
         this.maxCombo = 0;
         this.bubblesPopped = 0;
         this.gameWon = false;
         this.gameOver = false;
-        this.score = 0;
-        this.levelCoins = 0;
-        this.levelDiamonds = 0;
-        this.starRating = 0;
+        this.showLevelComplete = false;
         this.projectile = null;
         this.canShoot = true;
         this.shootCooldown = 0;
-        this.activePowerUp = null;
-        this.history = [];
         this.particles = [];
         this.fallingBubbles = [];
         this.popRings = [];
         this.textPopups = [];
         this.floatingTexts = [];
-        this.showLevelComplete = false;
-        this.timeElapsed = 0;
-        this.bgCache = null;
+        this.history = [];
+        this.shakeTimer = 0;
+        this.shootRecoil = 0;
 
-        this.COLS = this.isMobile ? 9 : 10;
-        this.ROWS = Math.max(12, cfg.rows + 5);
-        this._calculateLayout();
-        this._buildGrid(cfg);
-        this._updateColorsInPlay();
-        this._generateShooter();
-        this._calcAimLine();
-        this._startTimer();
+        // ✅ Reset color change charges per level
+        this.colorChangesLeft = 3;
+        this.colorChangeCooldown = 0;
+        this.colorChangeAnim = 0;
+        this.colorChangeFlash = 0;
 
-        this._addFloatingText(this.canvas.width / 2 / this.DPR, this.canvas.height / 2 / this.DPR - 30, `Level ${this.currentLevel + 1}`, '#DD00FF', 24);
-
-        this.playerData.currentLevel = this.currentLevel;
-        this._savePlayerData();
-    }
-
-    _buildGrid(cfg) {
-        this.grid = [];
-        for (let r = 0; r < this.ROWS; r++) this.grid[r] = new Array(this.COLS).fill(null);
-        const n = cfg.colors;
-        for (let r = 0; r < cfg.rows; r++) {
-            for (let c = 0; c < this.COLS; c++) {
-                this.grid[r][c] = { ci: Math.floor(Math.random() * n), scale: 1, flash: 0, breathe: Math.random() * 6.28 };
+        // Build grid
+        for (let row = 0; row < this.ROWS; row++) {
+            this.grid[row] = [];
+            for (let col = 0; col < this.COLS; col++) {
+                if (row < lvl.rows) {
+                    if (row % 2 === 1 && col >= this.COLS - 1) {
+                        this.grid[row][col] = -1;
+                    } else {
+                        this.grid[row][col] = Math.floor(Math.random() * lvl.colors);
+                    }
+                } else {
+                    this.grid[row][col] = -1;
+                }
             }
         }
+
+        this._pickNextBubbles();
+        this._startTimer();
+        this._updateColorsInPlay();
     }
 
-    _levelGoal() { return this.LEVELS[Math.min(this.currentLevel, this.LEVELS.length - 1)].rows * this.COLS; }
+    _pickNextBubbles() {
+        const avail = this._getAvailableColors();
+        if (avail.length === 0) { this.currentBubble = 0; this.nextBubble = 0; return; }
+        this.currentBubble = avail[Math.floor(Math.random() * avail.length)];
+        this.nextBubble = avail[Math.floor(Math.random() * avail.length)];
+    }
 
-    // ══════════════════ GAME LOGIC ══════════════════
+    _getAvailableColors() {
+        const set = new Set();
+        for (let r = 0; r < this.ROWS; r++)
+            for (let c = 0; c < this.COLS; c++)
+                if (this.grid[r][c] >= 0) set.add(this.grid[r][c]);
+        return Array.from(set);
+    }
 
     _updateColorsInPlay() {
-        const used = new Set();
-        for (let r = 0; r < this.ROWS; r++) for (let c = 0; c < this.COLS; c++) if (this.grid[r]?.[c]) used.add(this.grid[r][c].ci);
-        this.colorsInPlay = [...used];
-        if (!this.colorsInPlay.length) this.colorsInPlay = [0, 1, 2];
-    }
-
-    _generateShooter() {
-        this.currentBubble = this.nextBubble ?? this._randColor();
-        this.nextBubble = this._randColor();
-    }
-
-    _randColor() {
-        const pool = this.colorsInPlay.length ? this.colorsInPlay : [0, 1, 2];
-        return pool[Math.floor(Math.random() * pool.length)];
-    }
-
-    _swapBubble() {
-        if (!this.canShoot || this.projectile) return;
-        const pool = this.colorsInPlay.length ? this.colorsInPlay : [0, 1, 2];
-        const idx = pool.indexOf(this.currentBubble);
-        this.currentBubble = pool[(idx + 1) % pool.length];
-        this.swapAnim = 1;
-        this._playSwap();
-        this._calcAimLine();
-    }
-
-    _bubblePos(r, c) {
-        const ox = r % 2 === 1 ? this.BUBBLE_R : 0;
-        return { x: this.offsetX + c * this.cellW + ox, y: this.offsetY + r * this.cellH };
-    }
-
-    _bubblePosLogical(r, c) {
-        const D = this.DPR;
-        const ox = r % 2 === 1 ? this.BUBBLE_R / D : 0;
-        return { x: this.offsetX / D + c * (this.cellW / D) + ox, y: this.offsetY / D + r * (this.cellH / D) };
-    }
-
-    _calcAimLine() {
-        this.aimDots = [];
-        const D = this.DPR;
-        let x = this.shooterX / D, y = this.shooterY / D;
-        let vx = Math.cos(this.shooterAngle), vy = Math.sin(this.shooterAngle);
-        const R = this.BUBBLE_R / D;
-        const maxB = this.activePowerUp === 'precision' ? 4 : 2;
-        const step = this.isMobile ? 12 : 9;
-        let bounces = 0;
-        const maxSteps = this.isMobile ? 22 : 35;
-
-        for (let i = 0; i < maxSteps; i++) {
-            x += vx * step;
-            y += vy * step;
-            const lx = x * D, ly = y * D;
-            if (lx <= R * D) { x = R; vx = -vx; bounces++; }
-            if (lx >= this.canvas.width / D - R) { x = this.canvas.width / D - R; vx = -vx; bounces++; }
-            if (ly <= this.offsetY / D + R) break;
-            if (ly > this.shooterY / D + 10) break;
-            if (bounces >= maxB) break;
-
-            let hit = false;
-            const r2 = (R * 1.85) ** 2;
-            for (let r = 0; r < this.ROWS && !hit; r++) {
-                for (let c = 0; c < this.COLS && !hit; c++) {
-                    if (!this.grid[r]?.[c]) continue;
-                    const pos = this._bubblePosLogical(r, c);
-                    if ((x - pos.x) ** 2 + (y - pos.y) ** 2 < r2) hit = true;
-                }
-            }
-            this.aimDots.push({ x, y, t: i / maxSteps });
-            if (hit) break;
+        const avail = this._getAvailableColors();
+        if (avail.length > 0) {
+            if (!avail.includes(this.currentBubble))
+                this.currentBubble = avail[Math.floor(Math.random() * avail.length)];
+            if (!avail.includes(this.nextBubble))
+                this.nextBubble = avail[Math.floor(Math.random() * avail.length)];
         }
     }
-
-    _shoot() {
-        if (!this.canShoot || this.projectile || this.shootCooldown > 0) return;
-        this.canShoot = false;
-        this.shootCooldown = 6;
-        this.shootRecoil = 6;
-        this.moves++;
-
-        this.projectile = {
-            x: this.shooterX, y: this.shooterY,
-            vx: Math.cos(this.shooterAngle) * (this.isMobile ? 11 : 14) * this.DPR,
-            vy: Math.sin(this.shooterAngle) * (this.isMobile ? 11 : 14) * this.DPR,
-            ci: this.currentBubble, isBomb: this.activePowerUp === 'bomb',
-            trail: [], age: 0,
-        };
-        this.activePowerUp = null;
-        this._playShoot();
-        this._generateShooter();
-    }
-
-    _updateProjectile() {
-        const p = this.projectile;
-        if (!p) return;
-        p.age++;
-        p.trail.push({ x: p.x, y: p.y });
-        if (p.trail.length > (this.isMobile ? 5 : 8)) p.trail.shift();
-        p.x += p.vx;
-        p.y += p.vy;
-
-        const R = this.BUBBLE_R;
-        if (p.x <= R) { p.x = R; p.vx = -p.vx; }
-        if (p.x >= this.canvas.width - R) { p.x = this.canvas.width - R; p.vx = -p.vx; }
-        if (p.y <= this.BUBBLE_R + this.offsetY) { this._snapBubble(); return; }
-        if (p.y > this.canvas.height + 30) { this.projectile = null; this.canShoot = true; return; }
-
-        const r2 = (R * 1.85) ** 2;
-        for (let r = 0; r < this.ROWS; r++) {
-            for (let c = 0; c < this.COLS; c++) {
-                if (!this.grid[r]?.[c]) continue;
-                const pos = this._bubblePos(r, c);
-                if ((p.x - pos.x) ** 2 + (p.y - pos.y) ** 2 < r2) { this._snapBubble(); return; }
-            }
-        }
-    }
-
-    _snapBubble() {
-        const p = this.projectile;
-        if (!p) return;
-        let bestR = -1, bestC = -1, bestD = Infinity;
-        const snap2 = (this.BUBBLE_R * 3.5) ** 2;
-
-        for (let r = 0; r < this.ROWS; r++) {
-            for (let c = 0; c < this.COLS; c++) {
-                if (this.grid[r]?.[c]) continue;
-                const pos = this._bubblePos(r, c);
-                const d = (p.x - pos.x) ** 2 + (p.y - pos.y) ** 2;
-                if (d < bestD && d < snap2) { bestD = d; bestR = r; bestC = c; }
-            }
-        }
-
-        if (bestR === -1) {
-            bestR = 0;
-            bestC = Math.max(0, Math.min(this.COLS - 1, Math.round((p.x - this.offsetX) / this.cellW)));
-        }
-
-        if (bestR !== -1 && bestC !== -1) {
-            if (p.isBomb) { this._explodeBomb(bestR, bestC); this.projectile = null; this.canShoot = true; return; }
-            this.grid[bestR][bestC] = { ci: p.ci, scale: 0.2, flash: 6, breathe: 0, isNew: true };
-            this._playSnap();
-            const matches = this._findMatches(bestR, bestC);
-            if (matches.length >= 3) {
-                this.combo++;
-                this.maxCombo = Math.max(this.maxCombo, this.combo);
-                this._popMatches(matches, bestR, bestC);
-                if (this.combo >= 2) this._playCombo();
-            } else {
-                this.combo = 0;
-            }
-            setTimeout(() => this._dropFloating(), 80);
-        }
-
-        this.projectile = null;
-        this.canShoot = true;
-        this._updateColorsInPlay();
-    }
-
-    _explodeBomb(r, c) {
-        let count = 0;
-        for (let dr = -2; dr <= 2; dr++) {
-            for (let dc = -2; dc <= 2; dc++) {
-                if (dr * dr + dc * dc > 5) continue;
-                const nr = r + dr, nc = c + dc;
-                if (nr < 0 || nr >= this.ROWS || nc < 0 || nc >= this.COLS || !this.grid[nr]?.[nc]) continue;
-                const pos = this._bubblePos(nr, nc);
-                this._spawnPop(pos.x, pos.y, this.COLORS[this.grid[nr][nc].ci].hex, this.isMobile ? 3 : 4);
-                this.grid[nr][nc] = null;
-                count++;
-            }
-        }
-        this.bubblesPopped += count;
-        this.score += count * 15;
-        this._addEarnCoins(count * 3);
-        this._addTextPopup(this.shooterX / this.DPR, this.shooterY / this.DPR - 30, `BOMB +${count * 15}`, '#FF7700');
-        this._shake(8, 6);
-        this._playBomb();
-        this._onScore(this.score);
-        setTimeout(() => this._dropFloating(), 100);
-    }
-
-    _findMatches(sr, sc) {
-        if (!this.grid[sr]?.[sc]) return [];
-        const target = this.grid[sr][sc].ci;
-        const visited = new Set(), matches = [], queue = [[sr, sc]];
-        while (queue.length) {
-            const [r, c] = queue.shift();
-            const k = r * 100 + c;
-            if (visited.has(k) || r < 0 || r >= this.ROWS || c < 0 || c >= this.COLS) continue;
-            if (!this.grid[r]?.[c] || this.grid[r][c].ci !== target) continue;
-            visited.add(k);
-            matches.push([r, c]);
-            for (const n of this._neighbors(r, c)) queue.push(n);
-        }
-        return matches;
-    }
-
-    _neighbors(r, c) {
-        return r % 2 === 1
-            ? [[r - 1, c], [r - 1, c + 1], [r, c - 1], [r, c + 1], [r + 1, c], [r + 1, c + 1]]
-            : [[r - 1, c - 1], [r - 1, c], [r, c - 1], [r, c + 1], [r + 1, c - 1], [r + 1, c]];
-    }
-
-    _popMatches(matches, oR, oC) {
-        const combo = Math.min(this.combo, 10);
-        const pts = matches.length * 10 * combo;
-        this.score += pts;
-        this.bubblesPopped += matches.length;
-        this._addEarnCoins(Math.floor(matches.length * (1 + combo * 0.5)));
-        if (combo >= 3 || matches.length >= 5) this._addEarnDiamonds(combo >= 5 ? 2 : 1);
-
-        const popDelay = this.isMobile ? 12 : 22;
-        matches.forEach(([r, c], i) => {
-            setTimeout(() => {
-                if (this._destroyed) return;
-                const pos = this._bubblePos(r, c);
-                const hex = this.grid[r]?.[c] ? this.COLORS[this.grid[r][c].ci].hex : '#fff';
-                this._spawnPop(pos.x, pos.y, hex, this.isMobile ? 3 : 7);
-                if (this.grid[r]) this.grid[r][c] = null;
-            }, i * popDelay);
-        });
-
-        const oPos = this._bubblePos(oR, oC);
-        this._addTextPopup(oPos.x / this.DPR, oPos.y / this.DPR - 10, combo > 1 ? `x${combo} +${pts}` : `+${pts}`, combo > 2 ? '#FFD700' : '#00EE66');
-        this._onScore(this.score);
-        this._shake(combo > 2 ? 8 : 3, combo > 2 ? 5 : 2);
-        this._playPop();
-    }
-
-    _dropFloating() {
-        const connected = new Set(), queue = [];
-        for (let c = 0; c < this.COLS; c++) if (this.grid[0]?.[c]) queue.push([0, c]);
-        while (queue.length) {
-            const [r, c] = queue.shift();
-            const k = r * 100 + c;
-            if (connected.has(k) || r < 0 || r >= this.ROWS || c < 0 || c >= this.COLS || !this.grid[r]?.[c]) continue;
-            connected.add(k);
-            for (const n of this._neighbors(r, c)) queue.push(n);
-        }
-        let dropped = 0;
-        for (let r = 0; r < this.ROWS; r++) {
-            for (let c = 0; c < this.COLS; c++) {
-                if (this.grid[r]?.[c] && !connected.has(r * 100 + c)) {
-                    const pos = this._bubblePos(r, c);
-                    if (this.fallingBubbles.length < this.MAX_PARTICLES / 2) {
-                        this.fallingBubbles.push({ x: pos.x, y: pos.y, vx: (Math.random() - 0.5) * 2.5 * this.DPR, vy: -Math.random() * 2 * this.DPR, ci: this.grid[r][c].ci, life: 1 });
-                    }
-                    this.grid[r][c] = null;
-                    dropped++;
-                    this.bubblesPopped++;
-                }
-            }
-        }
-        if (dropped > 0) {
-            this.score += dropped * 15;
-            this._addEarnCoins(dropped * 2);
-            this._addTextPopup(this.canvas.width / 2 / this.DPR, this.canvas.height / 2 / this.DPR - 20, `${dropped} Drop! +${dropped * 15}`, '#FF7700');
-            this._onScore(this.score);
-            this._playDrop();
-        }
-        this._checkWin();
-    }
-
-    _checkWin() {
-        const remaining = this.grid.flat().filter(Boolean).length;
-        if (remaining === 0 && !this.gameWon && !this.gameOver) {
-            this.gameWon = true;
-            const eff = this._levelGoal() / Math.max(1, this.moves);
-            this.starRating = eff >= 0.9 ? 3 : eff >= 0.6 ? 2 : 1;
-            this.score += Math.max(0, 600 - this.moves * 5 - this.timeElapsed * 2);
-            const lc = 50 + (this.currentLevel + 1) * 10 + this.starRating * 20 + this.maxCombo * 5;
-            const ld = this.starRating >= 3 ? 3 : this.starRating >= 2 ? 1 : 0;
-            this.levelCoins = lc;
-            this.levelDiamonds = ld;
-            this.playerData.coins = (this.playerData.coins || 0) + lc;
-            this.playerData.diamonds = (this.playerData.diamonds || 0) + ld;
-            this.showLevelComplete = true;
-            this.levelCompleteTimer = 0;
-            this._stopTimer();
-            this._playWin();
-            this._createWinParticles();
-            this._onScore(this.score, true);
-            this._savePlayerData();
-        }
-    }
-
-    _checkGameOver() {
-        for (let c = 0; c < this.COLS; c++) {
-            if (this.grid[this.ROWS - 2]?.[c]) {
-                this.gameOver = true;
-                this._stopTimer();
-                this._playGameOver();
-                this._savePlayerData();
-                setTimeout(() => this._onScore(this.score, true), 1200);
-                return;
-            }
-        }
-    }
-
-    _goNextLevel() {
-        const next = this.currentLevel + 1 >= this.LEVELS.length ? 0 : this.currentLevel + 1;
-        this._startLevel(next);
-    }
-
-    // ══════════════════ FX ══════════════════
-
-    _addEarnCoins(amt) {
-        this.playerData.coins = (this.playerData.coins || 0) + amt;
-        this.levelCoins += amt;
-    }
-
-    _addEarnDiamonds(amt) {
-        this.playerData.diamonds = (this.playerData.diamonds || 0) + amt;
-        this.levelDiamonds += amt;
-    }
-
-    _spawnPop(x, y, color, count) {
-        for (let i = 0; i < count; i++) {
-            const a = (Math.PI * 2 * i) / count + Math.random() * 0.4;
-            const spd = (Math.random() * 3 + 1.5) * this.DPR;
-            if (this.particles.length < this.MAX_PARTICLES) {
-                this.particles.push({ x, y, vx: Math.cos(a) * spd, vy: Math.sin(a) * spd, life: 1, color, size: (Math.random() * 2.5 + 1) * this.DPR });
-            }
-        }
-        if (this.popRings.length < 8) {
-            this.popRings.push({ x, y, radius: this.BUBBLE_R * 0.3, opacity: 0.6, color });
-        }
-    }
-
-    _createWinParticles() {
-        const count = this.isMobile ? 35 : 90;
-        for (let i = 0; i < count; i++) {
-            if (this.particles.length >= this.MAX_PARTICLES) break;
-            this.particles.push({
-                x: this.canvas.width / 2 + (Math.random() - 0.5) * this.canvas.width * 0.8,
-                y: this.canvas.height / 2 + (Math.random() - 0.5) * this.canvas.height * 0.5,
-                vx: (Math.random() - 0.5) * 10 * this.DPR,
-                vy: (Math.random() - 0.5) * 10 * this.DPR - this.DPR,
-                life: 1, color: `hsl(${Math.random() * 360},100%,65%)`,
-                size: (Math.random() * 4 + 2) * this.DPR,
-            });
-        }
-    }
-
-    _addTextPopup(x, y, text, color) {
-        if (this.textPopups.length >= 8) this.textPopups.shift();
-        this.textPopups.push({ x, y, text, color, life: 1 });
-    }
-
-    _addFloatingText(x, y, text, color, size) {
-        this.floatingTexts.push({ x, y, text, color, size: size || 14, life: 1, scale: 0.4 });
-    }
-
-    _shake(timer, force) {
-        this.shakeTimer = this.isMobile ? Math.ceil(timer * 0.5) : timer;
-        this.shakeForce = this.isMobile ? force * 0.6 : force;
-    }
-
-    _activatePowerUp(type) {
-        if (!this.powerUps[type] || this.powerUps[type].count <= 0) return;
-        if (this.activePowerUp === type) { this.activePowerUp = null; return; }
-        this.powerUps[type].count--;
-        this.activePowerUp = type;
-        this._addFloatingText(this.canvas.width / 2 / this.DPR, this.canvas.height / 2 / this.DPR, `${this.powerUps[type].name}!`, this.powerUps[type].color, 18);
-        this._playPowerUp();
-        this._savePlayerData();
-    }
-
-    // ══════════════════ UPDATE ══════════════════
-
-    _update(dt) {
-        this.frame++;
-        this.globalTime += dt;
-        if (this.showDailyReward) this.dailyAnim = Math.min(1, this.dailyAnim + 0.06);
-        if (this.showLevelComplete) this.levelCompleteTimer++;
-        if (this.swapAnim > 0) this.swapAnim = Math.max(0, this.swapAnim - 0.07);
-
-        this.shooterAngle += (this.targetAngle - this.shooterAngle) * 0.3;
-        if (this.shootRecoil > 0) this.shootRecoil *= 0.78;
-        if (this.shootCooldown > 0) this.shootCooldown--;
-
-        if (this.shakeTimer > 0) {
-            const f = this.shakeForce * (this.shakeTimer / 10) * (this.isMobile ? 0.4 : 1);
-            this.shakeX = (Math.random() - 0.5) * f * this.DPR;
-            this.shakeY = (Math.random() - 0.5) * f * this.DPR * 0.3;
-            this.shakeTimer--;
-        } else {
-            this.shakeX = 0;
-            this.shakeY = 0;
-        }
-
-        // Grid bubbles - skip breathe on mobile
-        const doSlow = !this.isMobile || (this.frame % 3 === 0);
-        for (let r = 0; r < this.ROWS; r++) {
-            for (let c = 0; c < this.COLS; c++) {
-                const b = this.grid[r]?.[c];
-                if (!b) continue;
-                if (b.isNew) { b.scale += (1 - b.scale) * 0.2; if (b.scale > 0.97) { b.scale = 1; b.isNew = false; } }
-                if (b.flash > 0) b.flash -= 0.9;
-                if (!this.isMobile && doSlow) b.breathe += 0.015;
-            }
-        }
-
-        if (!this.gameWon && !this.gameOver) {
-            if (this.projectile) this._updateProjectile();
-            this._checkGameOver();
-        }
-
-        this._updateFX();
-    }
-
-    _updateFX() {
-        const g = 0.18 * this.DPR;
-        for (let i = this.particles.length - 1; i >= 0; i--) {
-            const p = this.particles[i];
-            p.x += p.vx; p.y += p.vy; p.vy += g; p.life -= 0.02; p.vx *= 0.97;
-            if (p.life <= 0) this.particles.splice(i, 1);
-        }
-        for (let i = this.fallingBubbles.length - 1; i >= 0; i--) {
-            const b = this.fallingBubbles[i];
-            b.vy += g * 0.9; b.y += b.vy; b.x += b.vx; b.life -= 0.025;
-            if (b.life <= 0 || b.y > this.canvas.height + 40) this.fallingBubbles.splice(i, 1);
-        }
-        for (let i = this.popRings.length - 1; i >= 0; i--) {
-            const r = this.popRings[i];
-            r.radius += 3 * this.DPR; r.opacity -= 0.06;
-            if (r.opacity <= 0) this.popRings.splice(i, 1);
-        }
-        for (let i = this.textPopups.length - 1; i >= 0; i--) {
-            const t = this.textPopups[i];
-            t.y -= 0.9; t.life -= 0.02;
-            if (t.life <= 0) this.textPopups.splice(i, 1);
-        }
-        for (let i = this.floatingTexts.length - 1; i >= 0; i--) {
-            const t = this.floatingTexts[i];
-            t.y -= 0.5; t.life -= 0.012;
-            t.scale += (1 - t.scale) * 0.14;
-            if (t.life <= 0) this.floatingTexts.splice(i, 1);
-        }
-    }
-
-    // ══════════════════ TIMER ══════════════════
 
     _startTimer() {
         this._stopTimer();
-        this.timerInterval = setInterval(() => { if (!this.gameWon && !this.gameOver) this.timeElapsed++; }, 1000);
+        this.timeElapsed = 0;
+        this.timerInterval = setInterval(() => {
+            if (!this.gameWon && !this.gameOver) this.timeElapsed++;
+        }, 1000);
     }
 
     _stopTimer() {
         if (this.timerInterval) { clearInterval(this.timerInterval); this.timerInterval = null; }
     }
 
-    // ══════════════════ INPUT ══════════════════
+    // ══════════════════ COLOR CHANGE FEATURE ══════════════════
 
-    _getPos(e) {
-        const rect = this.canvas.getBoundingClientRect();
-        const sx = this.canvas.width / rect.width, sy = this.canvas.height / rect.height;
-        const src = e.changedTouches ? e.changedTouches[0] : (e.touches ? e.touches[0] : e);
-        return { x: (src.clientX - rect.left) * sx, y: (src.clientY - rect.top) * sy };
+    _changeCurrentBubbleColor() {
+        if (this.colorChangesLeft <= 0) {
+            this._playError();
+            // Flash red — no charges left
+            this.colorChangeFlash = 15;
+            this._addTextPopup(this.shooterX, this.shooterY - 40, 'No Changes Left!', '#FF4444');
+            return;
+        }
+        if (this.colorChangeCooldown > 0) {
+            this._playError();
+            return;
+        }
+        if (this.projectile) return; // Can't change while shooting
+
+        const avail = this._getAvailableColors();
+        if (avail.length <= 1) return; // Only one color in play — no point changing
+
+        // Pick a DIFFERENT color
+        let newColor;
+        let attempts = 0;
+        do {
+            newColor = avail[Math.floor(Math.random() * avail.length)];
+            attempts++;
+        } while (newColor === this.currentBubble && attempts < 10);
+
+        this.currentBubble = newColor;
+        this.colorChangesLeft--;
+        this.colorChangeCooldown = 30; // 0.5 second cooldown at 60fps
+        this.colorChangeAnim = 1;
+        this.colorChangeFlash = 20;
+
+        this._playColorChange();
+        this._addTextPopup(
+            this.shooterX,
+            this.shooterY - 50,
+            `🎨 Changed! (${this.colorChangesLeft} left)`,
+            this.COLORS[this.currentBubble].hex
+        );
+
+        // Particles burst around shooter bubble
+        const color = this.COLORS[newColor];
+        for (let i = 0; i < (this.isMobile ? 8 : 16); i++) {
+            const angle = (Math.PI * 2 / (this.isMobile ? 8 : 16)) * i;
+            const speed = 2 + Math.random() * 3;
+            this.particles.push({
+                x: this.shooterX,
+                y: this.shooterY,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed,
+                life: 1,
+                decay: 0.025 + Math.random() * 0.02,
+                color: color.hex,
+                r: 3 + Math.random() * 3,
+            });
+        }
     }
 
-    _aimAt(px, py) {
-        let a = Math.atan2(py - this.shooterY, px - this.shooterX);
-        a = Math.max(-Math.PI + 0.08, Math.min(-0.08, a));
-        this.targetAngle = a;
-        this._calcAimLine();
+    // ══════════════════ GRID HELPERS ══════════════════
+
+    _getBubblePos(row, col) {
+        const r = this.BUBBLE_R;
+        const d = r * 2;
+        let x = this.offsetX + col * d;
+        if (row % 2 === 1) x += r;
+        const y = this.offsetY + row * (d * 0.866);
+        return { x, y };
     }
 
-    _getPUButtons() {
-        const D = this.DPR, s = (this.isMobile ? 44 : 38) * D, gap = 10 * D;
-        const keys = Object.keys(this.powerUps), total = keys.length * s + (keys.length - 1) * gap;
-        const sx = (this.canvas.width - total) / 2, by = this.canvas.height - s - 8 * D;
-        return keys.map((key, i) => ({ x: sx + i * (s + gap), y: by, s, key }));
+    _pixelToGrid(px, py) {
+        let bestR = -1, bestC = -1, bestDist = Infinity;
+        for (let r = 0; r < this.ROWS; r++) {
+            const maxC = (r % 2 === 1) ? this.COLS - 1 : this.COLS;
+            for (let c = 0; c < maxC; c++) {
+                const pos = this._getBubblePos(r, c);
+                const dx = px - pos.x;
+                const dy = py - pos.y;
+                const dist = dx * dx + dy * dy;
+                if (dist < bestDist) { bestDist = dist; bestR = r; bestC = c; }
+            }
+        }
+        return { row: bestR, col: bestC };
     }
 
-    _getFSRect() {
-        const D = this.DPR, sz = 36 * D, mg = 8 * D;
-        return { x: this.canvas.width - sz - mg, y: 10 * D, w: sz, h: sz };
+    _getNeighbors(row, col) {
+        const even = row % 2 === 0;
+        const dirs = even
+            ? [[-1, -1], [-1, 0], [0, -1], [0, 1], [1, -1], [1, 0]]
+            : [[-1, 0], [-1, 1], [0, -1], [0, 1], [1, 0], [1, 1]];
+        const neighbors = [];
+        for (const [dr, dc] of dirs) {
+            const nr = row + dr, nc = col + dc;
+            const maxC = (nr % 2 === 1) ? this.COLS - 1 : this.COLS;
+            if (nr >= 0 && nr < this.ROWS && nc >= 0 && nc < maxC)
+                neighbors.push({ row: nr, col: nc });
+        }
+        return neighbors;
     }
 
-    _isInRect(px, py, r) { return px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h; }
+    _findCluster(row, col, color) {
+        if (this.grid[row]?.[col] !== color || color < 0) return [];
+        const visited = new Set();
+        const cluster = [];
+        const stack = [{ row, col }];
+        while (stack.length > 0) {
+            const { row: r, col: c } = stack.pop();
+            const key = r * 100 + c;
+            if (visited.has(key)) continue;
+            visited.add(key);
+            if (this.grid[r]?.[c] !== color) continue;
+            cluster.push({ row: r, col: c });
+            for (const n of this._getNeighbors(r, c)) {
+                const nk = n.row * 100 + n.col;
+                if (!visited.has(nk) && this.grid[n.row]?.[n.col] === color) stack.push(n);
+            }
+        }
+        return cluster;
+    }
 
-    _onHandleClick(e) {
-        e.preventDefault();
-        if (this.projectile) return;
-        const pos = this._getPos(e);
+    _findFloating() {
+        const visited = new Set();
+        const queue = [];
+        for (let c = 0; c < this.COLS; c++) {
+            if (this.grid[0][c] >= 0) { queue.push({ row: 0, col: c }); visited.add(c); }
+        }
+        while (queue.length > 0) {
+            const { row: r, col: c } = queue.shift();
+            for (const n of this._getNeighbors(r, c)) {
+                const key = n.row * 100 + n.col;
+                if (!visited.has(key) && this.grid[n.row]?.[n.col] >= 0) {
+                    visited.add(key); queue.push(n);
+                }
+            }
+        }
+        const floating = [];
+        for (let r = 0; r < this.ROWS; r++) {
+            const maxC = (r % 2 === 1) ? this.COLS - 1 : this.COLS;
+            for (let c = 0; c < maxC; c++) {
+                if (this.grid[r][c] >= 0 && !visited.has(r * 100 + c))
+                    floating.push({ row: r, col: c, color: this.grid[r][c] });
+            }
+        }
+        return floating;
+    }
 
-        if (this._isInRect(pos.x, pos.y, this._getFSRect())) { this._toggleFullscreen(); return; }
-        if (this.showDailyReward) { this._claimDailyReward(); return; }
-        if (this.showLevelComplete || this.gameWon) { this._goNextLevel(); return; }
-        if (this.gameOver) { this._startLevel(this.currentLevel); return; }
+    _checkGameOver() {
+        for (let r = 0; r < this.ROWS; r++)
+            for (let c = 0; c < this.COLS; c++)
+                if (this.grid[r][c] >= 0) {
+                    const pos = this._getBubblePos(r, c);
+                    if (pos.y + this.BUBBLE_R >= this.deadlineY) return true;
+                }
+        return false;
+    }
 
-        for (const b of this._getPUButtons()) {
-            if (pos.x >= b.x && pos.x <= b.x + b.s && pos.y >= b.y && pos.y <= b.y + b.s) {
-                this._activatePowerUp(b.key); return;
+    _checkWin() {
+        for (let r = 0; r < this.ROWS; r++)
+            for (let c = 0; c < this.COLS; c++)
+                if (this.grid[r][c] >= 0) return false;
+        return true;
+    }
+
+    // ══════════════════ SHOOTING ══════════════════
+
+    _shoot() {
+        if (!this.canShoot || this.projectile || this.gameWon || this.gameOver) return;
+        this.canShoot = false;
+        this.shootCooldown = 15;
+        this.shootRecoil = 1;
+
+        const speed = (this.LEVELS[this.currentLevel]?.speed || 10) * (this.isMobile ? 1.2 : 1);
+        const vx = Math.cos(this.shooterAngle) * speed;
+        const vy = Math.sin(this.shooterAngle) * speed;
+
+        this.projectile = {
+            x: this.shooterX, y: this.shooterY,
+            vx, vy,
+            color: this.currentBubble,
+            r: this.BUBBLE_R,
+            trail: [],
+        };
+        this.moves++;
+        this._playShoot();
+    }
+
+    _swapBubbles() {
+        if (!this.canShoot || this.projectile) return;
+        const tmp = this.currentBubble;
+        this.currentBubble = this.nextBubble;
+        this.nextBubble = tmp;
+        this.swapAnim = 1;
+        this._playSwap();
+    }
+
+    _updateProjectile() {
+        const p = this.projectile;
+        if (!p) return;
+
+        p.x += p.vx; p.y += p.vy;
+
+        if (this.frame % 2 === 0) {
+            p.trail.push({ x: p.x, y: p.y });
+            if (p.trail.length > 8) p.trail.shift();
+        }
+
+        if (p.x - p.r < 0) { p.x = p.r; p.vx = -p.vx; this._playBounce(); }
+        if (p.x + p.r > this.W) { p.x = this.W - p.r; p.vx = -p.vx; this._playBounce(); }
+
+        if (p.y - p.r <= this.ceilingY) { p.y = this.ceilingY + p.r; this._snapProjectile(p); return; }
+
+        for (let r = 0; r < this.ROWS; r++) {
+            const maxC = (r % 2 === 1) ? this.COLS - 1 : this.COLS;
+            for (let c = 0; c < maxC; c++) {
+                if (this.grid[r][c] < 0) continue;
+                const pos = this._getBubblePos(r, c);
+                const dx = p.x - pos.x, dy = p.y - pos.y;
+                if (Math.sqrt(dx * dx + dy * dy) < p.r * 2 * 0.9) {
+                    this._snapProjectile(p); return;
+                }
             }
         }
 
-        const dx = pos.x - this.shooterX, dy = pos.y - this.shooterY;
-        if (dx * dx + dy * dy < (this.BUBBLE_R + 14 * this.DPR) ** 2) { this._swapBubble(); return; }
-
-        this._aimAt(pos.x, pos.y);
-        this._shoot();
+        if (p.y > this.H + 50) { this.projectile = null; this.canShoot = true; }
     }
 
-    _onHandleMove(e) {
-        if (e.cancelable) e.preventDefault();
-        if (this.gameOver || this.gameWon || this.projectile) return;
-        const pos = this._getPos(e);
-        this.hoverX = pos.x;
-        this.hoverY = pos.y;
-        this._aimAt(pos.x, pos.y);
+    _snapProjectile(p) {
+        const { row, col } = this._pixelToGrid(p.x, p.y);
+        if (row < 0 || row >= this.ROWS || col < 0) {
+            this.projectile = null; this.canShoot = true; return;
+        }
+        const maxC = (row % 2 === 1) ? this.COLS - 1 : this.COLS;
+        const clampedCol = Math.min(col, maxC - 1);
+
+        if (this.grid[row][clampedCol] >= 0) {
+            const neighbors = this._getNeighbors(row, clampedCol);
+            let bestN = null, bestDist = Infinity;
+            for (const n of neighbors) {
+                if ((this.grid[n.row]?.[n.col] === -1 || this.grid[n.row]?.[n.col] === undefined)) {
+                    const nmaxC = (n.row % 2 === 1) ? this.COLS - 1 : this.COLS;
+                    if (n.col >= 0 && n.col < nmaxC && n.row >= 0 && n.row < this.ROWS) {
+                        const pos = this._getBubblePos(n.row, n.col);
+                        const dx = p.x - pos.x, dy = p.y - pos.y;
+                        const dist = dx * dx + dy * dy;
+                        if (dist < bestDist) { bestDist = dist; bestN = n; }
+                    }
+                }
+            }
+            if (bestN) this._placeBubble(bestN.row, bestN.col, p.color);
+            else { this.projectile = null; this.canShoot = true; return; }
+        } else {
+            this._placeBubble(row, clampedCol, p.color);
+        }
+        this.projectile = null;
     }
 
-    _onKey(e) {
-        if (this._destroyed) return;
-        if (e.key === '1') this._activatePowerUp('bomb');
-        if (e.key === '2') this._activatePowerUp('precision');
-        if (e.key === 'c' || e.key === 'C') this._swapBubble();
-        if (e.key === ' ') { e.preventDefault(); this._shoot(); }
-        if (e.key === 'f' || e.key === 'F') this._toggleFullscreen();
-        if (e.key === 'r' || e.key === 'R') this._startLevel(this.currentLevel);
-        if (e.key === 'm' || e.key === 'M') this.toggleSound();
-        if (e.key === 'n' && (this.gameWon || this.showLevelComplete)) this._goNextLevel();
+    _placeBubble(row, col, color) {
+        if (row < 0 || row >= this.ROWS) { this.canShoot = true; return; }
+        this.grid[row][col] = color;
+
+        const cluster = this._findCluster(row, col, color);
+        if (cluster.length >= 3) {
+            this.combo++;
+            if (this.combo > this.maxCombo) this.maxCombo = this.combo;
+
+            const points = cluster.length * 10 * this.combo;
+            this.score += points;
+            this.bubblesPopped += cluster.length;
+
+            for (const cell of cluster) {
+                const pos = this._getBubblePos(cell.row, cell.col);
+                this._spawnPopEffect(pos.x, pos.y, this.COLORS[color]);
+                this.grid[cell.row][cell.col] = -1;
+            }
+
+            this._playPop(1 + this.combo * 0.15);
+            if (this.combo >= 2) this._playCombo(this.combo);
+
+            const floating = this._findFloating();
+            if (floating.length > 0) {
+                const floatPoints = floating.length * 15 * this.combo;
+                this.score += floatPoints;
+                this.bubblesPopped += floating.length;
+                for (const f of floating) {
+                    const pos = this._getBubblePos(f.row, f.col);
+                    this._spawnFallingBubble(pos.x, pos.y, this.COLORS[f.color]);
+                    this.grid[f.row][f.col] = -1;
+                }
+            }
+
+            const popPos = this._getBubblePos(row, col);
+            this._addTextPopup(popPos.x, popPos.y, `+${points}`, this.COLORS[color].hex);
+            if (this.combo >= 2)
+                this._addTextPopup(popPos.x, popPos.y - 25, `${this.combo}x COMBO!`, '#FFD700');
+
+            this.shakeForce = Math.min(3 + cluster.length, 8);
+            this.shakeTimer = 10;
+            this._onScore(this.score);
+
+            if (this._checkWin()) {
+                this.gameWon = true;
+                this._stopTimer();
+                this._playWin();
+                this.showLevelComplete = true;
+                this.levelCompleteTimer = 0;
+                this.starRating = this._calcStars();
+                this.playerData.currentLevel = Math.min(this.currentLevel + 1, this.LEVELS.length - 1);
+                this.playerData.totalPopped = (this.playerData.totalPopped || 0) + this.bubblesPopped;
+                this._savePlayerData();
+            }
+        } else {
+            this.combo = 0;
+            this._playTone(200, 0.05, 'sine', 0.05);
+            if (this._checkGameOver()) {
+                this.gameOver = true;
+                this._stopTimer();
+                this._playGameOver();
+            }
+        }
+
+        this._updateColorsInPlay();
+        this.canShoot = true;
+
+        if (!this.gameWon && !this.gameOver) {
+            this.currentBubble = this.nextBubble;
+            const avail = this._getAvailableColors();
+            this.nextBubble = avail.length > 0 ? avail[Math.floor(Math.random() * avail.length)] : 0;
+        }
     }
 
-    _onResize() { this._setupCanvas(); }
+    _calcStars() {
+        if (this.moves <= 15) return 3;
+        if (this.moves <= 25) return 2;
+        return 1;
+    }
 
-    _toggleFullscreen() {
-        const el = document.documentElement;
-        const isFS = !!(document.fullscreenElement || document.webkitFullscreenElement);
-        if (!isFS) (el.requestFullscreen || el.webkitRequestFullscreen || function () {}).call(el);
-        else (document.exitFullscreen || document.webkitExitFullscreen || function () {}).call(document);
-        setTimeout(() => this._setupCanvas(), 250);
+    // ══════════════════ AIM LINE ══════════════════
+
+    _updateAimDots() {
+        this.aimDots = [];
+        if (this.projectile || this.gameWon || this.gameOver) return;
+        const step = this.BUBBLE_R * 1.5;
+        const maxDots = this.isMobile ? 12 : 20;
+        let x = this.shooterX, y = this.shooterY;
+        let dx = Math.cos(this.shooterAngle) * step;
+        let dy = Math.sin(this.shooterAngle) * step;
+
+        for (let i = 0; i < maxDots; i++) {
+            x += dx; y += dy;
+            if (x < this.BUBBLE_R) { x = this.BUBBLE_R; dx = -dx; }
+            if (x > this.W - this.BUBBLE_R) { x = this.W - this.BUBBLE_R; dx = -dx; }
+            if (y < this.ceilingY + this.BUBBLE_R) break;
+
+            let hitBubble = false;
+            for (let r = 0; r < this.ROWS && !hitBubble; r++) {
+                const maxC = (r % 2 === 1) ? this.COLS - 1 : this.COLS;
+                for (let c = 0; c < maxC && !hitBubble; c++) {
+                    if (this.grid[r][c] < 0) continue;
+                    const pos = this._getBubblePos(r, c);
+                    const ddx = x - pos.x, ddy = y - pos.y;
+                    if (ddx * ddx + ddy * ddy < (this.BUBBLE_R * 1.8) ** 2) hitBubble = true;
+                }
+            }
+            this.aimDots.push({ x, y, alpha: 1 - i / maxDots });
+            if (hitBubble) break;
+        }
+    }
+
+    // ══════════════════ FX ══════════════════
+
+    _spawnPopEffect(x, y, color) {
+        const count = this.isMobile ? 4 : 8;
+        for (let i = 0; i < count && this.particles.length < this.MAX_PARTICLES; i++) {
+            const angle = (Math.PI * 2 / count) * i + Math.random() * 0.5;
+            const speed = 2 + Math.random() * 3;
+            this.particles.push({
+                x, y,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed,
+                life: 1,
+                decay: 0.02 + Math.random() * 0.02,
+                color: color.hex,
+                r: 2 + Math.random() * 3,
+            });
+        }
+        this.popRings.push({ x, y, r: this.BUBBLE_R * 0.5, maxR: this.BUBBLE_R * 2.5, life: 1, color: color.hex });
+    }
+
+    _spawnFallingBubble(x, y, color) {
+        this.fallingBubbles.push({
+            x, y,
+            vx: (Math.random() - 0.5) * 3,
+            vy: -2 - Math.random() * 2,
+            color,
+            r: this.BUBBLE_R,
+            life: 1,
+            gravity: 0.15,
+            rotation: Math.random() * Math.PI * 2,
+            rotSpeed: (Math.random() - 0.5) * 0.2,
+        });
+    }
+
+    _addTextPopup(x, y, text, color) {
+        this.textPopups.push({ x, y, text, color, life: 1, vy: -1.5 });
+    }
+
+    _updateParticles() {
+        for (let i = this.particles.length - 1; i >= 0; i--) {
+            const p = this.particles[i];
+            p.x += p.vx; p.y += p.vy; p.vy += 0.05; p.vx *= 0.98; p.life -= p.decay;
+            if (p.life <= 0) this.particles.splice(i, 1);
+        }
+        for (let i = this.popRings.length - 1; i >= 0; i--) {
+            const ring = this.popRings[i];
+            ring.r += (ring.maxR - ring.r) * 0.15; ring.life -= 0.05;
+            if (ring.life <= 0) this.popRings.splice(i, 1);
+        }
+        for (let i = this.fallingBubbles.length - 1; i >= 0; i--) {
+            const fb = this.fallingBubbles[i];
+            fb.x += fb.vx; fb.vy += fb.gravity; fb.y += fb.vy;
+            fb.rotation += fb.rotSpeed; fb.life -= 0.015;
+            if (fb.life <= 0 || fb.y > this.H + 50) this.fallingBubbles.splice(i, 1);
+        }
+        for (let i = this.textPopups.length - 1; i >= 0; i--) {
+            const tp = this.textPopups[i];
+            tp.y += tp.vy; tp.life -= 0.02;
+            if (tp.life <= 0) this.textPopups.splice(i, 1);
+        }
     }
 
     // ══════════════════ RENDERING ══════════════════
 
-    _mainLoop(ts) {
-        if (this._destroyed) return;
-        const dt = Math.min((ts || 0) - this._lastFrameTime, 50);
-        if (dt < 14) { this.animationFrameId = requestAnimationFrame(t => this._mainLoop(t)); return; }
-        this._lastFrameTime = ts || 0;
+    _drawBackground(ctx) {
+        const w = this.cW, h = this.cH;
+        const grad = ctx.createLinearGradient(0, 0, 0, h);
+        grad.addColorStop(0, '#0a0a1a');
+        grad.addColorStop(0.5, '#0d1025');
+        grad.addColorStop(1, '#060612');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, w, h);
 
-        // ✅ Adaptive FPS tracking
-        if (this.isMobile) {
-            this.fpsHistory.push(dt);
-            if (this.fpsHistory.length > 30) this.fpsHistory.shift();
-            if (this.fpsHistory.length === 30) {
-                const avg = this.fpsHistory.reduce((a, b) => a + b, 0) / 30;
-                this.adaptiveMode = avg > 25;
-            }
-        }
-
-        this._update(dt);
-
-        // ✅ Skip draw on weak mobile
-        if (this.isMobile && this.adaptiveMode && this.frame % 2 === 1) {
-            this.animationFrameId = requestAnimationFrame(t => this._mainLoop(t));
-            return;
-        }
-
-        const ctx = this.ctx;
-
-        ctx.save();
-        if (this.shakeX || this.shakeY) ctx.translate(Math.round(this.shakeX), Math.round(this.shakeY));
-
-        this._drawBackground();
-        this._drawTopBar();
-        this._drawProgressBar();
-        this._drawGrid();
-        this._drawAimLine();
-        this._drawShooter();
-        this._drawProjectile();
-        this._drawFallingBubbles();
-        this._drawPopRings();
-        this._drawParticles();
-        this._drawTextPopups();
-        this._drawFloatingTexts();
-        this._drawPowerUpButtons();
-        this._drawBottomHUD();
-        this._drawFullscreenBtn();
-
-        ctx.restore();
-
-        if (this.showDailyReward && !this.dailyRewardClaimed) this._drawDailyReward();
-        if (this.showLevelComplete || this.gameWon) this._drawLevelComplete();
-        if (this.gameOver) this._drawGameOver();
-
-        this.animationFrameId = requestAnimationFrame(t => this._mainLoop(t));
-    }
-
-    // ══════════════════ DRAW: BACKGROUND ══════════════════
-
-    _drawBackground() {
-        const ctx = this.ctx, cw = this.canvas.width, ch = this.canvas.height;
-        if (!this.bgCache || this.bgCache.w !== cw || this.bgCache.h !== ch) {
-            const off = document.createElement('canvas');
-            off.width = cw; off.height = ch;
-            const oc = off.getContext('2d');
-            const g = oc.createLinearGradient(0, 0, 0, ch);
-            g.addColorStop(0, '#06061a');
-            g.addColorStop(0.5, '#0a0a24');
-            g.addColorStop(1, '#06061a');
-            oc.fillStyle = g;
-            oc.fillRect(0, 0, cw, ch);
-            const D = this.DPR, gs = 70 * D;
-            oc.strokeStyle = 'rgba(100,120,255,0.03)';
-            oc.lineWidth = D;
-            for (let x = 0; x < cw; x += gs) { oc.beginPath(); oc.moveTo(x, 0); oc.lineTo(x, ch); oc.stroke(); }
-            for (let y = 0; y < ch; y += gs) { oc.beginPath(); oc.moveTo(0, y); oc.lineTo(cw, y); oc.stroke(); }
-            const v = oc.createRadialGradient(cw / 2, ch / 2, ch * 0.2, cw / 2, ch / 2, ch * 0.85);
-            v.addColorStop(0, 'rgba(0,0,0,0)');
-            v.addColorStop(1, 'rgba(0,0,0,0.5)');
-            oc.fillStyle = v;
-            oc.fillRect(0, 0, cw, ch);
-            this.bgCache = { img: off, w: cw, h: ch };
-        }
-        ctx.drawImage(this.bgCache.img, 0, 0);
-    }
-
-    // ══════════════════ DRAW: TOP BAR ══════════════════
-
-    _drawTopBar() {
-        const ctx = this.ctx, cw = this.canvas.width, D = this.DPR;
-        const pd = 16, midY = 38;
-
-        // Level badge
-        const bW = 100 * D, bH = 28 * D, bX = pd * D, bY = midY * D - bH / 2;
-        ctx.fillStyle = 'rgba(0,200,150,0.1)';
-        ctx.strokeStyle = 'rgba(0,255,200,0.35)';
-        ctx.lineWidth = 1.5 * D;
-        this._roundRect(ctx, bX, bY, bW, bH, 7 * D, true, true);
-
-        this._drawText(ctx, `LEVEL ${this.currentLevel + 1}`, (bX + bW / 2) / D, midY, {
-            size: 11, weight: 'bold', color: '#00ffcc',
-            glow: !this.isMobile, glowColor: '#00ffcc', glowBlur: 6
-        });
-
-        // Score center
-        this._drawText(ctx, `${this.score} pts`, cw / 2 / D, midY, {
-            size: 15, weight: 'bold', color: '#ffffff'
-        });
-
-        // Right: time + moves
-        const mins = Math.floor(this.timeElapsed / 60).toString().padStart(2, '0');
-        const secs = (this.timeElapsed % 60).toString().padStart(2, '0');
-        this._drawText(ctx, `Moves: ${this.moves}  ${mins}:${secs}`, (cw - pd * D) / D, midY - 6, {
-            size: 10, weight: 'normal', color: '#aabbdd', align: 'right'
-        });
-
-        // Coins & gems
-        this._drawText(ctx, `C:${this.playerData.coins || 0}  D:${this.playerData.diamonds || 0}`, (cw - pd * D) / D, midY + 7, {
-            size: 10, weight: 'bold', color: '#FFD700', align: 'right'
-        });
-
-        // Bottom line
-        const lineY = 66 * D;
-        ctx.strokeStyle = 'rgba(0,255,200,0.25)';
-        ctx.lineWidth = D;
-        ctx.beginPath(); ctx.moveTo(pd * D, lineY); ctx.lineTo(cw - pd * D, lineY); ctx.stroke();
-    }
-
-    // ══════════════════ DRAW: PROGRESS BAR ══════════════════
-
-    _drawProgressBar() {
-        const ctx = this.ctx, D = this.DPR, cw = this.canvas.width;
-        const bx = 10 * D, by = this.HUD_H - 10 * D, bw = cw - 20 * D, bh = 4 * D;
-        const total = this._levelGoal();
-        const progress = Math.min(1, this.bubblesPopped / total);
-
-        ctx.fillStyle = 'rgba(255,255,255,0.06)';
-        this._roundRect(ctx, bx, by, bw, bh, 2 * D, true, false);
-
-        if (progress > 0) {
-            const gr = ctx.createLinearGradient(bx, 0, bx + bw * progress, 0);
-            gr.addColorStop(0, '#9900FF');
-            gr.addColorStop(1, '#00EEFF');
-            ctx.fillStyle = gr;
-            this._roundRect(ctx, bx, by, bw * progress, bh, 2 * D, true, false);
-        }
-    }
-
-    // ══════════════════ DRAW: GRID ══════════════════
-
-    _drawGrid() {
-        const ctx = this.ctx, R = this.BUBBLE_R;
-        for (let r = 0; r < this.ROWS; r++) {
-            for (let c = 0; c < this.COLS; c++) {
-                const b = this.grid[r]?.[c];
-                if (!b) continue;
-                const pos = this._bubblePos(r, c);
-                const scale = b.isNew ? b.scale : (this.isMobile ? 1 : 1 + Math.sin(b.breathe) * 0.005);
-                const px = pos.x, py = pos.y;
-
-                // Glow (desktop only)
-                if (!this.isMobile) {
-                    const glowImg = this._glowCache.get(b.ci);
-                    if (glowImg) {
-                        ctx.globalAlpha = 0.22;
-                        const gs = (R + 14) * 2 * scale;
-                        ctx.drawImage(glowImg, px - gs / 2, py - gs / 2, gs, gs);
-                        ctx.globalAlpha = 1;
-                    }
-                }
-
-                if (b.flash > 0) ctx.globalAlpha = 0.65 + (b.flash / 6) * 0.35;
-                const img = this._bubbleCache.get(b.ci);
-                if (img) {
-                    const bs = (R + 3) * 2 * scale;
-                    ctx.drawImage(img, px - bs / 2, py - bs / 2, bs, bs);
-                }
-                ctx.globalAlpha = 1;
-            }
-        }
-    }
-
-    // ══════════════════ DRAW: AIM LINE ══════════════════
-
-    _drawAimLine() {
-        if (!this.aimDots.length || this.projectile) return;
-        const ctx = this.ctx, D = this.DPR;
-        const col = this.COLORS[this.currentBubble];
-        for (let i = 0; i < this.aimDots.length; i++) {
-            const d = this.aimDots[i];
-            ctx.globalAlpha = (1 - d.t) * 0.55;
-            ctx.fillStyle = col.hex;
-            ctx.beginPath();
-            ctx.arc(d.x * D, d.y * D, Math.max(D, (2.5 - d.t * 1.2) * D), 0, Math.PI * 2);
-            ctx.fill();
-        }
-        ctx.globalAlpha = 1;
-    }
-
-    // ══════════════════ DRAW: SHOOTER ══════════════════
-
-    _drawShooter() {
-        const ctx = this.ctx, D = this.DPR, R = this.BUBBLE_R;
-        const x = this.shooterX, y = this.shooterY;
-
-        // Barrel
-        ctx.save();
-        ctx.translate(x, y);
-        ctx.rotate(this.shooterAngle);
-        const bx = (8 - this.shootRecoil) * D, by = -4.5 * D, bw = 26 * D, bh = 9 * D, br = 3 * D;
-        const bGrad = ctx.createLinearGradient(0, -4.5 * D, 0, 4.5 * D);
-        bGrad.addColorStop(0, '#CC77FF');
-        bGrad.addColorStop(1, '#770099');
-        ctx.fillStyle = bGrad;
-        ctx.beginPath();
-        ctx.moveTo(bx + br, by);
-        ctx.arcTo(bx + bw, by, bx + bw, by + bh, br);
-        ctx.arcTo(bx + bw, by + bh, bx, by + bh, br);
-        ctx.arcTo(bx, by + bh, bx, by, br);
-        ctx.arcTo(bx, by, bx + bw, by, br);
-        ctx.closePath();
-        ctx.fill();
-        ctx.restore();
-
-        // Glow pulse (desktop)
         if (!this.isMobile) {
-            const pulse = 0.1 + Math.abs(Math.sin(this.globalTime / 500)) * 0.1;
-            ctx.globalAlpha = pulse;
-            ctx.fillStyle = this.COLORS[this.currentBubble].hex;
-            ctx.beginPath();
-            ctx.arc(x, y, R * 1.2, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.globalAlpha = 1;
-        }
-
-        // Current bubble
-        const img = this._bubbleCache.get(this.currentBubble);
-        if (img) { const bs = (R + 3) * 2; ctx.drawImage(img, x - bs / 2, y - bs / 2, bs, bs); }
-
-        // Swap ring
-        if (this.swapAnim > 0) {
-            ctx.globalAlpha = this.swapAnim;
-            ctx.strokeStyle = this.COLORS[this.currentBubble].hex;
-            ctx.lineWidth = 2 * D;
-            ctx.beginPath();
-            ctx.arc(x, y, R + (4 + (1 - this.swapAnim) * 8) * D, 0, Math.PI * 2);
-            ctx.stroke();
-            ctx.globalAlpha = 1;
-        }
-
-        // Tap hint
-        const ha = 0.18 + Math.sin(this.globalTime / 500) * 0.15;
-        this._drawText(ctx, 'TAP = COLOR', x / D, (y + R + 13 * D) / D, {
-            size: 8, weight: 'normal', color: '#aabbdd', opacity: ha, baseline: 'top'
-        });
-
-        // Next bubble
-        this._drawText(ctx, 'NEXT', (x + 46 * D) / D, (y - 4 * D) / D, {
-            size: 8, weight: 'normal', color: 'rgba(170,187,221,0.4)'
-        });
-        const nImg = this._bubbleCache.get(this.nextBubble);
-        if (nImg) {
-            ctx.globalAlpha = 0.7;
-            const ns = (R + 3) * 2 * 0.6;
-            ctx.drawImage(nImg, x + 46 * D - ns / 2, y + 12 * D - ns / 2, ns, ns);
-            ctx.globalAlpha = 1;
+            ctx.strokeStyle = 'rgba(50,50,100,0.08)';
+            ctx.lineWidth = this.DPR;
+            const spacing = 40 * this.DPR;
+            for (let x = 0; x < w; x += spacing) {
+                ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+            }
+            for (let y = 0; y < h; y += spacing) {
+                ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+            }
         }
     }
 
-    // ══════════════════ DRAW: PROJECTILE ══════════════════
+    _getCachedBubble(colorIdx, r) {
+        const key = `${colorIdx}_${r}`;
+        if (this._bubbleCache.has(key)) return this._bubbleCache.get(key);
 
-    _drawProjectile() {
+        const size = (r * 2 + 4) * this.DPR;
+        const off = document.createElement('canvas');
+        off.width = size; off.height = size;
+        const oc = off.getContext('2d');
+        const cx = size / 2, cy = size / 2, rr = r * this.DPR;
+        const color = this.COLORS[colorIdx] || this.COLORS[0];
+
+        const glow = oc.createRadialGradient(cx, cy, rr * 0.3, cx, cy, rr * 1.3);
+        glow.addColorStop(0, color.glow);
+        glow.addColorStop(1, 'transparent');
+        oc.fillStyle = glow;
+        oc.fillRect(0, 0, size, size);
+
+        const grad = oc.createRadialGradient(cx - rr * 0.25, cy - rr * 0.25, rr * 0.1, cx, cy, rr);
+        grad.addColorStop(0, color.light);
+        grad.addColorStop(0.6, color.hex);
+        grad.addColorStop(1, color.dark);
+        oc.beginPath(); oc.arc(cx, cy, rr, 0, Math.PI * 2); oc.fillStyle = grad; oc.fill();
+
+        oc.beginPath();
+        oc.ellipse(cx - rr * 0.2, cy - rr * 0.25, rr * 0.35, rr * 0.2, -0.3, 0, Math.PI * 2);
+        oc.fillStyle = 'rgba(255,255,255,0.35)'; oc.fill();
+
+        oc.beginPath();
+        oc.arc(cx - rr * 0.15, cy - rr * 0.15, rr * 0.12, 0, Math.PI * 2);
+        oc.fillStyle = 'rgba(255,255,255,0.5)'; oc.fill();
+
+        oc.beginPath(); oc.arc(cx, cy, rr - this.DPR * 0.5, 0, Math.PI * 2);
+        oc.strokeStyle = 'rgba(255,255,255,0.15)'; oc.lineWidth = this.DPR; oc.stroke();
+
+        this._bubbleCache.set(key, off);
+        return off;
+    }
+
+    _drawBubble(ctx, x, y, colorIdx, r, alpha = 1) {
+        if (colorIdx < 0) return;
+        const cached = this._getCachedBubble(colorIdx, r);
+        const dpr = this.DPR;
+        const w = cached.width / dpr, h = cached.height / dpr;
+        if (alpha < 1) ctx.globalAlpha = alpha;
+        ctx.drawImage(cached, (x - w / 2) * dpr, (y - h / 2) * dpr, cached.width, cached.height);
+        if (alpha < 1) ctx.globalAlpha = 1;
+    }
+
+    _drawGrid(ctx) {
+        const time = this.globalTime;
+        for (let row = 0; row < this.ROWS; row++) {
+            const maxC = (row % 2 === 1) ? this.COLS - 1 : this.COLS;
+            for (let col = 0; col < maxC; col++) {
+                const ci = this.grid[row][col];
+                if (ci < 0) continue;
+                const pos = this._getBubblePos(row, col);
+                const wobble = Math.sin(time * 2 + row * 0.3 + col * 0.5) * 0.5;
+                this._drawBubble(ctx, pos.x, pos.y + wobble, ci, this.BUBBLE_R);
+            }
+        }
+    }
+
+    // ✅ Shooter with color change button
+    _drawShooter(ctx) {
+        const dpr = this.DPR;
+        const sx = this.shooterX * dpr;
+        const sy = this.shooterY * dpr;
+        const r = this.BUBBLE_R * dpr;
+        const recoilOffset = this.shootRecoil * 5 * dpr;
+
+        // Base platform
+        ctx.beginPath();
+        ctx.arc(sx, sy, r * 1.8, Math.PI, 0);
+        const baseGrad = ctx.createLinearGradient(sx - r * 2, sy, sx + r * 2, sy);
+        baseGrad.addColorStop(0, '#1a1a3a');
+        baseGrad.addColorStop(0.5, '#2a2a5a');
+        baseGrad.addColorStop(1, '#1a1a3a');
+        ctx.fillStyle = baseGrad;
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(100,100,200,0.3)';
+        ctx.lineWidth = dpr;
+        ctx.stroke();
+
+        // Cannon barrel
+        const angle = this.shooterAngle;
+        const cannonLen = r * 2.5 - recoilOffset;
+        const cx = sx + Math.cos(angle) * cannonLen * 0.3;
+        const cy = sy + Math.sin(angle) * cannonLen * 0.3;
+        const ex = sx + Math.cos(angle) * cannonLen;
+        const ey = sy + Math.sin(angle) * cannonLen;
+
+        ctx.beginPath();
+        ctx.moveTo(cx + Math.cos(angle + Math.PI / 2) * r * 0.4, cy + Math.sin(angle + Math.PI / 2) * r * 0.4);
+        ctx.lineTo(ex + Math.cos(angle + Math.PI / 2) * r * 0.25, ey + Math.sin(angle + Math.PI / 2) * r * 0.25);
+        ctx.lineTo(ex + Math.cos(angle - Math.PI / 2) * r * 0.25, ey + Math.sin(angle - Math.PI / 2) * r * 0.25);
+        ctx.lineTo(cx + Math.cos(angle - Math.PI / 2) * r * 0.4, cy + Math.sin(angle - Math.PI / 2) * r * 0.4);
+        ctx.closePath();
+        ctx.fillStyle = '#3a3a6a';
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(150,150,255,0.3)';
+        ctx.lineWidth = dpr;
+        ctx.stroke();
+
+        // ✅ Current bubble — with color change animation
+        const color = this.COLORS[this.currentBubble];
+        if (color) {
+            // Flash ring when color changed
+            if (this.colorChangeFlash > 0) {
+                const flashAlpha = this.colorChangeFlash / 20;
+                const flashR = r * (1.0 + (1 - flashAlpha) * 0.8);
+                ctx.beginPath();
+                ctx.arc(sx, sy, flashR, 0, Math.PI * 2);
+                ctx.strokeStyle = color.hex;
+                ctx.globalAlpha = flashAlpha * 0.8;
+                ctx.lineWidth = 4 * dpr;
+                ctx.stroke();
+                ctx.globalAlpha = 1;
+                this.colorChangeFlash--;
+            }
+
+            // Spin animation when color changes
+            const spinScale = this.colorChangeAnim > 0.1
+                ? 0.8 + 0.2 * (1 - this.colorChangeAnim)
+                : 1;
+            ctx.save();
+            ctx.translate(sx, sy);
+            ctx.scale(spinScale, spinScale);
+            ctx.translate(-sx, -sy);
+
+            ctx.beginPath();
+            ctx.arc(sx, sy, r * 0.9, 0, Math.PI * 2);
+            const bGrad = ctx.createRadialGradient(sx - r * 0.2, sy - r * 0.2, r * 0.1, sx, sy, r * 0.9);
+            bGrad.addColorStop(0, color.light);
+            bGrad.addColorStop(0.6, color.hex);
+            bGrad.addColorStop(1, color.dark);
+            ctx.fillStyle = bGrad;
+            ctx.fill();
+
+            // Highlight
+            ctx.beginPath();
+            ctx.arc(sx - r * 0.2, sy - r * 0.3, r * 0.25, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(255,255,255,0.4)';
+            ctx.fill();
+            ctx.restore();
+        }
+
+        // ✅ Color Change Button — RIGHT side of shooter
+        this._drawColorChangeButton(ctx, sx, sy, r);
+
+        // Next bubble — LEFT side
+        const nextColor = this.COLORS[this.nextBubble];
+        if (nextColor) {
+            const nx = sx - r * 2.8;
+            const ny = sy;
+            const nr = r * 0.55;
+
+            ctx.beginPath();
+            ctx.arc(nx, ny, nr, 0, Math.PI * 2);
+            const nGrad = ctx.createRadialGradient(nx - nr * 0.2, ny - nr * 0.2, nr * 0.1, nx, ny, nr);
+            nGrad.addColorStop(0, nextColor.light);
+            nGrad.addColorStop(1, nextColor.dark);
+            ctx.fillStyle = nGrad;
+            ctx.fill();
+
+            ctx.fillStyle = 'rgba(255,255,255,0.5)';
+            ctx.font = `${Math.round(9 * dpr)}px 'Segoe UI', Arial, sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.fillText('NEXT', nx, ny - nr - 4 * dpr);
+
+            // Tap to swap hint
+            ctx.fillStyle = 'rgba(255,255,255,0.25)';
+            ctx.font = `${Math.round(7 * dpr)}px 'Segoe UI', Arial, sans-serif`;
+            ctx.fillText('SWAP', nx, ny + nr + 10 * dpr);
+        }
+    }
+
+    // ✅ Color Change Button drawing
+    _drawColorChangeButton(ctx, sx, sy, r) {
+        const dpr = this.DPR;
+        const btnX = sx + r * 2.8;
+        const btnY = sy;
+        const btnR = r * 0.65;
+
+        const hasCharges = this.colorChangesLeft > 0;
+        const onCooldown = this.colorChangeCooldown > 0;
+
+        // Store hit area in logical coords
+        this._colorChangeBtnX = btnX / dpr;
+        this._colorChangeBtnY = btnY / dpr;
+        this._colorChangeBtnR = btnR / dpr;
+
+        // Outer glow when available
+        if (hasCharges && !onCooldown) {
+            const pulse = 0.5 + 0.5 * Math.sin(this.globalTime * 4);
+            ctx.beginPath();
+            ctx.arc(btnX, btnY, btnR * 1.4, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(212,112,255,${0.08 + pulse * 0.1})`;
+            ctx.fill();
+        }
+
+        // Button background
+        const btnAlpha = hasCharges && !onCooldown ? 1 : 0.4;
+        ctx.globalAlpha = btnAlpha;
+
+        ctx.beginPath();
+        ctx.arc(btnX, btnY, btnR, 0, Math.PI * 2);
+        const btnGrad = ctx.createRadialGradient(btnX - btnR * 0.2, btnY - btnR * 0.2, 0, btnX, btnY, btnR);
+
+        if (hasCharges && !onCooldown) {
+            btnGrad.addColorStop(0, '#cc44ff');
+            btnGrad.addColorStop(1, '#7700aa');
+        } else {
+            btnGrad.addColorStop(0, '#444');
+            btnGrad.addColorStop(1, '#222');
+        }
+        ctx.fillStyle = btnGrad;
+        ctx.fill();
+
+        // Border
+        ctx.strokeStyle = hasCharges && !onCooldown ? 'rgba(212,112,255,0.8)' : 'rgba(100,100,100,0.4)';
+        ctx.lineWidth = 1.5 * dpr;
+        ctx.stroke();
+
+        ctx.globalAlpha = 1;
+
+        // Cooldown progress arc
+        if (onCooldown && hasCharges) {
+            const progress = this.colorChangeCooldown / 30;
+            ctx.beginPath();
+            ctx.arc(btnX, btnY, btnR * 0.85, -Math.PI / 2, -Math.PI / 2 + (1 - progress) * Math.PI * 2);
+            ctx.strokeStyle = 'rgba(212,112,255,0.5)';
+            ctx.lineWidth = 3 * dpr;
+            ctx.stroke();
+        }
+
+        // 🎨 Emoji icon
+        ctx.font = `${Math.round(btnR * 0.8)}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.globalAlpha = btnAlpha;
+        ctx.fillText('🎨', btnX, btnY + btnR * 0.05);
+        ctx.globalAlpha = 1;
+        ctx.textBaseline = 'alphabetic';
+
+        // Charges badge
+        ctx.fillStyle = hasCharges ? '#FFD700' : '#888';
+        ctx.font = `bold ${Math.round(9 * dpr)}px 'Segoe UI', Arial, sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.fillText(`${this.colorChangesLeft}`, btnX, btnY - btnR - 4 * dpr);
+
+        // Label
+        ctx.fillStyle = hasCharges ? 'rgba(212,112,255,0.7)' : 'rgba(100,100,100,0.5)';
+        ctx.font = `${Math.round(7 * dpr)}px 'Segoe UI', Arial, sans-serif`;
+        ctx.fillText('CHANGE', btnX, btnY + btnR + 10 * dpr);
+    }
+
+    _drawAimLine(ctx) {
+        const dpr = this.DPR;
+        if (this.aimDots.length === 0) return;
+        for (let i = 0; i < this.aimDots.length; i++) {
+            const dot = this.aimDots[i];
+            const pulse = 0.5 + 0.5 * Math.sin(this.globalTime * 4 + i * 0.5);
+            const alpha = dot.alpha * 0.6 * (0.7 + 0.3 * pulse);
+            const rr = (2 + i * 0.15) * dpr;
+            ctx.beginPath();
+            ctx.arc(dot.x * dpr, dot.y * dpr, rr, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(255,255,255,${alpha})`;
+            ctx.fill();
+        }
+    }
+
+    _drawProjectile(ctx) {
         const p = this.projectile;
         if (!p) return;
-        const ctx = this.ctx, R = this.BUBBLE_R;
+        const dpr = this.DPR;
+
+        // Trail
         for (let i = 0; i < p.trail.length; i++) {
-            const t = p.trail[i], prog = i / p.trail.length;
-            ctx.globalAlpha = prog * 0.22;
-            ctx.fillStyle = this.COLORS[p.ci].hex;
+            const t = p.trail[i];
+            const alpha = (i / p.trail.length) * 0.25;
+            const color = this.COLORS[p.color];
+            ctx.globalAlpha = alpha;
             ctx.beginPath();
-            ctx.arc(t.x, t.y, R * prog * 0.4, 0, Math.PI * 2);
+            ctx.arc(t.x * dpr, t.y * dpr, p.r * 0.5 * dpr * (i / p.trail.length), 0, Math.PI * 2);
+            ctx.fillStyle = color ? color.hex : '#fff';
             ctx.fill();
-        }
-        ctx.globalAlpha = 1;
-        const img = this._bubbleCache.get(p.ci);
-        if (img) { const bs = (R + 3) * 2; ctx.drawImage(img, p.x - bs / 2, p.y - bs / 2, bs, bs); }
-    }
-
-    // ══════════════════ DRAW: FX ══════════════════
-
-    _drawFallingBubbles() {
-        const ctx = this.ctx, R = this.BUBBLE_R;
-        for (let i = 0; i < this.fallingBubbles.length; i++) {
-            const b = this.fallingBubbles[i];
-            ctx.globalAlpha = Math.max(0, b.life);
-            const img = this._bubbleCache.get(b.ci);
-            if (img) { const bs = (R + 3) * 2 * 0.85; ctx.drawImage(img, b.x - bs / 2, b.y - bs / 2, bs, bs); }
-        }
-        ctx.globalAlpha = 1;
-    }
-
-    _drawPopRings() {
-        const ctx = this.ctx, D = this.DPR;
-        for (let i = 0; i < this.popRings.length; i++) {
-            const r = this.popRings[i];
-            ctx.globalAlpha = r.opacity;
-            ctx.strokeStyle = r.color;
-            ctx.lineWidth = 2 * D * r.opacity;
-            ctx.beginPath();
-            ctx.arc(r.x, r.y, r.radius, 0, Math.PI * 2);
-            ctx.stroke();
-        }
-        ctx.globalAlpha = 1;
-    }
-
-    _drawParticles() {
-        if (!this.particles.length) return;
-        const ctx = this.ctx;
-        for (let i = 0; i < this.particles.length; i++) {
-            const p = this.particles[i];
-            ctx.globalAlpha = Math.max(0, p.life);
-            ctx.fillStyle = p.color;
-            ctx.beginPath();
-            ctx.arc(p.x, p.y, Math.max(0.5, p.size * p.life), 0, Math.PI * 2);
-            ctx.fill();
-        }
-        ctx.globalAlpha = 1;
-    }
-
-    _drawTextPopups() {
-        const ctx = this.ctx;
-        for (let i = 0; i < this.textPopups.length; i++) {
-            const t = this.textPopups[i];
-            this._drawText(ctx, t.text, t.x, t.y, {
-                size: 12, weight: 'bold', color: t.color, opacity: Math.max(0, t.life),
-                stroke: true, strokeColor: 'rgba(0,0,0,0.55)', strokeWidth: 2.5
-            });
-        }
-    }
-
-    _drawFloatingTexts() {
-        const ctx = this.ctx;
-        for (let i = 0; i < this.floatingTexts.length; i++) {
-            const t = this.floatingTexts[i];
-            const sz = (t.size || 14) * Math.min(1, t.scale);
-            this._drawText(ctx, t.text, t.x, t.y, {
-                size: sz, weight: 'bold', color: t.color, opacity: Math.max(0, t.life),
-                stroke: true, strokeColor: 'rgba(0,0,0,0.5)', strokeWidth: 2.5
-            });
-        }
-    }
-
-    // ══════════════════ DRAW: BOTTOM HUD ══════════════════
-
-    _drawBottomHUD() {
-        const ctx = this.ctx, cw = this.canvas.width, ch = this.canvas.height, D = this.DPR;
-        const pd = 16 * D, lineY = ch - this.BOTTOM_H + 6 * D;
-        ctx.strokeStyle = 'rgba(0,255,200,0.2)';
-        ctx.lineWidth = D;
-        ctx.beginPath(); ctx.moveTo(pd, lineY); ctx.lineTo(cw - pd, lineY); ctx.stroke();
-
-        if (this.combo > 1) {
-            this._drawText(ctx, `x${this.combo} COMBO`, cw / 2 / D, (lineY - 10 * D) / D, {
-                size: 13, weight: 'bold', color: '#FFD700',
-                glow: !this.isMobile, glowColor: '#FFD700', glowBlur: 8
-            });
-        }
-
-        // Sound icon
-        this._drawText(ctx, this.soundEnabled ? '🔊' : '🔇', 28, (lineY + 16 * D) / D, {
-            size: 12
-        });
-    }
-
-    // ══════════════════ DRAW: POWER-UP BUTTONS ══════════════════
-
-    _drawPowerUpButtons() {
-        const ctx = this.ctx, D = this.DPR;
-        const btns = this._getPUButtons();
-        const keys = Object.keys(this.powerUps);
-
-        keys.forEach((key, idx) => {
-            const pup = this.powerUps[key];
-            const b = btns[idx];
-            const active = this.activePowerUp === key;
-            const has = pup.count > 0;
-
-            ctx.fillStyle = active ? pup.color + '33' : 'rgba(0,255,200,0.05)';
-            ctx.strokeStyle = active ? pup.color : (has ? 'rgba(0,255,200,0.22)' : 'rgba(80,80,80,0.1)');
-            ctx.lineWidth = (active ? 1.8 : 0.7) * D;
-            this._roundRect(ctx, b.x, b.y, b.s, b.s, 10 * D, true, true);
-
-            const bCx = (b.x + b.s / 2) / D;
-            const bCy = (b.y + b.s / 2 - 5 * D) / D;
-
-            this._drawText(ctx, pup.name[0], bCx, bCy, {
-                size: this.isMobile ? 17 : 14, weight: 'bold', color: pup.color, opacity: has ? 1 : 0.22
-            });
-
-            this._drawText(ctx, pup.name, bCx, (b.y + b.s - 8 * D) / D, {
-                size: this.isMobile ? 7 : 6, weight: 'normal', color: 'rgba(170,187,221,0.55)', opacity: has ? 1 : 0.22
-            });
-
-            if (has) {
-                ctx.globalAlpha = 1;
-                ctx.fillStyle = 'rgba(0,0,0,0.7)';
-                ctx.beginPath();
-                ctx.arc(b.x + b.s - 6 * D, b.y + 6 * D, 7 * D, 0, Math.PI * 2);
-                ctx.fill();
-                this._drawText(ctx, `${pup.count}`, (b.x + b.s - 6 * D) / D, (b.y + 6 * D) / D, {
-                    size: 7, weight: 'bold', color: '#00ffcc'
-                });
-            }
             ctx.globalAlpha = 1;
-        });
+        }
 
-        if (!this.isMobile) {
-            this._drawText(ctx, '1=Bomb  2=Aim+  C=Color  M=Mute  F=Full', this.canvas.width / 2 / D, (btns[0].y - 6 * D) / D, {
-                size: 6, weight: 'normal', color: 'rgba(170,187,221,0.14)'
-            });
+        this._drawBubble(ctx, p.x, p.y, p.color, p.r);
+    }
+
+    _drawParticles(ctx) {
+        const dpr = this.DPR;
+
+        for (const ring of this.popRings) {
+            ctx.beginPath();
+            ctx.arc(ring.x * dpr, ring.y * dpr, ring.r * dpr, 0, Math.PI * 2);
+            ctx.strokeStyle = ring.color;
+            ctx.globalAlpha = ring.life * 0.5;
+            ctx.lineWidth = 2 * dpr * ring.life;
+            ctx.stroke();
+            ctx.globalAlpha = 1;
+        }
+
+        for (const p of this.particles) {
+            ctx.beginPath();
+            ctx.arc(p.x * dpr, p.y * dpr, p.r * dpr * p.life, 0, Math.PI * 2);
+            ctx.fillStyle = p.color;
+            ctx.globalAlpha = p.life;
+            ctx.fill();
+            ctx.globalAlpha = 1;
+        }
+
+        for (const fb of this.fallingBubbles) {
+            ctx.globalAlpha = fb.life;
+            ctx.beginPath();
+            ctx.arc(fb.x * dpr, fb.y * dpr, fb.r * dpr * fb.life, 0, Math.PI * 2);
+            const fGrad = ctx.createRadialGradient(fb.x * dpr, fb.y * dpr, 0, fb.x * dpr, fb.y * dpr, fb.r * dpr * fb.life);
+            fGrad.addColorStop(0, fb.color.light);
+            fGrad.addColorStop(1, fb.color.dark);
+            ctx.fillStyle = fGrad;
+            ctx.fill();
+            ctx.globalAlpha = 1;
+        }
+
+        for (const tp of this.textPopups) {
+            ctx.globalAlpha = tp.life;
+            ctx.fillStyle = tp.color;
+            ctx.font = `bold ${Math.round(16 * dpr)}px 'Segoe UI', Arial, sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.shadowColor = tp.color;
+            ctx.shadowBlur = 8 * dpr;
+            ctx.fillText(tp.text, tp.x * dpr, tp.y * dpr);
+            ctx.shadowBlur = 0;
+            ctx.globalAlpha = 1;
         }
     }
 
-    // ══════════════════ DRAW: FULLSCREEN BTN ══════════════════
+    _drawHUD(ctx) {
+        const dpr = this.DPR;
+        const w = this.cW;
+        const hudH = this.HUD_H * dpr;
 
-    _drawFullscreenBtn() {
-        const ctx = this.ctx, D = this.DPR;
-        const r = this._getFSRect();
+        const hudGrad = ctx.createLinearGradient(0, 0, 0, hudH);
+        hudGrad.addColorStop(0, 'rgba(10,10,30,0.97)');
+        hudGrad.addColorStop(1, 'rgba(10,10,30,0.8)');
+        ctx.fillStyle = hudGrad;
+        ctx.fillRect(0, 0, w, hudH);
+
+        ctx.strokeStyle = 'rgba(100,100,200,0.3)';
+        ctx.lineWidth = dpr;
+        ctx.beginPath(); ctx.moveTo(0, hudH); ctx.lineTo(w, hudH); ctx.stroke();
+
+        // Level
+        ctx.fillStyle = '#FFD700';
+        ctx.font = `bold ${Math.round(13 * dpr)}px 'Segoe UI', Arial, sans-serif`;
+        ctx.textAlign = 'left';
+        ctx.fillText(`LVL ${this.currentLevel + 1}`, 10 * dpr, hudH * 0.62);
+
+        // Score
+        ctx.fillStyle = '#fff';
+        ctx.font = `bold ${Math.round(16 * dpr)}px 'Segoe UI', Arial, sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.fillText(`${this.score}`, w / 2, hudH * 0.62);
+
+        ctx.fillStyle = 'rgba(255,255,255,0.4)';
+        ctx.font = `${Math.round(9 * dpr)}px 'Segoe UI', Arial, sans-serif`;
+        ctx.fillText('SCORE', w / 2, hudH * 0.25);
+
+        // Moves & time
+        ctx.fillStyle = '#00EEFF';
+        ctx.font = `bold ${Math.round(12 * dpr)}px 'Segoe UI', Arial, sans-serif`;
+        ctx.textAlign = 'right';
+        ctx.fillText(`Moves: ${this.moves}`, w - 10 * dpr, hudH * 0.45);
+
+        const mins = Math.floor(this.timeElapsed / 60);
+        const secs = this.timeElapsed % 60;
+        ctx.fillStyle = 'rgba(255,255,255,0.5)';
+        ctx.font = `${Math.round(10 * dpr)}px 'Segoe UI', Arial, sans-serif`;
+        ctx.fillText(`${mins}:${secs.toString().padStart(2, '0')}`, w - 10 * dpr, hudH * 0.78);
+
+        // Combo
+        if (this.combo >= 2) {
+            const comboAlpha = 0.6 + 0.4 * Math.sin(this.globalTime * 6);
+            ctx.fillStyle = `rgba(255,215,0,${comboAlpha})`;
+            ctx.font = `bold ${Math.round(11 * dpr)}px 'Segoe UI', Arial, sans-serif`;
+            ctx.textAlign = 'left';
+            ctx.fillText(`🔥 ${this.combo}x COMBO`, 10 * dpr, hudH * 0.88);
+        }
+    }
+
+    _drawDeadline(ctx) {
+        const dpr = this.DPR;
+        const y = this.deadlineY * dpr;
         ctx.save();
-        ctx.globalAlpha = 0.45;
-        ctx.fillStyle = 'rgba(0,10,20,0.55)';
-        ctx.strokeStyle = 'rgba(0,255,200,0.25)';
-        ctx.lineWidth = 1.5 * D;
-        this._roundRect(ctx, r.x, r.y, r.w, r.h, 8 * D, true, true);
-        const cx = r.x + r.w / 2, cy = r.y + r.h / 2, ic = 6 * D;
-        ctx.strokeStyle = '#00ffcc';
-        ctx.lineWidth = 2 * D;
-        ctx.lineCap = 'round';
-        [[-ic, -(ic - 3 * D), -ic, -ic, -(ic - 3 * D), -ic],
-         [ic - 3 * D, -ic, ic, -ic, ic, -(ic - 3 * D)],
-         [-ic, ic - 3 * D, -ic, ic, -(ic - 3 * D), ic],
-         [ic - 3 * D, ic, ic, ic, ic, ic - 3 * D]
-        ].forEach(([x1, y1, x2, y2, x3, y3]) => {
-            ctx.beginPath(); ctx.moveTo(cx + x1, cy + y1); ctx.lineTo(cx + x2, cy + y2); ctx.lineTo(cx + x3, cy + y3); ctx.stroke();
-        });
+        ctx.setLineDash([8 * dpr, 6 * dpr]);
+        ctx.strokeStyle = 'rgba(255,50,50,0.2)';
+        ctx.lineWidth = dpr;
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(this.cW, y); ctx.stroke();
         ctx.restore();
     }
-
-    // ══════════════════ OVERLAYS ══════════════════
 
     _roundRect(ctx, x, y, w, h, r, fill, stroke) {
         ctx.beginPath();
         ctx.moveTo(x + r, y);
-        ctx.arcTo(x + w, y, x + w, y + h, r);
-        ctx.arcTo(x + w, y + h, x, y + h, r);
-        ctx.arcTo(x, y + h, x, y, r);
-        ctx.arcTo(x, y, x + w, y, r);
+        ctx.lineTo(x + w - r, y); ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+        ctx.lineTo(x + w, y + h - r); ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+        ctx.lineTo(x + r, y + h); ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+        ctx.lineTo(x, y + r); ctx.quadraticCurveTo(x, y, x + r, y);
         ctx.closePath();
         if (fill) ctx.fill();
         if (stroke) ctx.stroke();
     }
 
-    _easeOutBack(t) { const c = 1.70158; return 1 + (c + 1) * (t - 1) ** 3 + c * (t - 1) ** 2; }
+    _drawGameOver(ctx) {
+        const dpr = this.DPR;
+        const w = this.cW, h = this.cH;
+        ctx.fillStyle = 'rgba(0,0,0,0.72)';
+        ctx.fillRect(0, 0, w, h);
 
-    _drawDailyReward() {
-        const ctx = this.ctx, cw = this.canvas.width, ch = this.canvas.height, D = this.DPR;
-        const a = this.dailyAnim;
-        ctx.fillStyle = `rgba(5,5,20,${(0.82 * a).toFixed(2)})`;
-        ctx.fillRect(0, 0, cw, ch);
-        if (a < 0.3) return;
+        const cx = w / 2, cy = h / 2;
+        const boxW = Math.min(300 * dpr, w * 0.85);
+        const boxH = 230 * dpr;
+        const bx = cx - boxW / 2, by = cy - boxH / 2;
 
-        const bW = Math.min(400 * D, cw - 40 * D), bH = 230 * D, bX = (cw - bW) / 2, bY = (ch - bH) / 2;
-        ctx.save();
-        ctx.translate(cw / 2, ch / 2);
-        ctx.scale(this._easeOutBack(Math.min(1, a * 1.2)), this._easeOutBack(Math.min(1, a * 1.2)));
-        ctx.translate(-cw / 2, -ch / 2);
-        ctx.fillStyle = 'rgba(0,30,50,0.97)';
-        ctx.strokeStyle = '#FFD700';
-        ctx.lineWidth = 2 * D;
-        if (!this.isMobile) { ctx.shadowColor = '#FFD700'; ctx.shadowBlur = 20 * D; }
-        this._roundRect(ctx, bX, bY, bW, bH, 14 * D, true, true);
-        ctx.shadowBlur = 0;
-
-        const streak = this.playerData.dailyStreak || 0;
-        const coins = Math.floor(50 * Math.min(1 + streak * 0.25, 3));
-        const dias = Math.floor(2 * Math.max(1, Math.floor(streak / 3)));
-
-        this._drawText(ctx, 'Daily Reward!', cw / 2 / D, (bY + 36 * D) / D, {
-            size: 18, weight: 'bold', color: '#FFD700'
-        });
-        this._drawText(ctx, `Day ${streak + 1} Streak`, cw / 2 / D, (bY + 60 * D) / D, {
-            size: 11, weight: 'normal', color: '#00EEFF'
-        });
-        this._drawText(ctx, `${coins} Coins`, cw / 2 / D, (bY + 100 * D) / D, {
-            size: 22, weight: 'bold', color: '#FFD700'
-        });
-        this._drawText(ctx, `${dias} Gems`, cw / 2 / D, (bY + 130 * D) / D, {
-            size: 18, weight: 'bold', color: '#00EEFF'
-        });
-
-        const btnW = 160 * D, btnH = 38 * D, btnX = (cw - btnW) / 2, btnY = bY + bH - 52 * D;
-        const bg = ctx.createLinearGradient(btnX, 0, btnX + btnW, 0);
-        bg.addColorStop(0, '#9900FF');
-        bg.addColorStop(1, '#FF2244');
-        ctx.fillStyle = bg;
-        this._roundRect(ctx, btnX, btnY, btnW, btnH, btnH / 2, true, false);
-
-        this._drawText(ctx, 'CLAIM!', cw / 2 / D, (btnY + btnH / 2) / D, {
-            size: 12, weight: 'bold', color: '#fff'
-        });
-        ctx.restore();
-    }
-
-    _drawLevelComplete() {
-        const ctx = this.ctx, cw = this.canvas.width, ch = this.canvas.height, D = this.DPR;
-        const prog = Math.min(1, this.levelCompleteTimer / 25);
-        const eased = this._easeOutBack(prog);
-        ctx.fillStyle = `rgba(5,5,20,${(0.8 * prog).toFixed(2)})`;
-        ctx.fillRect(0, 0, cw, ch);
-        if (prog < 0.15) return;
-
-        const bW = Math.min(420 * D, cw - 30 * D), bH = 310 * D, bX = (cw - bW) / 2, bY = (ch - bH) / 2;
-        ctx.save();
-        ctx.translate(cw / 2, ch / 2);
-        ctx.scale(eased, eased);
-        ctx.translate(-cw / 2, -ch / 2);
-        ctx.fillStyle = 'rgba(0,30,50,0.97)';
-        ctx.strokeStyle = '#00ffcc';
-        ctx.lineWidth = 2.5 * D;
-        if (!this.isMobile) { ctx.shadowColor = '#00ffcc'; ctx.shadowBlur = 30 * D; }
-        this._roundRect(ctx, bX, bY, bW, bH, 16 * D, true, true);
-        ctx.shadowBlur = 0;
-
-        this._drawText(ctx, 'LEVEL COMPLETE!', cw / 2 / D, (bY + 38 * D) / D, {
-            size: 18, weight: 'bold', color: '#00ffcc',
-            glow: !this.isMobile, glowColor: '#00ffcc', glowBlur: 10
-        });
-
-        // Stars
-        for (let i = 0; i < 3; i++) {
-            const sx = cw / 2 + (i - 1) * 40 * D;
-            const lit = i < this.starRating;
-            this._drawText(ctx, lit ? '★' : '☆', sx / D, (bY + 76 * D) / D, {
-                size: 26, weight: 'normal', color: lit ? '#FFD700' : 'rgba(255,255,255,0.15)'
-            });
-        }
-
-        // Stats
-        const stats = [
-            { l: 'SCORE', v: `${this.score}` },
-            { l: 'POPPED', v: `${this.bubblesPopped}` },
-            { l: 'COMBO', v: `x${this.maxCombo}` },
-            { l: 'MOVES', v: `${this.moves}` },
-        ];
-        const colW = bW / 4;
-        stats.forEach((s, i) => {
-            const sx = bX + colW * i + colW / 2;
-            ctx.fillStyle = 'rgba(0,255,200,0.06)';
-            ctx.strokeStyle = 'rgba(0,255,200,0.18)';
-            ctx.lineWidth = D;
-            this._roundRect(ctx, sx - colW / 2 + 5 * D, bY + 108 * D, colW - 10 * D, 46 * D, 7 * D, true, true);
-
-            this._drawText(ctx, s.l, sx / D, (bY + 120 * D) / D, {
-                size: 8, weight: 'normal', color: 'rgba(150,200,220,0.55)'
-            });
-            this._drawText(ctx, s.v, sx / D, (bY + 138 * D) / D, {
-                size: 14, weight: 'bold', color: '#fff'
-            });
-        });
-
-        // Rewards
-        this._drawText(ctx, `+${this.levelCoins} Coins`, (cw / 2 - 45 * D) / D, (bY + 185 * D) / D, {
-            size: 13, weight: 'bold', color: '#FFD700'
-        });
-        this._drawText(ctx, `+${this.levelDiamonds} Gems`, (cw / 2 + 45 * D) / D, (bY + 185 * D) / D, {
-            size: 13, weight: 'bold', color: '#00EEFF'
-        });
-
-        // Button
-        if (this.levelCompleteTimer > 28) {
-            const btnW = 170 * D, btnH = 42 * D, btnX = (cw - btnW) / 2, btnBY = bY + bH - 58 * D;
-            const bg = ctx.createLinearGradient(btnX, 0, btnX + btnW, 0);
-            bg.addColorStop(0, '#00aaff');
-            bg.addColorStop(1, '#00ffcc');
-            ctx.fillStyle = bg;
-            if (!this.isMobile) { ctx.shadowColor = '#00ffcc'; ctx.shadowBlur = 14 * D; }
-            this._roundRect(ctx, btnX, btnBY, btnW, btnH, 11 * D, true, false);
-            ctx.shadowBlur = 0;
-
-            this._drawText(ctx, 'NEXT LEVEL →', cw / 2 / D, (btnBY + btnH / 2) / D, {
-                size: 12, weight: 'bold', color: '#061518'
-            });
-        }
-        ctx.restore();
-    }
-
-    _drawGameOver() {
-        const ctx = this.ctx, cw = this.canvas.width, ch = this.canvas.height, D = this.DPR;
-        ctx.fillStyle = 'rgba(5,5,20,0.86)';
-        ctx.fillRect(0, 0, cw, ch);
-
-        const bW = Math.min(400 * D, cw - 30 * D), bH = 280 * D, bX = (cw - bW) / 2, bY = (ch - bH) / 2;
-        ctx.fillStyle = 'rgba(0,20,35,0.97)';
+        ctx.fillStyle = '#1a1a3a';
         ctx.strokeStyle = '#FF2244';
-        ctx.lineWidth = 2 * D;
-        if (!this.isMobile) { ctx.shadowColor = '#FF2244'; ctx.shadowBlur = 25 * D; }
-        this._roundRect(ctx, bX, bY, bW, bH, 16 * D, true, true);
+        ctx.lineWidth = 2 * dpr;
+        this._roundRect(ctx, bx, by, boxW, boxH, 15 * dpr, true, true);
+
+        ctx.fillStyle = '#FF2244';
+        ctx.font = `bold ${Math.round(26 * dpr)}px 'Segoe UI', Arial, sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.shadowColor = '#FF2244'; ctx.shadowBlur = 15 * dpr;
+        ctx.fillText('GAME OVER', cx, by + 50 * dpr);
         ctx.shadowBlur = 0;
 
-        this._drawText(ctx, 'GAME OVER', cw / 2 / D, (bY + 44 * D) / D, {
-            size: 22, weight: 'bold', color: '#FF2244',
-            glow: !this.isMobile, glowColor: '#FF2244', glowBlur: 10
-        });
+        ctx.fillStyle = '#fff';
+        ctx.font = `${Math.round(15 * dpr)}px 'Segoe UI', Arial, sans-serif`;
+        ctx.fillText(`Score: ${this.score}`, cx, by + 92 * dpr);
 
-        this._drawText(ctx, `${this.score} pts`, cw / 2 / D, (bY + 90 * D) / D, {
-            size: 18, weight: 'bold', color: '#fff'
-        });
+        ctx.fillStyle = '#aaa';
+        ctx.font = `${Math.round(12 * dpr)}px 'Segoe UI', Arial, sans-serif`;
+        ctx.fillText(`Moves: ${this.moves}  |  Popped: ${this.bubblesPopped}`, cx, by + 120 * dpr);
 
-        this._drawText(ctx, `Level ${this.currentLevel + 1}  |  Combo x${this.maxCombo}  |  ${this.bubblesPopped} Popped`, cw / 2 / D, (bY + 122 * D) / D, {
-            size: 11, weight: 'normal', color: 'rgba(150,180,200,0.7)'
-        });
+        const btnW = 140 * dpr, btnH = 40 * dpr;
+        const btnX = cx - btnW / 2, btnY = by + 155 * dpr;
+        this._retryBtn = { x: btnX / dpr, y: btnY / dpr, w: btnW / dpr, h: btnH / dpr };
 
-        this._drawText(ctx, `+${this.levelCoins} Coins  +${this.levelDiamonds} Gems`, cw / 2 / D, (bY + 155 * D) / D, {
-            size: 12, weight: 'bold', color: '#FFD700'
-        });
+        ctx.fillStyle = '#FF2244';
+        this._roundRect(ctx, btnX, btnY, btnW, btnH, 8 * dpr, true, false);
+        ctx.fillStyle = '#fff';
+        ctx.font = `bold ${Math.round(15 * dpr)}px 'Segoe UI', Arial, sans-serif`;
+        ctx.fillText('RETRY', cx, btnY + btnH * 0.65);
+    }
 
-        // Restart button
-        const btnW = 170 * D, btnH = 40 * D, btnX = (cw - btnW) / 2, btnBY = bY + bH - 70 * D;
-        const blink = 0.7 + Math.abs(Math.sin(this.globalTime / 400)) * 0.3;
-        ctx.globalAlpha = blink;
-        const bg = ctx.createLinearGradient(btnX, 0, btnX + btnW, 0);
-        bg.addColorStop(0, '#FF2244');
-        bg.addColorStop(1, '#FF7700');
-        ctx.fillStyle = bg;
-        this._roundRect(ctx, btnX, btnBY, btnW, btnH, 10 * D, true, false);
-        ctx.globalAlpha = 1;
+    _drawLevelComplete(ctx) {
+        const dpr = this.DPR;
+        const w = this.cW, h = this.cH;
+        this.levelCompleteTimer += 0.016;
+        const t = Math.min(this.levelCompleteTimer / 0.5, 1);
 
-        this._drawText(ctx, '▶  TAP TO RESTART', cw / 2 / D, (btnBY + btnH / 2) / D, {
-            size: 12, weight: 'bold', color: '#fff'
-        });
+        ctx.fillStyle = `rgba(0,0,0,${0.72 * t})`;
+        ctx.fillRect(0, 0, w, h);
+        if (t < 0.3) return;
+
+        const cx = w / 2, cy = h / 2;
+        const scale = Math.min(t * 1.5, 1);
+        ctx.save();
+        ctx.translate(cx, cy); ctx.scale(scale, scale); ctx.translate(-cx, -cy);
+
+        const boxW = Math.min(320 * dpr, w * 0.88);
+        const boxH = 285 * dpr;
+        const bx = cx - boxW / 2, by = cy - boxH / 2;
+
+        const boxGrad = ctx.createLinearGradient(bx, by, bx, by + boxH);
+        boxGrad.addColorStop(0, '#1a1a4a');
+        boxGrad.addColorStop(1, '#0a0a2a');
+        ctx.fillStyle = boxGrad;
+        ctx.strokeStyle = '#FFD700';
+        ctx.lineWidth = 2 * dpr;
+        this._roundRect(ctx, bx, by, boxW, boxH, 15 * dpr, true, true);
+
+        ctx.fillStyle = '#FFD700';
+        ctx.font = `bold ${Math.round(24 * dpr)}px 'Segoe UI', Arial, sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.shadowColor = '#FFD700'; ctx.shadowBlur = 15 * dpr;
+        ctx.fillText('LEVEL COMPLETE!', cx, by + 44 * dpr);
+        ctx.shadowBlur = 0;
+
+        const starY = by + 82 * dpr;
+        for (let i = 0; i < 3; i++) {
+            const sx = cx + (i - 1) * 44 * dpr;
+            ctx.fillStyle = i < this.starRating ? '#FFD700' : '#333';
+            ctx.font = `${Math.round(28 * dpr)}px sans-serif`;
+            ctx.fillText('★', sx, starY);
+        }
+
+        ctx.fillStyle = '#fff';
+        ctx.font = `${Math.round(14 * dpr)}px 'Segoe UI', Arial, sans-serif`;
+        ctx.fillText(`Score: ${this.score}`, cx, by + 130 * dpr);
+
+        ctx.fillStyle = '#aaa';
+        ctx.font = `${Math.round(11 * dpr)}px 'Segoe UI', Arial, sans-serif`;
+        ctx.fillText(`Moves: ${this.moves}  |  Popped: ${this.bubblesPopped}`, cx, by + 155 * dpr);
+        ctx.fillText(`Max Combo: ${this.maxCombo}x`, cx, by + 174 * dpr);
+
+        const btnW = 160 * dpr, btnH = 42 * dpr;
+        const btnX = cx - btnW / 2, btnY = by + 210 * dpr;
+
+        const btnGrad = ctx.createLinearGradient(btnX, btnY, btnX, btnY + btnH);
+        btnGrad.addColorStop(0, '#00CC55');
+        btnGrad.addColorStop(1, '#008833');
+        ctx.fillStyle = btnGrad;
+        this._roundRect(ctx, btnX, btnY, btnW, btnH, 8 * dpr, true, false);
+        ctx.fillStyle = '#fff';
+        ctx.font = `bold ${Math.round(15 * dpr)}px 'Segoe UI', Arial, sans-serif`;
+        ctx.fillText('NEXT LEVEL ▶', cx, btnY + btnH * 0.65);
+
+        ctx.restore();
+        this._nextLevelBtn = { x: (cx - btnW / 2) / dpr, y: (by + 210 * dpr) / dpr, w: btnW / dpr, h: btnH / dpr };
+    }
+
+    // ══════════════════ MAIN LOOP ══════════════════
+
+    _mainLoop(timestamp = 0) {
+        if (this._destroyed) return;
+        const dt = timestamp - this._lastFrameTime;
+        this._lastFrameTime = timestamp;
+
+        if (dt > 0) {
+            this.fpsHistory.push(1000 / dt);
+            if (this.fpsHistory.length > 30) this.fpsHistory.shift();
+        }
+        if (timestamp - this.lastFpsCheck > 2000) {
+            this.lastFpsCheck = timestamp;
+            if (this.fpsHistory.length > 10) {
+                const avgFps = this.fpsHistory.reduce((a, b) => a + b, 0) / this.fpsHistory.length;
+                this.adaptiveMode = avgFps < 35;
+            }
+        }
+
+        this.globalTime += 0.016;
+        this.frame++;
+        this._update();
+        this._render();
+        this.animationFrameId = requestAnimationFrame(t => this._mainLoop(t));
+    }
+
+    _update() {
+        const angleDiff = this.targetAngle - this.shooterAngle;
+        this.shooterAngle += angleDiff * 0.2;
+        this._updateAimDots();
+        this._updateProjectile();
+
+        if (this.shootCooldown > 0) this.shootCooldown--;
+        if (this.colorChangeCooldown > 0) this.colorChangeCooldown--;
+        if (this.shootRecoil > 0) { this.shootRecoil *= 0.85; if (this.shootRecoil < 0.01) this.shootRecoil = 0; }
+        if (this.swapAnim > 0) { this.swapAnim *= 0.9; if (this.swapAnim < 0.01) this.swapAnim = 0; }
+        if (this.colorChangeAnim > 0) { this.colorChangeAnim *= 0.85; if (this.colorChangeAnim < 0.01) this.colorChangeAnim = 0; }
+
+        if (this.shakeTimer > 0) {
+            this.shakeTimer--;
+            this.shakeX = (Math.random() - 0.5) * this.shakeForce;
+            this.shakeY = (Math.random() - 0.5) * this.shakeForce;
+            this.shakeForce *= 0.85;
+        } else { this.shakeX = 0; this.shakeY = 0; }
+
+        this._updateParticles();
+    }
+
+    _render() {
+        const ctx = this.ctx;
+        const dpr = this.DPR;
+        ctx.save();
+        if (this.shakeX || this.shakeY) ctx.translate(this.shakeX * dpr, this.shakeY * dpr);
+
+        this._drawBackground(ctx);
+        this._drawDeadline(ctx);
+        this._drawGrid(ctx);
+        this._drawAimLine(ctx);
+        this._drawProjectile(ctx);
+        this._drawParticles(ctx);
+        this._drawShooter(ctx);
+        this._drawHUD(ctx);
+        ctx.restore();
+
+        if (this.gameOver) this._drawGameOver(ctx);
+        if (this.showLevelComplete) this._drawLevelComplete(ctx);
+    }
+
+    // ══════════════════ INPUT ══════════════════
+
+    _getCanvasPos(e) {
+        const rect = this.canvas.getBoundingClientRect();
+        let clientX, clientY;
+        if (e.changedTouches && e.changedTouches.length > 0) {
+            clientX = e.changedTouches[0].clientX; clientY = e.changedTouches[0].clientY;
+        } else if (e.touches && e.touches.length > 0) {
+            clientX = e.touches[0].clientX; clientY = e.touches[0].clientY;
+        } else {
+            clientX = e.clientX; clientY = e.clientY;
+        }
+        return { x: clientX - rect.left, y: clientY - rect.top };
+    }
+
+    _onHandleClick(e) {
+        e.preventDefault();
+        const pos = this._getCanvasPos(e);
+        const x = pos.x, y = pos.y;
+
+        // Game Over — retry
+        if (this.gameOver && this._retryBtn) {
+            const b = this._retryBtn;
+            if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) {
+                this._startLevel(this.currentLevel); return;
+            }
+        }
+
+        // Level Complete — next level
+        if (this.showLevelComplete && this._nextLevelBtn) {
+            const b = this._nextLevelBtn;
+            if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) {
+                this._startLevel(this.currentLevel + 1); return;
+            }
+        }
+
+        if (this.gameOver || this.gameWon) return;
+
+        // ✅ Check color change button tap
+        if (this._colorChangeBtnX !== undefined) {
+            const dx = x - this._colorChangeBtnX;
+            const dy = y - this._colorChangeBtnY;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist <= this._colorChangeBtnR * 1.3) {
+                this._changeCurrentBubbleColor();
+                return;
+            }
+        }
+
+        // ✅ Check current bubble tap — also triggers color change
+        const shooterDx = x - this.shooterX;
+        const shooterDy = y - this.shooterY;
+        const shooterDist = Math.sqrt(shooterDx * shooterDx + shooterDy * shooterDy);
+        if (shooterDist <= this.BUBBLE_R * 1.2) {
+            this._changeCurrentBubbleColor();
+            return;
+        }
+
+        // Check next bubble — swap
+        const nxDist = Math.abs(x - (this.shooterX - this.BUBBLE_R * 2.8));
+        const nyDist = Math.abs(y - this.shooterY);
+        if (nxDist < this.BUBBLE_R * 1.5 && nyDist < this.BUBBLE_R * 1.5) {
+            this._swapBubbles(); return;
+        }
+
+        // Otherwise — aim and shoot
+        if (y > this.HUD_H && y < this.shooterY - this.BUBBLE_R * 0.5) {
+            const dx = x - this.shooterX;
+            const dy = y - this.shooterY;
+            let angle = Math.atan2(dy, dx);
+            if (angle > -0.15) angle = -0.15;
+            if (angle < -Math.PI + 0.15) angle = -Math.PI + 0.15;
+            this.shooterAngle = angle;
+            this.targetAngle = angle;
+            this._updateAimDots();
+            this._shoot();
+        }
+    }
+
+    _onHandleMove(e) {
+        e.preventDefault();
+        if (this.gameOver || this.gameWon) return;
+        const pos = this._getCanvasPos(e);
+        const x = pos.x, y = pos.y;
+        if (y < this.shooterY - 10) {
+            const dx = x - this.shooterX;
+            const dy = y - this.shooterY;
+            let angle = Math.atan2(dy, dx);
+            if (angle > -0.15) angle = -0.15;
+            if (angle < -Math.PI + 0.15) angle = -Math.PI + 0.15;
+            this.targetAngle = angle;
+        }
+        this.hoverX = x; this.hoverY = y;
+    }
+
+    _onKey(e) {
+        if (this.gameOver || this.gameWon) {
+            if (e.key === 'Enter' || e.key === ' ') {
+                if (this.gameOver) this._startLevel(this.currentLevel);
+                if (this.gameWon) this._startLevel(this.currentLevel + 1);
+            }
+            return;
+        }
+        switch (e.key) {
+            case 'ArrowLeft': this.targetAngle = Math.max(this.targetAngle - 0.05, -Math.PI + 0.15); break;
+            case 'ArrowRight': this.targetAngle = Math.min(this.targetAngle + 0.05, -0.15); break;
+            case ' ': case 'ArrowUp': e.preventDefault(); this._shoot(); break;
+            case 's': case 'S': this._swapBubbles(); break;
+            case 'c': case 'C': this._changeCurrentBubbleColor(); break; // ✅ C key to change color
+            case 'r': case 'R': this._startLevel(this.currentLevel); break;
+        }
+    }
+
+    _onResize() {
+        this._setupCanvas();
+        this._bubbleCache.clear();
+        this._glowCache.clear();
     }
 }

@@ -1,6 +1,7 @@
 // ============================================================
-// NEONARCADE - PREMIUM MAIN.JS v9.0
-// FIXED: Back button in fullscreen | Mobile back button
+// NEONARCADE - PREMIUM MAIN.JS v9.1
+// FIXED: Mobile viewport scroll | Fullscreen bottom cut
+//        Back button in fullscreen | Canvas sizing
 // ============================================================
 
 'use strict';
@@ -85,6 +86,7 @@ function getGameClass(gameId) {
 
 document.addEventListener('DOMContentLoaded', () => {
     cacheElements();
+    initViewportFix();   // ← FIX: Viewport height fix sabse pehle
     simulateLoading();
     initNavigation();
     initMobileMenu();
@@ -96,7 +98,7 @@ document.addEventListener('DOMContentLoaded', () => {
     renderGames();
     renderLeaderboard();
     initScrollReveal();
-    console.log('%c🎮 NeonArcade v9.0 Loaded!', 'color:#b347d9;font-size:16px;font-weight:bold;');
+    console.log('%c🎮 NeonArcade v9.1 Loaded!', 'color:#b347d9;font-size:16px;font-weight:bold;');
 });
 
 // ============================================================
@@ -121,7 +123,31 @@ function cacheElements() {
 }
 
 // ============================================================
-// 7. LOADING
+// 7. VIEWPORT FIX — Mobile browser chrome height problem solve karta hai
+//    --real-vh CSS variable set karta hai (index.html mein bhi hai)
+//    Yeh JS function game page ke dimensions ke liye use hota hai
+// ============================================================
+
+function initViewportFix() {
+    // setRealVH already index.html ke <head> script mein defined hai
+    // Yahan sirf resize + orientation events attach karte hain
+    // (agar index.html script miss ho toh fallback bhi karte hain)
+    if (typeof setRealVH !== 'function') {
+        window.setRealVH = function() {
+            var vh = window.innerHeight;
+            document.documentElement.style.setProperty('--real-vh', vh + 'px');
+        };
+        window.setRealVH();
+        window.addEventListener('resize', window.setRealVH);
+        window.addEventListener('orientationchange', function() {
+            setTimeout(window.setRealVH, 100);
+            setTimeout(window.setRealVH, 300);
+        });
+    }
+}
+
+// ============================================================
+// 8. LOADING
 // ============================================================
 
 function simulateLoading() {
@@ -167,18 +193,13 @@ function simulateLoading() {
 }
 
 // ============================================================
-// 8. BACK BUTTON (Header ka back button)
-// Fullscreen mein bhi kaam kare
+// 9. BACK BUTTON
 // ============================================================
 
 function initBackButton() {
     const btn = document.getElementById('back-to-games');
     if (!btn) return;
-
-    // Click event
     btn.addEventListener('click', handleBackAction);
-
-    // Touch event bhi add karo (mobile ke liye)
     btn.addEventListener('touchend', function(e) {
         e.preventDefault();
         handleBackAction();
@@ -186,90 +207,58 @@ function initBackButton() {
 }
 
 // ============================================================
-// 9. BACK ACTION — Single function
-// Fullscreen → exit fullscreen → game page pe raho
-// Game page → exit → games page pe jao
+// 10. BACK ACTION
 // ============================================================
 
 function handleBackAction() {
-    // Step 1: Agar fullscreen mein hai, pehle exit karo
     if (window.NeonFS && window.NeonFS.isActive()) {
         window.NeonFS.exit();
-        // Fullscreen exit hone ke baad thoda wait karo
-        // fir game page pe hi raho (back ka ek press = FS exit)
         return;
     }
-
-    // Step 2: Fullscreen nahi hai, game se exit karo
     exitGamePage();
 }
 
 // ============================================================
-// 10. BROWSER BACK BUTTON FIX (Mobile back gesture)
+// 11. BROWSER BACK BUTTON FIX
 // ============================================================
 
 function initBrowserBack() {
-    // Pehla state set karo — home page
     window.history.replaceState({ neon: 'home', level: 0 }, '', window.location.href);
 
     window.addEventListener('popstate', function(e) {
-        const st = e.state;
-
-        // ── Case 1: Fullscreen mein hai ──
         if (window.NeonFS && window.NeonFS.isActive()) {
-            // Fullscreen exit karo, game page pe raho
             window.NeonFS.exit();
-            // State wapas push karo — next back game se exit kare
             window.history.pushState({ neon: 'game', level: 2 }, '', window.location.href);
             return;
         }
-
-        // ── Case 2: Game page par hai ──
         if (state.currentPage === 'game') {
-            // Game se exit, games page pe jao
             exitGamePage();
-            // State push karo — next back home pe jaye
             window.history.pushState({ neon: 'games', level: 1 }, '', window.location.href);
             return;
         }
-
-        // ── Case 3: Games/Leaderboard/About page par hai ──
         if (state.currentPage !== 'home') {
             navigateTo('home');
-            // State update karo
             window.history.pushState({ neon: 'home', level: 0 }, '', window.location.href);
             return;
         }
-
-        // ── Case 4: Home par hai ──
-        // Website band hone se bachao
-        // Ek aur state push karo
         window.history.pushState({ neon: 'home', level: 0 }, '', window.location.href);
-
-        // Optional: User ko confirm karo exit ke liye
-        // (Mobile pe ye nahi dikhta, isliye sirf state push kaafi hai)
     });
 }
 
 // ============================================================
-// 11. EXIT GAME PAGE
+// 12. EXIT GAME PAGE
 // ============================================================
 
 function exitGamePage() {
-    // Fullscreen exit karo agar active hai
     if (window.NeonFS && window.NeonFS.isActive()) {
         window.NeonFS.exit();
     }
-
-    // Game destroy karo
     destroyCurrentGame();
-
-    // Games page par navigate karo
     navigateTo('games');
 }
 
 // ============================================================
-// 12. NAVIGATION
+// 13. NAVIGATION
 // ============================================================
 
 function initNavigation() {
@@ -286,7 +275,6 @@ function navigateTo(page) {
     const validPages = ['home', 'games', 'leaderboard', 'about', 'game'];
     if (!validPages.includes(page)) return;
 
-    // Game page se leave karne par cleanup
     if (state.currentPage === 'game' && page !== 'game') {
         if (window.NeonFS && window.NeonFS.isActive()) window.NeonFS.exit();
         destroyCurrentGame();
@@ -295,32 +283,21 @@ function navigateTo(page) {
     const gamePage = document.getElementById('game-page');
 
     if (page === 'game') {
-        // Game page show karo
         if (gamePage) gamePage.style.display = 'flex';
         window.scrollTo(0, 0);
-        // History mein 2 states push karo:
-        // Level 1 = game page
-        // Level 2 = fullscreen ke liye reserve
         window.history.pushState({ neon: 'game', level: 1 }, '', window.location.href);
         window.history.pushState({ neon: 'game-fs', level: 2 }, '', window.location.href);
     } else {
-        // Game page hide karo
         if (gamePage) gamePage.style.display = 'none';
-
-        // Normal pages show karo
         document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
         const target = document.getElementById(`${page}-page`);
         if (target) target.classList.add('active');
-
-        // History update
         window.history.pushState({ neon: page, level: 0 }, '', window.location.href);
     }
 
-    // Nav active states
     document.querySelectorAll('.nav-link').forEach(l =>
         l.classList.toggle('active', l.dataset.page === page));
 
-    // Mobile menu close
     elements.mobileMenu?.classList.remove('active');
     elements.hamburger?.classList.remove('active');
     document.body.classList.remove('menu-open');
@@ -335,7 +312,7 @@ function navigateTo(page) {
 }
 
 // ============================================================
-// 13. DESTROY GAME
+// 14. DESTROY GAME
 // ============================================================
 
 function destroyCurrentGame() {
@@ -373,7 +350,7 @@ function destroyCurrentGame() {
 }
 
 // ============================================================
-// 14. MOBILE MENU
+// 15. MOBILE MENU
 // ============================================================
 
 function initMobileMenu() {
@@ -397,7 +374,7 @@ function initMobileMenu() {
 }
 
 // ============================================================
-// 15. SOUND TOGGLE
+// 16. SOUND TOGGLE
 // ============================================================
 
 function initSoundToggle() {
@@ -413,7 +390,7 @@ function initSoundToggle() {
 }
 
 // ============================================================
-// 16. SEARCH
+// 17. SEARCH
 // ============================================================
 
 function initSearch() {
@@ -436,7 +413,7 @@ function initSearch() {
 }
 
 // ============================================================
-// 17. GAME CONTROLS
+// 18. GAME CONTROLS
 // ============================================================
 
 function initGameControls() {
@@ -466,7 +443,7 @@ function initGameControls() {
 }
 
 // ============================================================
-// 18. OVERLAY
+// 19. OVERLAY
 // ============================================================
 
 function showOverlay(title, score = null, isHighScore = false) {
@@ -508,7 +485,7 @@ function hideOverlay() {
 }
 
 // ============================================================
-// 19. RESTART
+// 20. RESTART
 // ============================================================
 
 function restartGame() {
@@ -522,7 +499,7 @@ function restartGame() {
 }
 
 // ============================================================
-// 20. RENDER GAMES
+// 21. RENDER GAMES
 // ============================================================
 
 function renderGames() {
@@ -600,7 +577,7 @@ function attachCardEvents(container) {
 }
 
 // ============================================================
-// 21. FILTER
+// 22. FILTER
 // ============================================================
 
 function initFilterButtons() {
@@ -640,7 +617,7 @@ function filterAndRenderGames() {
 }
 
 // ============================================================
-// 22. FAVORITES
+// 23. FAVORITES
 // ============================================================
 
 function toggleFavorite(gameId) {
@@ -662,7 +639,7 @@ function toggleFavorite(gameId) {
 }
 
 // ============================================================
-// 23. OPEN GAME
+// 24. OPEN GAME
 // ============================================================
 
 function openGame(gameId) {
@@ -686,14 +663,18 @@ function openGame(gameId) {
     showInstructionToast(game.instructions);
     state.gameStartTime = Date.now();
 
+    // ── FIX: Game page visible hone ke baad viewport recalculate karo ──
+    // Phir canvas size set karo, phir game start karo
+    if (typeof setRealVH === 'function') setRealVH();
+
     requestAnimationFrame(() => {
+        if (typeof setRealVH === 'function') setRealVH();
         requestAnimationFrame(() => {
             startGame(gameId);
         });
     });
 }
 
-// Global expose karo
 window.openGame = openGame;
 
 function showInstructionToast(text) {
@@ -705,7 +686,7 @@ function showInstructionToast(text) {
 }
 
 // ============================================================
-// 24. START GAME
+// 25. START GAME — MAIN FIX: Canvas size correctly calculate karo
 // ============================================================
 
 function startGame(gameId) {
@@ -716,12 +697,21 @@ function startGame(gameId) {
     const wrapper = document.getElementById('game-wrapper');
     if (!wrapper) return;
 
-    const wrapW = wrapper.clientWidth  || wrapper.offsetWidth  || window.innerWidth;
-    const wrapH = wrapper.clientHeight || wrapper.offsetHeight || (window.innerHeight - 48);
+    // ── FIX: getBoundingClientRect use karo — ye actual rendered size deta hai ──
+    // clientWidth/Height bhi fallback ke liye rakho
+    const rect = wrapper.getBoundingClientRect();
 
-    canvas.style.width  = wrapW + 'px';
-    canvas.style.height = wrapH + 'px';
+    const wrapW = (rect.width  > 10 ? rect.width  : wrapper.clientWidth)  || window.innerWidth;
+    const wrapH = (rect.height > 10 ? rect.height : wrapper.clientHeight) || (window.innerHeight - getHeaderHeight());
 
+    // Canvas CSS size set karo
+    canvas.style.position = 'absolute';
+    canvas.style.top      = '0';
+    canvas.style.left     = '0';
+    canvas.style.width    = wrapW + 'px';
+    canvas.style.height   = wrapH + 'px';
+
+    // Canvas actual pixel size (DPR ke saath)
     const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
     canvas.width  = Math.round(wrapW * dpr);
     canvas.height = Math.round(wrapH * dpr);
@@ -729,13 +719,15 @@ function startGame(gameId) {
     const ctx = canvas.getContext('2d');
     if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+    console.log(`🎮 startGame: ${gameId} | wrapper: ${wrapW}×${wrapH} | canvas: ${canvas.width}×${canvas.height} | dpr: ${dpr}`);
+
     const GameClass = getGameClass(gameId);
 
     if (GameClass) {
         try {
             state.gameInstance = new GameClass(canvas, updateScore);
             window._activeGameInstance = state.gameInstance;
-            console.log(`✅ ${gameId} started (${wrapW}×${wrapH})`);
+            console.log(`✅ ${gameId} started`);
         } catch (err) {
             console.error(`❌ Error starting ${gameId}:`, err);
             showPlaceholder(ctx, canvas, gameId);
@@ -744,6 +736,13 @@ function startGame(gameId) {
         console.warn(`⚠️ No class found for: ${gameId}`);
         showPlaceholder(ctx, canvas, gameId);
     }
+}
+
+// ── Helper: Game header ki actual height pata karo ──
+function getHeaderHeight() {
+    const header = document.getElementById('game-header');
+    if (!header) return 48;
+    return header.getBoundingClientRect().height || header.offsetHeight || 48;
 }
 
 function showPlaceholder(ctx, canvas, gameId) {
@@ -762,7 +761,7 @@ function showPlaceholder(ctx, canvas, gameId) {
 }
 
 // ============================================================
-// 25. SCORE UPDATE
+// 26. SCORE UPDATE
 // ============================================================
 
 function updateScore(score, gameOver = false) {
@@ -797,7 +796,7 @@ function updateScore(score, gameOver = false) {
 }
 
 // ============================================================
-// 26. LEADERBOARD
+// 27. LEADERBOARD
 // ============================================================
 
 function renderLeaderboard() { updateLeaderboardWithScores(); }
@@ -871,7 +870,7 @@ function updateLeaderboardWithScores() {
 }
 
 // ============================================================
-// 27. TOAST
+// 28. TOAST
 // ============================================================
 
 function showToast(message, type = 'info', duration = 3000) {
@@ -895,7 +894,7 @@ function showToast(message, type = 'info', duration = 3000) {
 }
 
 // ============================================================
-// 28. SCROLL REVEAL
+// 29. SCROLL REVEAL
 // ============================================================
 
 function initScrollReveal() {
@@ -908,7 +907,7 @@ function initScrollReveal() {
 }
 
 // ============================================================
-// 29. WINDOW EVENTS
+// 30. WINDOW EVENTS
 // ============================================================
 
 window.addEventListener('scroll', () => {
@@ -916,21 +915,45 @@ window.addEventListener('scroll', () => {
     if (nav) nav.classList.toggle('scrolled', window.scrollY > 50);
 }, { passive: true });
 
+// ── FIX: Resize pe --real-vh bhi update karo aur canvas bhi resize karo ──
 window.addEventListener('resize', debounce(() => {
+    // Viewport height update
+    if (typeof setRealVH === 'function') setRealVH();
+
     if (state.currentPage === 'game' && state.gameInstance) {
         const c = document.getElementById('game-canvas');
         const w = document.getElementById('game-wrapper');
         if (c && w) {
-            const ww = w.clientWidth  || window.innerWidth;
-            const wh = w.clientHeight || (window.innerHeight - 48);
+            const rect = w.getBoundingClientRect();
+            const ww = (rect.width  > 10 ? rect.width  : w.clientWidth)  || window.innerWidth;
+            const wh = (rect.height > 10 ? rect.height : w.clientHeight) || (window.innerHeight - getHeaderHeight());
+
             c.style.width  = ww + 'px';
             c.style.height = wh + 'px';
+
             if (state.gameInstance.resize) {
                 try { state.gameInstance.resize(); } catch(e) {}
             }
         }
     }
 }, 150));
+
+window.addEventListener('orientationchange', () => {
+    setTimeout(() => {
+        if (typeof setRealVH === 'function') setRealVH();
+        if (state.currentPage === 'game' && state.gameInstance) {
+            const c = document.getElementById('game-canvas');
+            const w = document.getElementById('game-wrapper');
+            if (c && w && state.gameInstance.resize) {
+                const ww = w.clientWidth  || window.innerWidth;
+                const wh = w.clientHeight || (window.innerHeight - getHeaderHeight());
+                c.style.width  = ww + 'px';
+                c.style.height = wh + 'px';
+                try { state.gameInstance.resize(); } catch(e) {}
+            }
+        }
+    }, 350);
+});
 
 document.addEventListener('visibilitychange', () => {
     if (document.hidden && state.currentPage === 'game' && state.gameInstance) {
@@ -944,7 +967,7 @@ document.addEventListener('visibilitychange', () => {
 window.addEventListener('beforeunload', () => destroyCurrentGame());
 
 // ============================================================
-// 30. UTILS
+// 31. UTILS
 // ============================================================
 
 function debounce(fn, ms) {

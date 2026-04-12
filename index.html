@@ -16,9 +16,45 @@
     <link rel="stylesheet" href="css/main.css">
     <link rel="stylesheet" href="css/animations.css">
     <link rel="stylesheet" href="css/games.css">
+
+    <!-- ═══ FIX: Real viewport height — mobile browser chrome ke baad actual height ═══ -->
+    <script>
+        // Yeh script SABSE PEHLE run hoga — CSS load hone se pehle bhi
+        function setRealVH() {
+            // window.innerHeight = actual visible area (address bar minus)
+            var vh = window.innerHeight;
+            document.documentElement.style.setProperty('--real-vh', vh + 'px');
+            document.documentElement.style.setProperty('--real-vh-unit', (vh * 0.01) + 'px');
+        }
+        setRealVH();
+        window.addEventListener('resize', setRealVH);
+        window.addEventListener('orientationchange', function() {
+            // Orientation change ke baad 300ms wait karo — browser UI settle ho jaaye
+            setTimeout(setRealVH, 100);
+            setTimeout(setRealVH, 300);
+            setTimeout(setRealVH, 600);
+        });
+    </script>
+
     <style>
         *, *::before, *::after { box-sizing: border-box; }
-        html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow-x: hidden; }
+
+        /* ═══ FIX: html/body ko bhi proper height dena zaroori hai ═══ */
+        html {
+            margin: 0; padding: 0;
+            /* iOS Safari ke liye */
+            height: -webkit-fill-available;
+        }
+        body {
+            margin: 0; padding: 0;
+            width: 100%;
+            /* Normal browsers */
+            min-height: 100vh;
+            /* iOS Safari */
+            min-height: -webkit-fill-available;
+            overflow-x: hidden;
+        }
+
         .bottom-nav { display: none !important; }
         .main-content { padding-bottom: 0 !important; }
 
@@ -40,23 +76,30 @@
         .game-card-desc{font-size:.72rem;color:#8080a8;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
         .game-card-rating{display:flex;align-items:center;gap:4px;margin-top:5px;font-size:.7rem;color:#ffab00;font-weight:600}
 
-        /* ═══ GAME PAGE LAYOUT ═══ */
+        /* ═══════════════════════════════════════════════════════════
+           GAME PAGE LAYOUT — MAIN FIX
+           Problem: 100vh mobile pe browser address bar include karta hai
+           Fix: --real-vh CSS variable use karo (JS se set hota hai)
+        ═══════════════════════════════════════════════════════════ */
         #game-page {
-            display: flex;
+            display: none; /* default hidden */
             flex-direction: column;
-            height: 100dvh;
-            height: 100vh;
+
+            /* ── FIX: Real viewport height use karo ── */
+            height: 100vh;                      /* Fallback for very old browsers */
+            height: var(--real-vh, 100vh);      /* JS se set hone wala actual height */
+
             overflow: hidden;
-            /* IMPORTANT: removes footer black area */
             position: fixed;
             top: 0; left: 0;
             width: 100%;
             z-index: 500;
             background: #000;
+
+            /* iOS Safari extra fix */
+            -webkit-overflow-scrolling: touch;
         }
 
-        /* Game page hidden by default */
-        #game-page { display: none; }
         #game-page.active {
             display: flex !important;
         }
@@ -80,12 +123,15 @@
             position: relative;
             z-index: 10;
             flex-shrink: 0;
+            /* Safe area for notch phones */
+            padding-top: max(8px, env(safe-area-inset-top));
         }
 
+        /* ── FIX: game-wrapper baaki saara space le — header ke baad ── */
         .game-wrapper {
             position: relative;
-            flex: 1;
-            min-height: 0;
+            flex: 1 1 0%;   /* flex-grow:1, flex-shrink:1, flex-basis:0 */
+            min-height: 0;  /* IMPORTANT: flex item ka overflow rok-ta hai */
             background: #000;
             overflow: hidden;
             width: 100%;
@@ -102,19 +148,26 @@
             user-select: none;
         }
 
-        /* ═══ FULLSCREEN ═══ */
+        /* ═══ FULLSCREEN FIX ═══ */
         body.fs-active { overflow: hidden !important; }
         body.fs-active .game-header { display: none !important; }
         body.fs-active .navbar { display: none !important; }
         body.fs-active .footer { display: none !important; }
         body.fs-active .game-instructions { display: none !important; }
 
+        body.fs-active #game-page {
+            /* Fullscreen mein poora real height use karo */
+            height: 100vh !important;
+            height: var(--real-vh, 100vh) !important;
+        }
+
         body.fs-active .game-wrapper {
             position: fixed !important;
             top: 0 !important; left: 0 !important;
             width: 100vw !important;
+            /* ── FIX: 100vh ki jagah real-vh use karo ── */
             height: 100vh !important;
-            height: 100dvh !important;
+            height: var(--real-vh, 100vh) !important;
             z-index: 999999 !important;
             background: #000 !important;
         }
@@ -126,25 +179,30 @@
             height: 100% !important;
         }
 
-        /* Native fullscreen */
+        /* Native fullscreen API */
         :fullscreen .game-header,
         :-webkit-full-screen .game-header { display: none !important; }
+
         :fullscreen .game-wrapper,
         :-webkit-full-screen .game-wrapper {
             position: fixed !important;
             top: 0 !important; left: 0 !important;
-            width: 100vw !important; height: 100vh !important;
+            width: 100vw !important;
+            height: 100vh !important;
             z-index: 999999 !important;
         }
         :fullscreen #game-canvas,
         :-webkit-full-screen #game-canvas {
-            width: 100% !important; height: 100% !important;
+            width: 100% !important;
+            height: 100% !important;
         }
 
         /* ═══ FULLSCREEN BUTTON ═══ */
         #fullscreen-btn {
             position: absolute;
             bottom: 14px; right: 14px;
+            /* iOS safe area ke liye */
+            bottom: max(14px, calc(env(safe-area-inset-bottom) + 8px));
             width: 44px; height: 44px;
             background: rgba(0,0,0,0.6);
             backdrop-filter: blur(10px);
@@ -264,7 +322,7 @@
             <li><a href="#" class="mobile-nav-link" data-page="home"><span class="nav-icon">🏠</span> Home</a></li>
             <li><a href="#" class="mobile-nav-link" data-page="games"><span class="nav-icon">🎯</span> Games</a></li>
             <li><a href="#" class="mobile-nav-link" data-page="leaderboard"><span class="nav-icon">🏆</span> Leaderboard</a></li>
-            <li><a href="#" class="mobile-nav-link" data-page="about"><span class="nav-icon">ℹ��</span> About</a></li>
+            <li><a href="#" class="mobile-nav-link" data-page="about"><span class="nav-icon">ℹ️</span> About</a></li>
         </ul>
     </div>
 
@@ -458,15 +516,23 @@ const GameThumbnails=(()=>{
         if (co) co.style.display = fs ? '' : 'none';
     }
 
+    // ── FIX: Real viewport height recalculate + canvas resize ──
     function syncCanvasSize() {
+        // Pehle real-vh update karo
+        if (typeof setRealVH === 'function') setRealVH();
+
         const wrapper = document.getElementById('game-wrapper');
         const canvas  = document.getElementById('game-canvas');
         if (!wrapper || !canvas) return;
+
         requestAnimationFrame(function() {
+            // wrapper ke actual dimensions use karo
             const w = wrapper.clientWidth  || window.innerWidth;
             const h = wrapper.clientHeight || window.innerHeight;
+
             canvas.style.width  = w + 'px';
             canvas.style.height = h + 'px';
+
             if (window._activeGameInstance && window._activeGameInstance.resize) {
                 try { window._activeGameInstance.resize(); } catch(e) {}
             }
@@ -480,9 +546,12 @@ const GameThumbnails=(()=>{
         var el = document.documentElement;
         var req = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen;
         if (req) req.call(el).catch(function(){});
+
+        // Multiple timeouts — browser ke fullscreen animation ke baad resize karo
         syncCanvasSize();
         setTimeout(syncCanvasSize, 100);
         setTimeout(syncCanvasSize, 350);
+        setTimeout(syncCanvasSize, 600);
     }
 
     function exitFS() {
@@ -495,6 +564,7 @@ const GameThumbnails=(()=>{
         }
         syncCanvasSize();
         setTimeout(syncCanvasSize, 150);
+        setTimeout(syncCanvasSize, 400);
     }
 
     function toggleFS() {
@@ -510,14 +580,25 @@ const GameThumbnails=(()=>{
     function onNativeFsChange() {
         var native = !!(document.fullscreenElement || document.webkitFullscreenElement);
         if (!native && _isFs) { exitFS(); }
-        if (native && !_isFs) { _isFs = true; document.body.classList.add('fs-active'); updateIcons(true); setTimeout(syncCanvasSize, 100); }
+        if (native && !_isFs) {
+            _isFs = true;
+            document.body.classList.add('fs-active');
+            updateIcons(true);
+            setTimeout(syncCanvasSize, 100);
+            setTimeout(syncCanvasSize, 350);
+        }
     }
 
     document.addEventListener('fullscreenchange', onNativeFsChange);
     document.addEventListener('webkitfullscreenchange', onNativeFsChange);
 
-    window.addEventListener('resize', function() { if (_isFs) syncCanvasSize(); });
-    window.addEventListener('orientationchange', function() { setTimeout(syncCanvasSize, 300); });
+    window.addEventListener('resize', function() {
+        syncCanvasSize();
+    });
+    window.addEventListener('orientationchange', function() {
+        setTimeout(syncCanvasSize, 300);
+        setTimeout(syncCanvasSize, 600);
+    });
 
     window.NeonFS = {
         enter: enterFS, exit: exitFS, toggle: toggleFS,
