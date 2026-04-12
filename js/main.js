@@ -1,6 +1,6 @@
 // ============================================================
-// NEONARCADE - PREMIUM MAIN.JS v8.0
-// FIXED: Footer black screen | Back button | Fullscreen exit
+// NEONARCADE - PREMIUM MAIN.JS v9.0
+// FIXED: Back button in fullscreen | Mobile back button
 // ============================================================
 
 'use strict';
@@ -96,7 +96,7 @@ document.addEventListener('DOMContentLoaded', () => {
     renderGames();
     renderLeaderboard();
     initScrollReveal();
-    console.log('%c🎮 NeonArcade v8.0 Loaded!', 'color:#b347d9;font-size:16px;font-weight:bold;');
+    console.log('%c🎮 NeonArcade v9.0 Loaded!', 'color:#b347d9;font-size:16px;font-weight:bold;');
 });
 
 // ============================================================
@@ -127,7 +127,13 @@ function cacheElements() {
 function simulateLoading() {
     const fill = document.getElementById('loading-bar-fill');
     const text = document.getElementById('loading-text');
-    const tips = ['Loading neon lights...','Generating game thumbnails...','Warming up the arcade...','Calibrating audio engine...','Almost there...'];
+    const tips = [
+        'Loading neon lights...',
+        'Generating game thumbnails...',
+        'Warming up the arcade...',
+        'Calibrating audio engine...',
+        'Almost there...'
+    ];
     let progress = 0, tipIdx = 0;
 
     const interval = setInterval(() => {
@@ -140,7 +146,9 @@ function simulateLoading() {
             tipIdx = newTip;
             if (text) {
                 text.style.opacity = '0';
-                setTimeout(() => { if (text) { text.textContent = tips[tipIdx]; text.style.opacity = '1'; } }, 200);
+                setTimeout(() => {
+                    if (text) { text.textContent = tips[tipIdx]; text.style.opacity = '1'; }
+                }, 200);
             }
         }
 
@@ -159,68 +167,96 @@ function simulateLoading() {
 }
 
 // ============================================================
-// 8. BACK BUTTON — Fullscreen se back aane ka fix
+// 8. BACK BUTTON (Header ka back button)
+// Fullscreen mein bhi kaam kare
 // ============================================================
 
 function initBackButton() {
     const btn = document.getElementById('back-to-games');
     if (!btn) return;
 
-    btn.addEventListener('click', () => {
-        if (window.audioManager) audioManager.play('click');
-        exitGamePage();
-    });
+    // Click event
+    btn.addEventListener('click', handleBackAction);
+
+    // Touch event bhi add karo (mobile ke liye)
+    btn.addEventListener('touchend', function(e) {
+        e.preventDefault();
+        handleBackAction();
+    }, { passive: false });
 }
 
 // ============================================================
-// 9. BROWSER BACK BUTTON FIX
-// Jab browser back button press ho, website close na ho
+// 9. BACK ACTION — Single function
+// Fullscreen → exit fullscreen → game page pe raho
+// Game page → exit → games page pe jao
+// ============================================================
+
+function handleBackAction() {
+    // Step 1: Agar fullscreen mein hai, pehle exit karo
+    if (window.NeonFS && window.NeonFS.isActive()) {
+        window.NeonFS.exit();
+        // Fullscreen exit hone ke baad thoda wait karo
+        // fir game page pe hi raho (back ka ek press = FS exit)
+        return;
+    }
+
+    // Step 2: Fullscreen nahi hai, game se exit karo
+    exitGamePage();
+}
+
+// ============================================================
+// 10. BROWSER BACK BUTTON FIX (Mobile back gesture)
 // ============================================================
 
 function initBrowserBack() {
-    // Game page kholne par history push karo
-    // Jab back press ho, game se exit karo
-
-    // Initial state
-    window.history.replaceState({ page: 'home' }, '', window.location.href);
+    // Pehla state set karo — home page
+    window.history.replaceState({ neon: 'home', level: 0 }, '', window.location.href);
 
     window.addEventListener('popstate', function(e) {
-        const s = e.state;
+        const st = e.state;
 
-        // Agar fullscreen mein hai, pehle fullscreen exit karo
+        // ── Case 1: Fullscreen mein hai ──
         if (window.NeonFS && window.NeonFS.isActive()) {
+            // Fullscreen exit karo, game page pe raho
             window.NeonFS.exit();
-            // History wapas push karo taaki next back game se exit kare
-            window.history.pushState({ page: 'game' }, '', window.location.href);
+            // State wapas push karo — next back game se exit kare
+            window.history.pushState({ neon: 'game', level: 2 }, '', window.location.href);
             return;
         }
 
-        // Agar game page par hai, game se exit karo
+        // ── Case 2: Game page par hai ──
         if (state.currentPage === 'game') {
+            // Game se exit, games page pe jao
             exitGamePage();
+            // State push karo — next back home pe jaye
+            window.history.pushState({ neon: 'games', level: 1 }, '', window.location.href);
             return;
         }
 
-        // Agar koi aur page hai, home par jao
-        if (s && s.page && s.page !== 'home') {
+        // ── Case 3: Games/Leaderboard/About page par hai ──
+        if (state.currentPage !== 'home') {
             navigateTo('home');
+            // State update karo
+            window.history.pushState({ neon: 'home', level: 0 }, '', window.location.href);
             return;
         }
 
-        // Home par hai, normal back allow karo (ya website rehne do)
-        // Push state taaki website close na ho
-        if (state.currentPage === 'home') {
-            window.history.pushState({ page: 'home' }, '', window.location.href);
-        }
+        // ── Case 4: Home par hai ──
+        // Website band hone se bachao
+        // Ek aur state push karo
+        window.history.pushState({ neon: 'home', level: 0 }, '', window.location.href);
+
+        // Optional: User ko confirm karo exit ke liye
+        // (Mobile pe ye nahi dikhta, isliye sirf state push kaafi hai)
     });
 }
 
 // ============================================================
-// 10. EXIT GAME PAGE — Single function for all exits
+// 11. EXIT GAME PAGE
 // ============================================================
 
 function exitGamePage() {
-    // Pehle fullscreen exit karo
+    // Fullscreen exit karo agar active hai
     if (window.NeonFS && window.NeonFS.isActive()) {
         window.NeonFS.exit();
     }
@@ -228,12 +264,12 @@ function exitGamePage() {
     // Game destroy karo
     destroyCurrentGame();
 
-    // Home page par navigate karo (games page se aaya tha toh games pe)
+    // Games page par navigate karo
     navigateTo('games');
 }
 
 // ============================================================
-// 11. NAVIGATION
+// 12. NAVIGATION
 // ============================================================
 
 function initNavigation() {
@@ -256,32 +292,31 @@ function navigateTo(page) {
         destroyCurrentGame();
     }
 
-    // Game page special handling - fixed position hai
     const gamePage = document.getElementById('game-page');
 
     if (page === 'game') {
-        // Game page show karo (fixed position, #app ke bahar)
+        // Game page show karo
         if (gamePage) gamePage.style.display = 'flex';
-        // Main content scroll top
         window.scrollTo(0, 0);
-        // History push karo
-        window.history.pushState({ page: 'game' }, '', window.location.href);
+        // History mein 2 states push karo:
+        // Level 1 = game page
+        // Level 2 = fullscreen ke liye reserve
+        window.history.pushState({ neon: 'game', level: 1 }, '', window.location.href);
+        window.history.pushState({ neon: 'game-fs', level: 2 }, '', window.location.href);
     } else {
         // Game page hide karo
         if (gamePage) gamePage.style.display = 'none';
 
-        // Normal pages
+        // Normal pages show karo
         document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
         const target = document.getElementById(`${page}-page`);
         if (target) target.classList.add('active');
 
         // History update
-        if (page !== state.currentPage) {
-            window.history.pushState({ page }, '', window.location.href);
-        }
+        window.history.pushState({ neon: page, level: 0 }, '', window.location.href);
     }
 
-    // Nav active states update
+    // Nav active states
     document.querySelectorAll('.nav-link').forEach(l =>
         l.classList.toggle('active', l.dataset.page === page));
 
@@ -300,7 +335,7 @@ function navigateTo(page) {
 }
 
 // ============================================================
-// 12. DESTROY GAME
+// 13. DESTROY GAME
 // ============================================================
 
 function destroyCurrentGame() {
@@ -338,7 +373,7 @@ function destroyCurrentGame() {
 }
 
 // ============================================================
-// 13. MOBILE MENU
+// 14. MOBILE MENU
 // ============================================================
 
 function initMobileMenu() {
@@ -362,7 +397,7 @@ function initMobileMenu() {
 }
 
 // ============================================================
-// 14. SOUND TOGGLE
+// 15. SOUND TOGGLE
 // ============================================================
 
 function initSoundToggle() {
@@ -378,7 +413,7 @@ function initSoundToggle() {
 }
 
 // ============================================================
-// 15. SEARCH
+// 16. SEARCH
 // ============================================================
 
 function initSearch() {
@@ -401,7 +436,7 @@ function initSearch() {
 }
 
 // ============================================================
-// 16. GAME CONTROLS
+// 17. GAME CONTROLS
 // ============================================================
 
 function initGameControls() {
@@ -431,7 +466,7 @@ function initGameControls() {
 }
 
 // ============================================================
-// 17. OVERLAY
+// 18. OVERLAY
 // ============================================================
 
 function showOverlay(title, score = null, isHighScore = false) {
@@ -444,12 +479,18 @@ function showOverlay(title, score = null, isHighScore = false) {
 
     if (scoreEl) {
         if (score !== null) {
-            let html = `<div style="margin:6px 0"><span style="color:#8080a8;font-size:.9rem">Score</span><br>
-                <span style="color:#d470ff;font-family:Orbitron,sans-serif;font-size:1.8rem;font-weight:900">${score.toLocaleString()}</span>`;
+            let html = `
+                <div style="margin:6px 0">
+                    <span style="color:#8080a8;font-size:.9rem">Score</span><br>
+                    <span style="color:#d470ff;font-family:Orbitron,sans-serif;font-size:1.8rem;font-weight:900">
+                        ${score.toLocaleString()}
+                    </span>`;
             if (isHighScore) html += '<br><span style="color:#39ff14;font-size:.85rem">🏆 NEW BEST!</span>';
             html += '</div>';
             if (state.scores[state.currentGame] && !isHighScore) {
-                html += `<div style="color:#6a6a9a;font-size:.8rem">Best: ${state.scores[state.currentGame].toLocaleString()}</div>`;
+                html += `<div style="color:#6a6a9a;font-size:.8rem">
+                             Best: ${state.scores[state.currentGame].toLocaleString()}
+                         </div>`;
             }
             scoreEl.innerHTML = html;
         } else {
@@ -467,7 +508,7 @@ function hideOverlay() {
 }
 
 // ============================================================
-// 18. RESTART
+// 19. RESTART
 // ============================================================
 
 function restartGame() {
@@ -481,7 +522,7 @@ function restartGame() {
 }
 
 // ============================================================
-// 19. RENDER GAMES
+// 20. RENDER GAMES
 // ============================================================
 
 function renderGames() {
@@ -559,7 +600,7 @@ function attachCardEvents(container) {
 }
 
 // ============================================================
-// 20. FILTER
+// 21. FILTER
 // ============================================================
 
 function initFilterButtons() {
@@ -599,7 +640,7 @@ function filterAndRenderGames() {
 }
 
 // ============================================================
-// 21. FAVORITES
+// 22. FAVORITES
 // ============================================================
 
 function toggleFavorite(gameId) {
@@ -621,7 +662,7 @@ function toggleFavorite(gameId) {
 }
 
 // ============================================================
-// 22. OPEN GAME
+// 23. OPEN GAME
 // ============================================================
 
 function openGame(gameId) {
@@ -641,7 +682,6 @@ function openGame(gameId) {
         setTimeout(() => audioManager.startMusic('game'), 200);
     }
 
-    // Navigate to game page
     navigateTo('game');
     showInstructionToast(game.instructions);
     state.gameStartTime = Date.now();
@@ -653,7 +693,7 @@ function openGame(gameId) {
     });
 }
 
-// Global expose
+// Global expose karo
 window.openGame = openGame;
 
 function showInstructionToast(text) {
@@ -665,7 +705,7 @@ function showInstructionToast(text) {
 }
 
 // ============================================================
-// 23. START GAME
+// 24. START GAME
 // ============================================================
 
 function startGame(gameId) {
@@ -722,7 +762,7 @@ function showPlaceholder(ctx, canvas, gameId) {
 }
 
 // ============================================================
-// 24. SCORE UPDATE
+// 25. SCORE UPDATE
 // ============================================================
 
 function updateScore(score, gameOver = false) {
@@ -757,7 +797,7 @@ function updateScore(score, gameOver = false) {
 }
 
 // ============================================================
-// 25. LEADERBOARD
+// 26. LEADERBOARD
 // ============================================================
 
 function renderLeaderboard() { updateLeaderboardWithScores(); }
@@ -831,7 +871,7 @@ function updateLeaderboardWithScores() {
 }
 
 // ============================================================
-// 26. TOAST
+// 27. TOAST
 // ============================================================
 
 function showToast(message, type = 'info', duration = 3000) {
@@ -855,18 +895,20 @@ function showToast(message, type = 'info', duration = 3000) {
 }
 
 // ============================================================
-// 27. SCROLL REVEAL
+// 28. SCROLL REVEAL
 // ============================================================
 
 function initScrollReveal() {
     const obs = new IntersectionObserver(entries => {
-        entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('visible'); obs.unobserve(e.target); } });
+        entries.forEach(e => {
+            if (e.isIntersecting) { e.target.classList.add('visible'); obs.unobserve(e.target); }
+        });
     }, { threshold: 0.1 });
     document.querySelectorAll('.scroll-fade-in').forEach(el => obs.observe(el));
 }
 
 // ============================================================
-// 28. WINDOW EVENTS
+// 29. WINDOW EVENTS
 // ============================================================
 
 window.addEventListener('scroll', () => {
@@ -902,7 +944,7 @@ document.addEventListener('visibilitychange', () => {
 window.addEventListener('beforeunload', () => destroyCurrentGame());
 
 // ============================================================
-// 29. UTILS
+// 30. UTILS
 // ============================================================
 
 function debounce(fn, ms) {
