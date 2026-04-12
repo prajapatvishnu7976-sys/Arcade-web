@@ -1,6 +1,7 @@
 /* ============================================================
-   KNIFE HIT v4.0 - KHATARNAK PREMIUM EDITION
-   Crystal Clear Text + Premium Visuals + Full Game Feel
+   KNIFE HIT v5.0 - ULTRA HD MOBILE EDITION
+   Crystal Clear Text | DPR Scaled | Zero Blur
+   Premium Feel | Addictive Gameplay | Mobile-First
    ============================================================ */
 
 'use strict';
@@ -8,7 +9,6 @@
 class KnifeHit {
     constructor(canvas, onScore, options = {}) {
         this.canvas  = canvas;
-        this.ctx     = canvas.getContext('2d');
         this.onScore = onScore;
         this.options = options;
         this.destroyed = false;
@@ -16,13 +16,41 @@ class KnifeHit {
         this.isPaused  = false;
         this.gameOver  = false;
 
-        // Fix canvas for crisp rendering
-        this.setupCanvas();
+        // ============================================
+        // HD RESOLUTION FIX - CRITICAL
+        // ============================================
+        this.dpr = Math.min(window.devicePixelRatio || 1, 3);
+        this.setupHDCanvas();
+
+        this.ctx = this.canvas.getContext('2d', {
+            alpha: false,
+            desynchronized: true
+        });
+
+        // Logical dimensions
+        this.W = this.canvas.width  / this.dpr;
+        this.H = this.canvas.height / this.dpr;
+
+        // ============================================
+        // MOBILE DETECTION
+        // ============================================
+        this.isMobile = /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
+            || ('ontouchstart' in window)
+            || (window.innerWidth < 768);
+        this.isSmallScreen = this.W < 380;
+
+        // ============================================
+        // FONT SYSTEM
+        // ============================================
+        this.FONT_TITLE = '"Orbitron", "Rajdhani", "Segoe UI", monospace';
+        this.FONT_UI    = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+        this.FONT_MONO  = '"Rajdhani", "Segoe UI", Roboto, sans-serif';
+        this.loadFonts();
 
         // ============================================
         // SAVE SYSTEM
         // ============================================
-        this.saveKey    = 'neonarcade_knifehit';
+        this.saveKey    = 'neonarcade_knifehit_v5';
         this.playerData = this.loadPlayerData();
 
         // ============================================
@@ -39,14 +67,14 @@ class KnifeHit {
         this.maxCombo     = 0;
 
         // ============================================
-        // KNIVES CONFIG
+        // KNIFE CONFIG
         // ============================================
         this.knivesTotal  = 0;
         this.knivesLeft   = 0;
         this.knivesThrown = 0;
 
         // ============================================
-        // TARGET (Log)
+        // TARGET
         // ============================================
         this.target = this.createTarget();
 
@@ -54,11 +82,11 @@ class KnifeHit {
         // KNIFE SKINS
         // ============================================
         this.knifeSkins = {
-            default: { blade: ['#aaa','#e8e8e8','#fff'], handle: ['#2a0e04','#5a2a0e','#2a0e04'], guard: '#777', name: 'Classic' },
-            neon:    { blade: ['#00c4ef','#55e8ff','#fff'], handle: ['#081828','#10305a','#081828'], guard: '#00c4ef', name: 'Neon' },
-            fire:    { blade: ['#ee3300','#ff7700','#ffbb00'], handle: ['#2a0600','#500e00','#2a0600'], guard: '#ee3300', name: 'Fire' },
-            gold:    { blade: ['#bb8800','#FFD700','#fff8dc'], handle: ['#2a1e00','#5a3e00','#2a1e00'], guard: '#FFD700', name: 'Gold' },
-            shadow:  { blade: ['#333','#777','#bbb'], handle: ['#111','#222','#111'], guard: '#444', name: 'Shadow' }
+            default: { blade: ['#aaa','#e8e8e8','#fff'], handle: ['#2a0e04','#5a2a0e','#2a0e04'], guard: '#777',    name: 'Classic' },
+            neon:    { blade: ['#00c4ef','#55e8ff','#fff'], handle: ['#081828','#10305a','#081828'], guard: '#00c4ef', name: 'Neon'    },
+            fire:    { blade: ['#ee3300','#ff7700','#ffbb00'], handle: ['#2a0600','#500e00','#2a0600'], guard: '#ee3300', name: 'Fire'    },
+            gold:    { blade: ['#bb8800','#FFD700','#fff8dc'], handle: ['#2a1e00','#5a3e00','#2a1e00'], guard: '#FFD700', name: 'Gold'    },
+            shadow:  { blade: ['#333','#777','#bbb'],         handle: ['#111','#222','#111'],         guard: '#444',    name: 'Shadow'  }
         };
         this.currentSkin = this.playerData.currentSkin || 'default';
 
@@ -69,10 +97,10 @@ class KnifeHit {
         this.flyingKnife   = null;
         this.idleKnife     = null;
         this.apples        = [];
-        this.coins         = [];
+        this.orbitCoins    = [];
 
         // ============================================
-        // VISUAL FX
+        // VISUAL FX POOLS
         // ============================================
         this.particles     = [];
         this.explosions    = [];
@@ -80,7 +108,24 @@ class KnifeHit {
         this.floatingTexts = [];
         this.coinPickups   = [];
         this.breakPieces   = [];
-        this.bgParticles   = this.createBgParticles();
+        this.popRings      = [];
+
+        // Max pool sizes for mobile
+        this.MAX_PARTICLES = this.isMobile ? 60 : 120;
+        this.MAX_POP_RINGS = 12;
+
+        // ============================================
+        // SCREEN EFFECTS
+        // ============================================
+        this.shakeX = 0; this.shakeY = 0;
+        this.shakeTimer = 0; this.shakeForce = 0;
+        this.flashTimer = 0; this.flashColor = '#ff0055'; this.flashAlpha = 0;
+
+        // ============================================
+        // TIMING
+        // ============================================
+        this.time  = 0;
+        this.frame = 0;
 
         // ============================================
         // STATE FLAGS
@@ -89,21 +134,18 @@ class KnifeHit {
         this.stageCompleteTimer = 0;
 
         // ============================================
-        // SCREEN EFFECTS
+        // HUD
         // ============================================
-        this.screenShake = { x: 0, y: 0, timer: 0, intensity: 0 };
-        this.flashTimer  = 0;
-        this.flashColor  = '#ff0055';
-        this.hudFlash    = {};
+        this.hudFlash = {};
 
         // ============================================
         // POWER-UPS
         // ============================================
         this.powerUps = {
-            extraKnife: { count: this.playerData.powerUps?.extraKnife ?? 1, cost: 50,  icon: '🗡', name: 'Extra Knife', color: '#00FF88' },
-            slowTarget: { count: this.playerData.powerUps?.slowTarget ?? 1, cost: 75,  icon: '🐢', name: 'Slow Down',   color: '#00D4FF' },
-            shield:     { count: this.playerData.powerUps?.shield     ?? 1, cost: 100, icon: '🛡', name: 'Shield',      color: '#b347d9' },
-            bomb:       { count: this.playerData.powerUps?.bomb       ?? 0, cost: 150, icon: '💣', name: 'Bomb',        color: '#FF8C00' }
+            extraKnife: { count: this.playerData.powerUps?.extraKnife ?? 1, cost: 50,  icon: '🗡', name: 'Extra',  color: '#00FF88' },
+            slowTarget: { count: this.playerData.powerUps?.slowTarget ?? 1, cost: 75,  icon: '🐢', name: 'Slow',   color: '#00D4FF' },
+            shield:     { count: this.playerData.powerUps?.shield     ?? 1, cost: 100, icon: '🛡', name: 'Shield', color: '#b347d9' },
+            bomb:       { count: this.playerData.powerUps?.bomb       ?? 0, cost: 150, icon: '💣', name: 'Bomb',   color: '#FF8C00' }
         };
         this.activeEffects = { slow: false, slowTimer: 0, shield: false };
 
@@ -112,6 +154,7 @@ class KnifeHit {
         // ============================================
         this.showDailyReward    = false;
         this.dailyRewardClaimed = false;
+        this.dailyRewardAnim    = 0;
         this.checkDailyReward();
 
         // ============================================
@@ -120,16 +163,21 @@ class KnifeHit {
         this.milestones        = [5, 10, 20, 30, 50, 75, 100, 150, 200];
         this.milestonesClaimed = new Set();
 
-        // Init
+        // ============================================
+        // BACKGROUND
+        // ============================================
+        this.stars = this.makeStars(this.isMobile ? 40 : 70);
+
+        // Init level
         this.setupLevel();
         this.createIdleKnife();
 
         // ============================================
         // EVENTS
         // ============================================
-        this.boundClick = this.onThrow.bind(this);
-        this.boundTouch = this.onTouchThrow.bind(this);
-        this.boundKey   = this.onKeyDown.bind(this);
+        this.boundClick = this.handleClick.bind(this);
+        this.boundTouch = this.handleTouch.bind(this);
+        this.boundKey   = this.handleKey.bind(this);
 
         canvas.addEventListener('click',      this.boundClick);
         canvas.addEventListener('touchstart', this.boundTouch, { passive: false });
@@ -140,79 +188,126 @@ class KnifeHit {
     }
 
     // ============================================================
-    // CANVAS SETUP — crisp pixel rendering
+    // HD CANVAS SETUP
     // ============================================================
-    setupCanvas() {
-        const canvas = this.canvas;
-        const ctx    = this.ctx;
-
-        // Disable image smoothing for crisp rendering
-        ctx.imageSmoothingEnabled = false;
-
-        // Set font rendering hints
-        ctx.textRendering = 'optimizeLegibility';
+    setupHDCanvas() {
+        const rect = this.canvas.getBoundingClientRect();
+        const w = rect.width  || this.canvas.clientWidth  || 400;
+        const h = rect.height || this.canvas.clientHeight || 700;
+        this.canvas.width  = Math.round(w * this.dpr);
+        this.canvas.height = Math.round(h * this.dpr);
+        this.canvas.style.width  = w + 'px';
+        this.canvas.style.height = h + 'px';
     }
 
     // ============================================================
-    // CRISP TEXT HELPER — always call before drawing text
+    // FONT LOADING
     // ============================================================
-    setFont(size, family = 'Orbitron', weight = 'bold') {
-        const ctx = this.ctx;
-        ctx.shadowBlur   = 0;
-        ctx.shadowColor  = 'transparent';
-        ctx.globalAlpha  = 1;
-        // Round to nearest pixel for crispness
-        const crisp = Math.round(size);
-        ctx.font = `${weight} ${crisp}px ${family}, "Arial Black", Arial`;
+    loadFonts() {
+        if (document.fonts) {
+            document.fonts.ready.then(() => {
+                if (document.fonts.check('12px Orbitron'))  this.FONT_TITLE = 'Orbitron, monospace';
+                if (document.fonts.check('12px Rajdhani'))  this.FONT_MONO  = 'Rajdhani, sans-serif';
+            });
+        }
     }
 
-    // Draw crisp text with optional glow (glow is separate pass)
-    drawCrispText(text, x, y, color, size = 14, family = 'Orbitron', weight = 'bold', align = 'left', baseline = 'alphabetic') {
-        const ctx = this.ctx;
+    // ============================================================
+    // DPR HELPERS — all drawing uses these
+    // ============================================================
+    dX(x)   { return Math.round(x * this.dpr); }
+    dY(y)   { return Math.round(y * this.dpr); }
+    dS(s)   { return s * this.dpr; }
+    dSr(s)  { return Math.round(s * this.dpr); }
+
+    // ============================================================
+    // CRISP TEXT — Two-pass: glow then sharp
+    // ============================================================
+    drawText(ctx, text, x, y, opts = {}) {
+        const {
+            size      = 14,
+            weight    = 'bold',
+            color     = '#FFFFFF',
+            align     = 'left',
+            baseline  = 'alphabetic',
+            family    = null,
+            glow      = false,
+            glowColor = null,
+            glowBlur  = 0,
+            stroke    = false,
+            strokeColor = 'rgba(0,0,0,0.7)',
+            strokeWidth = 3,
+            opacity   = 1,
+            maxWidth  = 0
+        } = opts;
+
         ctx.save();
+        ctx.globalAlpha  = opacity;
         ctx.textAlign    = align;
         ctx.textBaseline = baseline;
-        ctx.imageSmoothingEnabled = false;
+        ctx.font = `${weight} ${Math.round(size * this.dpr)}px ${family || (size > 16 ? this.FONT_TITLE : this.FONT_UI)}`;
 
-        // Pixel-snap coordinates
-        const px = Math.round(x);
-        const py = Math.round(y);
+        const px = this.dX(x);
+        const py = this.dY(y);
+        const mw = maxWidth ? this.dS(maxWidth) : undefined;
 
-        this.setFont(size, family, weight);
+        // Stroke outline first
+        if (stroke) {
+            ctx.strokeStyle = strokeColor;
+            ctx.lineWidth   = strokeWidth * this.dpr;
+            ctx.lineJoin    = 'round';
+            ctx.miterLimit  = 2;
+            ctx.strokeText(text, px, py, mw);
+        }
+
+        // Glow pass (blurred, low opacity)
+        if (glow && glowBlur > 0) {
+            ctx.shadowBlur  = glowBlur * this.dpr;
+            ctx.shadowColor = glowColor || color;
+            ctx.fillStyle   = glowColor || color;
+            ctx.globalAlpha = opacity * 0.5;
+            ctx.fillText(text, px, py, mw);
+        }
+
+        // Sharp pass (zero blur)
         ctx.shadowBlur  = 0;
         ctx.shadowColor = 'transparent';
+        ctx.globalAlpha = opacity;
         ctx.fillStyle   = color;
-        ctx.fillText(text, px, py);
+        ctx.fillText(text, px, py, mw);
+
         ctx.restore();
     }
 
-    // Draw text WITH glow but crisp (glow pass then sharp text pass)
-    drawGlowText(text, x, y, color, glowColor, size = 14, family = 'Orbitron', weight = 'bold', align = 'center', glowSize = 8) {
-        const ctx = this.ctx;
-        ctx.save();
-        ctx.textAlign    = align;
-        ctx.textBaseline = 'alphabetic';
-        ctx.imageSmoothingEnabled = false;
+    // ============================================================
+    // CRISP SHAPE HELPERS
+    // ============================================================
+    fillRect(ctx, x, y, w, h) {
+        ctx.fillRect(this.dX(x), this.dY(y), this.dSr(w), this.dSr(h));
+    }
 
-        const px = Math.round(x);
-        const py = Math.round(y);
+    drawCircle(ctx, x, y, r) {
+        ctx.beginPath();
+        ctx.arc(this.dX(x), this.dY(y), this.dS(r), 0, Math.PI * 2);
+    }
 
-        // Pass 1: Glow layer (blurred, large)
-        this.setFont(size, family, weight);
-        ctx.shadowBlur  = glowSize;
-        ctx.shadowColor = glowColor || color;
-        ctx.fillStyle   = glowColor || color;
-        ctx.globalAlpha = 0.55;
-        ctx.fillText(text, px, py);
+    drawRoundRect(ctx, x, y, w, h, r) {
+        const dx = this.dX(x), dy = this.dY(y);
+        const dw = this.dSr(w), dh = this.dSr(h);
+        const dr = this.dS(r);
+        ctx.beginPath();
+        ctx.moveTo(dx + dr, dy);
+        ctx.arcTo(dx + dw, dy, dx + dw, dy + dh, dr);
+        ctx.arcTo(dx + dw, dy + dh, dx, dy + dh, dr);
+        ctx.arcTo(dx, dy + dh, dx, dy, dr);
+        ctx.arcTo(dx, dy, dx + dw, dy, dr);
+        ctx.closePath();
+    }
 
-        // Pass 2: Sharp text on top
-        ctx.shadowBlur  = 0;
-        ctx.shadowColor = 'transparent';
-        ctx.globalAlpha = 1;
-        ctx.fillStyle   = color;
-        ctx.fillText(text, px, py);
-
-        ctx.restore();
+    drawLine(ctx, x1, y1, x2, y2) {
+        ctx.beginPath();
+        ctx.moveTo(this.dX(x1), this.dY(y1));
+        ctx.lineTo(this.dX(x2), this.dY(y2));
     }
 
     // ============================================================
@@ -254,7 +349,9 @@ class KnifeHit {
                 const diff = Math.floor((new Date() - new Date(last)) / 86400000);
                 if (diff > 1) this.playerData.dailyStreak = 0;
             }
-            this.showDailyReward = true;
+            this.showDailyReward    = true;
+            this.dailyRewardClaimed = false;
+            this.dailyRewardAnim    = 0;
         }
     }
 
@@ -281,54 +378,52 @@ class KnifeHit {
         this.dailyRewardClaimed = true;
         this.showDailyReward    = false;
 
-        this.spawnFloat(this.canvas.width/2, this.canvas.height/2 - 40, `+${coins} Coins`, '#FFD700', 20, 160);
-        this.spawnFloat(this.canvas.width/2, this.canvas.height/2,      `+${dias} Diamonds`, '#00D4FF', 18, 160);
-        if (bonusPup) {
-            this.spawnFloat(this.canvas.width/2, this.canvas.height/2 + 40,
-                `+1 Power-up Bonus!`, '#00FF88', 15, 160);
-        }
+        this.addFloatingText(this.W/2, this.H/2 - 40, `+${coins} Coins`,    '#FFD700', 22, 160);
+        this.addFloatingText(this.W/2, this.H/2,      `+${dias} Diamonds`,  '#00D4FF', 20, 160);
+        if (bonusPup) this.addFloatingText(this.W/2, this.H/2 + 40, `+1 ${this.powerUps[bonusPup].name}!`, '#00FF88', 16, 160);
+
+        this.spawnCelebration(this.W/2, this.H/2, 18);
         if (window.audioManager) audioManager.play('achievement');
         this.savePlayerData();
     }
 
     // ============================================================
-    // LEVEL CONFIG — 25 Levels
+    // LEVEL CONFIG
     // ============================================================
     getLevelConfig(level) {
         const l = Math.min(level, 25);
-        const configs = {
-            1:  { knives: 7,  speed: 0.015, pattern: 'constant', apples: 0, reverseChance: 0,    bossMode: false, name: 'Beginner' },
-            2:  { knives: 8,  speed: 0.020, pattern: 'constant', apples: 1, reverseChance: 0,    bossMode: false, name: 'Warm Up' },
-            3:  { knives: 8,  speed: 0.025, pattern: 'wobble',   apples: 1, reverseChance: 0,    bossMode: false, name: 'Wobbler' },
-            4:  { knives: 9,  speed: 0.028, pattern: 'wobble',   apples: 2, reverseChance: 0,    bossMode: false, name: 'Two Apples' },
-            5:  { knives: 10, speed: 0.032, pattern: 'reverse',  apples: 1, reverseChance: 0.3,  bossMode: true,  name: 'Boss 1' },
-            6:  { knives: 9,  speed: 0.030, pattern: 'reverse',  apples: 2, reverseChance: 0.3,  bossMode: false, name: 'Reversal' },
-            7:  { knives: 10, speed: 0.034, pattern: 'wobble',   apples: 2, reverseChance: 0.4,  bossMode: false, name: 'Speed Up' },
-            8:  { knives: 10, speed: 0.038, pattern: 'erratic',  apples: 2, reverseChance: 0.4,  bossMode: false, name: 'Erratic' },
-            9:  { knives: 11, speed: 0.040, pattern: 'erratic',  apples: 3, reverseChance: 0.5,  bossMode: false, name: 'Triple Apple' },
-            10: { knives: 12, speed: 0.045, pattern: 'erratic',  apples: 2, reverseChance: 0.5,  bossMode: true,  name: 'Boss 2' },
-            11: { knives: 11, speed: 0.042, pattern: 'reverse',  apples: 3, reverseChance: 0.5,  bossMode: false, name: 'Fast Spin' },
-            12: { knives: 12, speed: 0.046, pattern: 'crazy',    apples: 2, reverseChance: 0.6,  bossMode: false, name: 'Going Crazy' },
-            13: { knives: 12, speed: 0.050, pattern: 'crazy',    apples: 3, reverseChance: 0.6,  bossMode: false, name: 'Nonstop' },
-            14: { knives: 13, speed: 0.054, pattern: 'crazy',    apples: 3, reverseChance: 0.6,  bossMode: false, name: 'Intense' },
-            15: { knives: 14, speed: 0.058, pattern: 'crazy',    apples: 4, reverseChance: 0.7,  bossMode: true,  name: 'Boss 3' },
-            16: { knives: 12, speed: 0.052, pattern: 'erratic',  apples: 3, reverseChance: 0.65, bossMode: false, name: 'Storm' },
-            17: { knives: 13, speed: 0.056, pattern: 'crazy',    apples: 3, reverseChance: 0.7,  bossMode: false, name: 'Vortex' },
-            18: { knives: 13, speed: 0.060, pattern: 'crazy',    apples: 4, reverseChance: 0.7,  bossMode: false, name: 'Chaos' },
-            19: { knives: 14, speed: 0.064, pattern: 'crazy',    apples: 4, reverseChance: 0.75, bossMode: false, name: 'Mayhem' },
-            20: { knives: 15, speed: 0.070, pattern: 'crazy',    apples: 4, reverseChance: 0.8,  bossMode: true,  name: 'MEGA BOSS' },
-            21: { knives: 13, speed: 0.065, pattern: 'crazy',    apples: 4, reverseChance: 0.75, bossMode: false, name: 'Legend' },
-            22: { knives: 14, speed: 0.068, pattern: 'crazy',    apples: 4, reverseChance: 0.8,  bossMode: false, name: 'Mythic' },
-            23: { knives: 14, speed: 0.072, pattern: 'crazy',    apples: 4, reverseChance: 0.8,  bossMode: false, name: 'Divine' },
-            24: { knives: 15, speed: 0.076, pattern: 'crazy',    apples: 4, reverseChance: 0.85, bossMode: false, name: 'Immortal' },
-            25: { knives: 16, speed: 0.080, pattern: 'crazy',    apples: 4, reverseChance: 0.9,  bossMode: true,  name: 'FINAL BOSS' }
+        const map = {
+            1:  { knives: 7,  speed: 0.015, pattern: 'constant', apples: 0, bossMode: false, name: 'Beginner'    },
+            2:  { knives: 8,  speed: 0.020, pattern: 'constant', apples: 1, bossMode: false, name: 'Warm Up'     },
+            3:  { knives: 8,  speed: 0.025, pattern: 'wobble',   apples: 1, bossMode: false, name: 'Wobbler'     },
+            4:  { knives: 9,  speed: 0.028, pattern: 'wobble',   apples: 2, bossMode: false, name: 'Two Apples'  },
+            5:  { knives: 10, speed: 0.032, pattern: 'reverse',  apples: 1, bossMode: true,  name: 'BOSS 1'      },
+            6:  { knives: 9,  speed: 0.030, pattern: 'reverse',  apples: 2, bossMode: false, name: 'Reversal'    },
+            7:  { knives: 10, speed: 0.034, pattern: 'wobble',   apples: 2, bossMode: false, name: 'Speed Up'    },
+            8:  { knives: 10, speed: 0.038, pattern: 'erratic',  apples: 2, bossMode: false, name: 'Erratic'     },
+            9:  { knives: 11, speed: 0.040, pattern: 'erratic',  apples: 3, bossMode: false, name: 'Triple Apple'},
+            10: { knives: 12, speed: 0.045, pattern: 'erratic',  apples: 2, bossMode: true,  name: 'BOSS 2'      },
+            11: { knives: 11, speed: 0.042, pattern: 'reverse',  apples: 3, bossMode: false, name: 'Fast Spin'   },
+            12: { knives: 12, speed: 0.046, pattern: 'crazy',    apples: 2, bossMode: false, name: 'Going Crazy' },
+            13: { knives: 12, speed: 0.050, pattern: 'crazy',    apples: 3, bossMode: false, name: 'Nonstop'     },
+            14: { knives: 13, speed: 0.054, pattern: 'crazy',    apples: 3, bossMode: false, name: 'Intense'     },
+            15: { knives: 14, speed: 0.058, pattern: 'crazy',    apples: 4, bossMode: true,  name: 'BOSS 3'      },
+            16: { knives: 12, speed: 0.052, pattern: 'erratic',  apples: 3, bossMode: false, name: 'Storm'       },
+            17: { knives: 13, speed: 0.056, pattern: 'crazy',    apples: 3, bossMode: false, name: 'Vortex'      },
+            18: { knives: 13, speed: 0.060, pattern: 'crazy',    apples: 4, bossMode: false, name: 'Chaos'       },
+            19: { knives: 14, speed: 0.064, pattern: 'crazy',    apples: 4, bossMode: false, name: 'Mayhem'      },
+            20: { knives: 15, speed: 0.070, pattern: 'crazy',    apples: 4, bossMode: true,  name: 'MEGA BOSS'   },
+            21: { knives: 13, speed: 0.065, pattern: 'crazy',    apples: 4, bossMode: false, name: 'Legend'      },
+            22: { knives: 14, speed: 0.068, pattern: 'crazy',    apples: 4, bossMode: false, name: 'Mythic'      },
+            23: { knives: 14, speed: 0.072, pattern: 'crazy',    apples: 4, bossMode: false, name: 'Divine'      },
+            24: { knives: 15, speed: 0.076, pattern: 'crazy',    apples: 4, bossMode: false, name: 'Immortal'    },
+            25: { knives: 16, speed: 0.080, pattern: 'crazy',    apples: 4, bossMode: true,  name: 'FINAL BOSS'  }
         };
-        if (configs[l]) return configs[l];
+        if (map[l]) return map[l];
         return {
             knives: Math.min(8 + Math.floor(l/3), 20),
             speed:  Math.min(0.015 + l*0.004, 0.12),
             pattern: 'crazy', apples: Math.min(Math.floor(l/4), 4),
-            reverseChance: Math.min(0.5 + l*0.02, 0.95),
             bossMode: l % 5 === 0, name: `Endless ${l}`
         };
     }
@@ -338,9 +433,9 @@ class KnifeHit {
     // ============================================================
     createTarget() {
         return {
-            x: this.canvas.width  / 2,
-            y: this.canvas.height / 2 - 50,
-            radius: Math.min(this.canvas.width, this.canvas.height) * 0.155,
+            x: this.W / 2,
+            y: this.H / 2 - 60,
+            radius: Math.min(this.W, this.H) * 0.155,
             angle: 0, speed: 0.015, baseSpeed: 0.015,
             direction: 1, pattern: 'constant',
             patternTimer: 0, wobbleY: 0,
@@ -358,7 +453,7 @@ class KnifeHit {
 
         this.stuckKnives  = [];
         this.apples       = [];
-        this.coins        = [];
+        this.orbitCoins   = [];
         this.flyingKnife  = null;
 
         this.knivesTotal  = cfg.knives;
@@ -372,9 +467,9 @@ class KnifeHit {
         this.particles          = [];
         this.explosions         = [];
         this.scorePopups        = [];
+        this.popRings           = [];
 
-        // Target
-        this.target.radius      = Math.min(this.canvas.width, this.canvas.height) * 0.155;
+        this.target.radius      = Math.min(this.W, this.H) * 0.155;
         this.target.angle       = 0;
         this.target.direction   = 1;
         this.target.speed       = cfg.speed;
@@ -385,14 +480,15 @@ class KnifeHit {
         this.target.bossAngle   = 0;
         this.target.wobbleY     = 0;
         this.target.config      = cfg;
+        this.target.x           = this.W / 2;
+        this.target.y           = this.H / 2 - 60;
 
         this.spawnApples(cfg.apples);
         this.spawnOrbitCoins();
 
-        const bossLabel = cfg.bossMode ? ' BOSS!' : '';
-        this.spawnFloat(
-            this.canvas.width/2, this.canvas.height/2,
-            `Level ${this.level} - ${cfg.name}${bossLabel}`,
+        this.addFloatingText(
+            this.W/2, this.H/2,
+            `Level ${this.level} - ${cfg.name}`,
             cfg.bossMode ? '#FF006E' : '#00FF88', 20, 120
         );
         this.createIdleKnife();
@@ -400,9 +496,10 @@ class KnifeHit {
 
     createIdleKnife() {
         this.idleKnife = {
-            x: this.canvas.width / 2,
-            y: this.canvas.height - 90,
-            wobble: 0, bounce: 0
+            x:      this.W / 2,
+            y:      this.H - (this.isMobile ? 75 : 90),
+            wobble: 0,
+            bounce: 0
         };
     }
 
@@ -414,17 +511,14 @@ class KnifeHit {
         const used  = [];
         for (let i = 0; i < count; i++) {
             let angle, tries = 0;
-            do {
-                angle = Math.random() * Math.PI * 2;
-                tries++;
-            } while (used.some(a => Math.abs(a - angle) < 0.9) && tries < 60);
+            do { angle = Math.random() * Math.PI * 2; tries++; }
+            while (used.some(a => Math.abs(a - angle) < 0.9) && tries < 60);
             used.push(angle);
             const isDiamond = Math.random() < 0.1;
             const isGolden  = !isDiamond && Math.random() < 0.25;
             this.apples.push({
                 angle, hit: false, scale: 1, wobble: 0,
-                type: isDiamond ? 'diamond' : isGolden ? 'golden' : 'red',
-                collected: false
+                type: isDiamond ? 'diamond' : isGolden ? 'golden' : 'red'
             });
         }
     }
@@ -433,13 +527,14 @@ class KnifeHit {
     // ORBIT COINS
     // ============================================================
     spawnOrbitCoins() {
-        this.coins = [];
+        this.orbitCoins = [];
         const count = Math.min(2 + Math.floor(this.level / 3), 5);
         for (let i = 0; i < count; i++) {
-            this.coins.push({
+            this.orbitCoins.push({
                 angle:     (Math.PI * 2 * i) / count,
                 orbitR:    this.target.radius + 28,
-                collected: false, wobble: 0
+                collected: false,
+                wobble:    0
             });
         }
     }
@@ -447,50 +542,55 @@ class KnifeHit {
     // ============================================================
     // INPUT
     // ============================================================
-    onThrow(e) {
+    handleClick(e) {
         if (this.paused || this.gameOver) return;
         if (this.showDailyReward) { this.claimDailyReward(); return; }
-        if (e) {
-            const rect = this.canvas.getBoundingClientRect();
-            const sx   = this.canvas.width  / rect.width;
-            const sy   = this.canvas.height / rect.height;
-            const mx   = (e.clientX - rect.left) * sx;
-            const my   = (e.clientY - rect.top)  * sy;
-            if (this.handleUIClick(mx, my)) return;
-        }
+
+        const p = this.getLogicalPos(e);
+        if (this.handleUIClick(p.x, p.y)) return;
         if (this.stageComplete || this.flyingKnife || this.knivesLeft <= 0) return;
         this.throwKnife();
     }
 
-    onTouchThrow(e) {
+    handleTouch(e) {
         e.preventDefault();
         if (this.showDailyReward) { this.claimDailyReward(); return; }
-        const rect = this.canvas.getBoundingClientRect();
-        const sx   = this.canvas.width  / rect.width;
-        const sy   = this.canvas.height / rect.height;
-        const tx   = (e.touches[0].clientX - rect.left) * sx;
-        const ty   = (e.touches[0].clientY - rect.top)  * sy;
-        if (this.handleUIClick(tx, ty)) return;
-        this.onThrow();
+        const p = this.getLogicalPos(e);
+        if (this.handleUIClick(p.x, p.y)) return;
+        if (this.paused || this.gameOver) return;
+        if (this.stageComplete || this.flyingKnife || this.knivesLeft <= 0) return;
+        this.throwKnife();
     }
 
-    onKeyDown(e) {
+    handleKey(e) {
         if (this.destroyed) return;
-        if (e.code === 'Space') { e.preventDefault(); this.onThrow(); }
-        if (e.key === '1') this.usePowerUp('extraKnife');
-        if (e.key === '2') this.usePowerUp('slowTarget');
-        if (e.key === '3') this.usePowerUp('shield');
-        if (e.key === '4') this.usePowerUp('bomb');
+        if (e.code === 'Space') { e.preventDefault(); this.throwKnife(); }
+        const keys = ['extraKnife','slowTarget','shield','bomb'];
+        if (e.key >= '1' && e.key <= '4') this.usePowerUp(keys[+e.key - 1]);
+    }
+
+    getLogicalPos(e) {
+        const rect = this.canvas.getBoundingClientRect();
+        const scaleX = this.W / rect.width;
+        const scaleY = this.H / rect.height;
+        let cx, cy;
+        if (e.touches) {
+            cx = e.touches[0] ? e.touches[0].clientX : e.changedTouches[0].clientX;
+            cy = e.touches[0] ? e.touches[0].clientY : e.changedTouches[0].clientY;
+        } else {
+            cx = e.clientX; cy = e.clientY;
+        }
+        return { x: (cx - rect.left) * scaleX, y: (cy - rect.top) * scaleY };
     }
 
     handleUIClick(mx, my) {
-        const btnSize = 36;
-        const startX  = 8;
-        const btnY    = this.canvas.height - 46;
+        const btnS = this.isMobile ? 40 : 36;
+        const btnY = this.idleKnife ? this.idleKnife.y + 42 : this.H - 46;
+        const startX = 8;
         let idx = 0;
         for (const key of Object.keys(this.powerUps)) {
-            const bx = startX + idx * (btnSize + 6);
-            if (mx >= bx && mx <= bx + btnSize && my >= btnY && my <= btnY + btnSize) {
+            const bx = startX + idx * (btnS + 6);
+            if (mx >= bx && mx <= bx + btnS && my >= btnY && my <= btnY + btnS) {
                 this.usePowerUp(key);
                 return true;
             }
@@ -500,7 +600,7 @@ class KnifeHit {
     }
 
     // ============================================================
-    // POWER-UP USE
+    // POWER-UPS
     // ============================================================
     usePowerUp(type) {
         const pup = this.powerUps[type];
@@ -510,27 +610,27 @@ class KnifeHit {
             case 'extraKnife':
                 this.knivesLeft  += 2;
                 this.knivesTotal += 2;
-                this.spawnFloat(this.canvas.width/2, this.canvas.height*0.35, '+2 Knives!', '#00FF88', 17, 90);
+                this.addFloatingText(this.W/2, this.H*0.35, '+2 Knives!', '#00FF88', 18, 90);
                 break;
             case 'slowTarget':
                 this.activeEffects.slow      = true;
                 this.activeEffects.slowTimer = 5000;
                 this.target.speed            = this.target.baseSpeed * 0.35;
-                this.spawnFloat(this.canvas.width/2, this.canvas.height*0.35, 'Slow Motion!', '#00D4FF', 17, 90);
+                this.addFloatingText(this.W/2, this.H*0.35, 'Slow Motion!', '#00D4FF', 18, 90);
                 break;
             case 'shield':
                 this.activeEffects.shield = true;
-                this.spawnFloat(this.canvas.width/2, this.canvas.height*0.35, 'Shield ON!', '#b347d9', 17, 90);
+                this.addFloatingText(this.W/2, this.H*0.35, 'Shield ON!', '#b347d9', 18, 90);
                 break;
             case 'bomb':
-                this.bombClearKnives();
+                this.bombClear();
                 break;
         }
         if (window.audioManager) audioManager.play('powerUp');
         this.savePlayerData();
     }
 
-    bombClearKnives() {
+    bombClear() {
         const count = this.stuckKnives.length;
         if (count === 0) return;
         this.stuckKnives.forEach(sk => {
@@ -543,8 +643,8 @@ class KnifeHit {
         this.score  += bonus;
         this.onScore(this.score);
         this.earnCoins(count * 2, this.target.x, this.target.y);
-        this.spawnFloat(this.canvas.width/2, this.canvas.height/2, `BOOM! +${bonus}`, '#FF8C00', 20, 100);
-        this.screenShake.timer = 12; this.screenShake.intensity = 8;
+        this.addFloatingText(this.W/2, this.H/2, `BOOM! +${bonus}`, '#FF8C00', 20, 100);
+        this.shake(12, 8);
         if (window.audioManager) audioManager.play('levelUp');
     }
 
@@ -556,12 +656,14 @@ class KnifeHit {
         this.knivesThrown++;
         this.playerData.totalKnivesThrown++;
         if (this.idleKnife) this.idleKnife.bounce = 8;
+
         this.flyingKnife = {
-            x: this.canvas.width / 2,
-            y: this.canvas.height - 90,
-            vy: -18, vx: 0,
-            angle: -Math.PI / 2,
-            trail: [], skin: this.currentSkin
+            x:     this.W / 2,
+            y:     this.idleKnife ? this.idleKnife.y : this.H - 90,
+            vy:    -(this.isMobile ? 14 : 17),
+            vx:    0,
+            trail: [],
+            skin:  this.currentSkin
         };
         if (window.audioManager) audioManager.play('knife');
     }
@@ -571,6 +673,12 @@ class KnifeHit {
     // ============================================================
     update(dt) {
         if (this.paused || this.gameOver) return;
+        this.time  += dt;
+        this.frame++;
+
+        if (this.showDailyReward) {
+            this.dailyRewardAnim = Math.min(1, this.dailyRewardAnim + 0.05);
+        }
 
         if (this.stageComplete) {
             this.stageCompleteTimer++;
@@ -588,25 +696,24 @@ class KnifeHit {
             return;
         }
 
-        // Screen shake
-        if (this.screenShake.timer > 0) {
-            const t = this.screenShake.timer;
-            const i = this.screenShake.intensity;
-            this.screenShake.x = (Math.random()-0.5) * i * (t/15);
-            this.screenShake.y = (Math.random()-0.5) * i * 0.5 * (t/15);
-            this.screenShake.timer--;
-        } else { this.screenShake.x = 0; this.screenShake.y = 0; }
+        // Shake
+        if (this.shakeTimer > 0) {
+            const f = this.shakeForce * (this.shakeTimer / 12);
+            this.shakeX = (Math.random() - 0.5) * f;
+            this.shakeY = (Math.random() - 0.5) * f * 0.4;
+            this.shakeTimer--;
+        } else { this.shakeX = 0; this.shakeY = 0; }
 
         if (this.flashTimer > 0) this.flashTimer--;
         Object.keys(this.hudFlash).forEach(k => { if (this.hudFlash[k] > 0) this.hudFlash[k]--; });
 
-        // Slow power-up timer
+        // Slow timer
         if (this.activeEffects.slow) {
             this.activeEffects.slowTimer -= dt;
             if (this.activeEffects.slowTimer <= 0) {
                 this.activeEffects.slow = false;
                 this.target.speed       = this.target.baseSpeed;
-                this.spawnFloat(this.canvas.width/2, this.canvas.height*0.35, 'Slow Ended', '#888', 13, 60);
+                this.addFloatingText(this.W/2, this.H*0.35, 'Slow Ended', '#888', 13, 60);
             }
         }
 
@@ -623,23 +730,25 @@ class KnifeHit {
         if (this.flyingKnife) this.updateFlyingKnife();
 
         if (this.idleKnife) {
-            this.idleKnife.wobble = Math.sin(Date.now() / 600) * 4;
+            this.idleKnife.wobble = Math.sin(this.time / 600) * 4;
             if (this.idleKnife.bounce > 0) this.idleKnife.bounce--;
         }
 
-        this.updateOrbitCoins(dt);
+        this.updateOrbitCoins();
 
         this.apples.forEach(a => {
-            if (!a.hit) a.wobble = Math.sin(Date.now()/300 + a.angle) * 0.04;
+            if (!a.hit) a.wobble = Math.sin(this.time/300 + a.angle) * 0.04;
             else        a.scale  = Math.max(0, a.scale - 0.07);
         });
+
+        this.stars.forEach(s => { s.phase += s.speed; });
 
         this.updateParticles();
         this.updateExplosions();
         this.updateScorePopups();
         this.updateFloatingTexts();
-        this.updateBgParticles();
         this.updateCoinPickups();
+        this.updatePopRings();
     }
 
     updateTargetRotation(dt) {
@@ -665,17 +774,14 @@ class KnifeHit {
                 t.angle += t.speed * t.direction * slow;
                 if (t.patternTimer > 700 + Math.random()*1000) {
                     t.direction *= -1; t.patternTimer = 0;
-                    this.screenShake.timer = 2; this.screenShake.intensity = 3;
+                    this.shake(2, 3);
                 }
                 break;
             case 'crazy':
                 t.speed = t.baseSpeed * (1 + Math.abs(Math.sin(t.patternTimer / 400)));
                 t.angle += t.speed * t.direction * slow;
-                if (Math.random() < 0.006) {
-                    t.direction *= -1; t.patternTimer = 0;
-                    this.screenShake.timer = 3; this.screenShake.intensity = 4;
-                }
-                if (Math.random() < 0.002) t.angle += t.direction * 0.3 * slow;
+                if (Math.random() < 0.006) { t.direction *= -1; t.patternTimer = 0; this.shake(3, 4); }
+                if (Math.random() < 0.002)  t.angle += t.direction * 0.3 * slow;
                 break;
         }
     }
@@ -687,7 +793,6 @@ class KnifeHit {
 
         k.x += k.vx;
         k.y += k.vy;
-        k.angle = Math.atan2(k.vy, k.vx) - Math.PI / 2;
 
         const ty   = this.target.y + this.target.wobbleY;
         const dx   = k.x - this.target.x;
@@ -695,14 +800,14 @@ class KnifeHit {
         const dist = Math.sqrt(dx*dx + dy*dy);
 
         if (dist <= this.target.radius + 10) {
-            this.onKnifeHit(dx, dy, dist);
+            this.onKnifeHitTarget(dx, dy, dist);
             return;
         }
-        if (k.y < -80 || k.y > this.canvas.height + 80) this.flyingKnife = null;
+        if (k.y < -80 || k.y > this.H + 80) this.flyingKnife = null;
     }
 
-    updateOrbitCoins(dt) {
-        this.coins.forEach(c => {
+    updateOrbitCoins() {
+        this.orbitCoins.forEach(c => {
             c.angle  += 0.018;
             c.wobble += 0.05;
             if (c.collected) return;
@@ -716,76 +821,85 @@ class KnifeHit {
                     c.collected = true;
                     this.earnCoins(1 + Math.floor(this.level/5), cx, cy);
                     this.spawnParticles(cx, cy, '#FFD700', 6);
+                    this.popRings.push({ x: cx, y: cy, radius: 5, opacity: 0.7, color: '#FFD700' });
                 }
             }
         });
     }
 
     updateParticles() {
-        this.particles = this.particles.filter(p => {
+        for (let i = this.particles.length - 1; i >= 0; i--) {
+            const p = this.particles[i];
             p.x += p.vx; p.y += p.vy;
-            p.vy += (p.gravity || 0.12); p.vx *= 0.98;
+            p.vy += p.grav || 0.12; p.vx *= 0.98;
             p.life -= p.decay; p.size *= 0.97;
-            return p.life > 0 && p.size > 0.3;
-        });
+            if (p.life <= 0 || p.size < 0.3) this.particles.splice(i, 1);
+        }
     }
 
     updateExplosions() {
-        this.explosions = this.explosions.filter(e => {
+        for (let i = this.explosions.length - 1; i >= 0; i--) {
+            const e = this.explosions[i];
             e.radius  += 3.5;
             e.opacity -= 0.055;
-            return e.opacity > 0;
-        });
+            if (e.opacity <= 0) this.explosions.splice(i, 1);
+        }
     }
 
     updateScorePopups() {
-        this.scorePopups = this.scorePopups.filter(p => {
+        for (let i = this.scorePopups.length - 1; i >= 0; i--) {
+            const p = this.scorePopups[i];
             p.y -= 1.2; p.life -= 2; p.opacity = p.life / 60;
-            return p.life > 0;
-        });
+            if (p.life <= 0) this.scorePopups.splice(i, 1);
+        }
     }
 
     updateFloatingTexts() {
-        this.floatingTexts = this.floatingTexts.filter(t => {
-            t.y -= 0.6; t.life -= 1; t.opacity = Math.min(1, t.life / 40);
-            return t.life > 0;
-        });
+        for (let i = this.floatingTexts.length - 1; i >= 0; i--) {
+            const t = this.floatingTexts[i];
+            t.y -= 0.6; t.life -= 1;
+            t.opacity = Math.min(1, t.life / 40);
+            t.scale  += (1 - t.scale) * 0.12;
+            if (t.life <= 0) this.floatingTexts.splice(i, 1);
+        }
     }
 
     updateCoinPickups() {
-        this.coinPickups = this.coinPickups.filter(p => {
-            p.y += p.vy; p.life -= 2; p.opacity = Math.min(1, p.life / 40);
-            return p.life > 0;
-        });
+        for (let i = this.coinPickups.length - 1; i >= 0; i--) {
+            const p = this.coinPickups[i];
+            p.y += p.vy; p.life -= 2;
+            p.opacity = Math.min(1, p.life / 40);
+            if (p.life <= 0) this.coinPickups.splice(i, 1);
+        }
     }
 
-    updateBgParticles() {
-        this.bgParticles.forEach(p => {
-            p.x += p.vx; p.y += p.vy;
-            if (p.x < 0) p.x = this.canvas.width;
-            if (p.x > this.canvas.width)  p.x = 0;
-            if (p.y < 0) p.y = this.canvas.height;
-            if (p.y > this.canvas.height) p.y = 0;
-        });
+    updatePopRings() {
+        for (let i = this.popRings.length - 1; i >= 0; i--) {
+            const r = this.popRings[i];
+            r.radius  += 2.5;
+            r.opacity -= 0.04;
+            if (r.opacity <= 0) this.popRings.splice(i, 1);
+        }
     }
 
     updateBreakPieces() {
-        this.breakPieces = this.breakPieces.filter(p => {
+        for (let i = this.breakPieces.length - 1; i >= 0; i--) {
+            const p = this.breakPieces[i];
             p.x += p.vx; p.y += p.vy;
             p.vy += 0.28; p.rotation += p.rotSpeed;
             p.vx *= 0.99; p.life--;
-            return p.life > 0;
-        });
+            if (p.life <= 0) this.breakPieces.splice(i, 1);
+        }
     }
 
     // ============================================================
     // KNIFE HIT TARGET
     // ============================================================
-    onKnifeHit(dx, dy, dist) {
+    onKnifeHitTarget(dx, dy, dist) {
         const k        = this.flyingKnife;
         const relAngle = Math.atan2(dy, dx) - this.target.angle;
 
-        // Check collision with stuck knives
+        // Check stuck knife collision
         let hitStuck = false;
         for (const sk of this.stuckKnives) {
             let diff = Math.abs(relAngle - sk.angle) % (Math.PI * 2);
@@ -797,8 +911,8 @@ class KnifeHit {
             if (this.activeEffects.shield) {
                 this.activeEffects.shield = false;
                 this.flashTimer = 8; this.flashColor = '#b347d9';
-                this.screenShake.timer = 6; this.screenShake.intensity = 4;
-                this.spawnFloat(this.canvas.width/2, this.target.y - 40, 'Shield Blocked!', '#b347d9', 17, 80);
+                this.shake(6, 4);
+                this.addFloatingText(this.W/2, this.target.y - 50, 'Shield Blocked!', '#b347d9', 17, 80);
                 this.flyingKnife = null;
                 this.combo = 0;
                 if (this.knivesLeft > 0) this.createIdleKnife();
@@ -808,14 +922,13 @@ class KnifeHit {
             return;
         }
 
-        // Check apple hit
-        let hitApple = false;
+        // Apple check
         for (let i = 0; i < this.apples.length; i++) {
             const a = this.apples[i];
             if (a.hit) continue;
             let diff = Math.abs(relAngle - a.angle) % (Math.PI * 2);
             if (diff > Math.PI) diff = Math.PI * 2 - diff;
-            if (diff < 0.38) { this.hitApple(i, a); hitApple = true; break; }
+            if (diff < 0.38) { this.hitApple(i, a); break; }
         }
 
         // Stick knife
@@ -825,13 +938,12 @@ class KnifeHit {
         this.combo++;
         this.maxCombo   = Math.max(this.maxCombo, this.combo);
         const comboMult = Math.min(this.combo, 8);
-        const scoreGain = 10 * comboMult + (this.level * 2);
+        const scoreGain = 10 * comboMult + this.level * 2;
         this.score     += scoreGain;
         this.onScore(this.score);
 
         const coinEarn = 1 + Math.floor(this.combo/3) + Math.floor(this.level/5);
         this.earnCoins(coinEarn, k.x, k.y - 20);
-
         if (this.combo > 0 && this.combo % 5 === 0) this.earnDiamonds(1, k.x, k.y - 40);
 
         this.checkMilestones();
@@ -840,19 +952,23 @@ class KnifeHit {
             x: k.x + (Math.random()-0.5)*40,
             y: k.y - 25,
             text: this.combo > 1 ? `x${comboMult} +${scoreGain}` : `+${scoreGain}`,
-            color: this.combo > 3 ? '#FFD700' : this.combo > 1 ? '#00FF88' : '#fff',
+            color: this.combo > 3 ? '#FFD700' : this.combo > 1 ? '#00FF88' : '#ffffff',
             life: 65, opacity: 1
         });
 
         const ty = this.target.y + this.target.wobbleY;
         const ex = this.target.x + Math.cos(this.target.angle + relAngle) * this.target.radius;
-        const ey = ty           + Math.sin(this.target.angle + relAngle) * this.target.radius;
+        const ey = ty + Math.sin(this.target.angle + relAngle) * this.target.radius;
+
         this.spawnParticles(ex, ey, this.getSkinColor(), 8);
         this.spawnParticles(ex, ey, '#fff', 4);
+        if (this.popRings.length < this.MAX_POP_RINGS) {
+            this.popRings.push({ x: ex, y: ey, radius: 5, opacity: 0.6, color: this.getSkinColor() });
+        }
 
         if (this.combo > 1) { this.flashTimer = 4; this.flashColor = '#00FF88'; }
         if (window.audioManager) audioManager.play('hit');
-        this.screenShake.timer = 3; this.screenShake.intensity = 3;
+        this.shake(3, 3);
 
         this.flyingKnife = null;
 
@@ -865,7 +981,7 @@ class KnifeHit {
     onCollision() {
         this.lives--;
         this.combo = 0;
-        this.screenShake.timer = 22; this.screenShake.intensity = 12;
+        this.shake(22, 12);
         this.flashTimer = 18; this.flashColor = '#ff0055';
 
         const k = this.flyingKnife;
@@ -873,9 +989,7 @@ class KnifeHit {
         this.spawnParticles(k.x, k.y, '#ff0055', 22);
         this.spawnParticles(k.x, k.y, '#FFD700', 10);
 
-        this.spawnFloat(this.canvas.width/2, this.canvas.height/2 - 20,
-            `COLLISION! Lives: ${this.lives}`, '#FF0055', 17, 100);
-
+        this.addFloatingText(this.W/2, this.H/2 - 20, `COLLISION! Lives: ${this.lives}`, '#FF0055', 17, 100);
         if (window.audioManager) audioManager.play('fail');
         this.flyingKnife = null;
 
@@ -901,8 +1015,8 @@ class KnifeHit {
 
         const rewards = {
             diamond: { score: 80,  coins: 15, dias: 3, color: '#00D4FF', text: 'DIAMOND! +80' },
-            golden:  { score: 50,  coins: 10, dias: 1, color: '#FFD700', text: 'GOLDEN! +50' },
-            red:     { score: 25,  coins: 4,  dias: 0, color: '#FF4444', text: 'APPLE! +25' }
+            golden:  { score: 50,  coins: 10, dias: 1, color: '#FFD700', text: 'GOLDEN! +50'  },
+            red:     { score: 25,  coins: 4,  dias: 0, color: '#FF4444', text: 'APPLE! +25'   }
         };
         const r = rewards[apple.type];
 
@@ -913,13 +1027,12 @@ class KnifeHit {
 
         this.spawnAppleParticles(pos.x, pos.y, apple.type);
         this.explosions.push({ x: pos.x, y: pos.y, radius: 5, opacity: 0.9, color: r.color });
-        this.scorePopups.push({
-            x: pos.x, y: pos.y - 30,
-            text: r.text, color: r.color, life: 90, opacity: 1
-        });
+        this.scorePopups.push({ x: pos.x, y: pos.y - 30, text: r.text, color: r.color, life: 90, opacity: 1 });
+        if (this.popRings.length < this.MAX_POP_RINGS)
+            this.popRings.push({ x: pos.x, y: pos.y, radius: 8, opacity: 0.8, color: r.color });
 
         this.flashTimer = 10; this.flashColor = r.color;
-        this.screenShake.timer = 7; this.screenShake.intensity = 5;
+        this.shake(7, 5);
         if (window.audioManager) audioManager.play('success');
     }
 
@@ -930,18 +1043,18 @@ class KnifeHit {
         this.stageComplete      = true;
         this.stageCompleteTimer = 0;
 
-        const levelBonus   = 50 + this.level * 25;
-        const comboBonus   = this.maxCombo * 10;
-        const perfectBonus = allApples ? 100 : 0;
-        const totalBonus   = levelBonus + comboBonus + perfectBonus;
+        const levelBonus  = 50 + this.level * 25;
+        const comboBonus  = this.maxCombo * 10;
+        const perfBonus   = allApples ? 100 : 0;
+        const totalBonus  = levelBonus + comboBonus + perfBonus;
 
         this.score += totalBonus;
         this.onScore(this.score);
 
         const coins = 30 + this.level * 8 + this.maxCombo * 3;
         const dias  = (this.levelCfg?.bossMode ? 5 : 1) + (allApples ? 2 : 0);
-        this.earnCoins(coins, this.canvas.width/2, this.canvas.height/2 - 50);
-        this.earnDiamonds(dias, this.canvas.width/2, this.canvas.height/2 - 20);
+        this.earnCoins(coins, this.W/2, this.H/2 - 50);
+        this.earnDiamonds(dias, this.W/2, this.H/2 - 20);
 
         const stars = this.knivesThrown <= this.knivesTotal*0.7 ? 3 :
                       this.knivesThrown <= this.knivesTotal*0.9 ? 2 : 1;
@@ -950,19 +1063,20 @@ class KnifeHit {
         }
 
         this.spawnBreakPieces();
-        this.screenShake.timer = 18; this.screenShake.intensity = 10;
+        this.shake(18, 10);
         this.flashTimer = 25; this.flashColor = '#00FF88';
 
-        this.spawnFloat(
-            this.canvas.width/2, this.canvas.height/2 - 30,
+        this.addFloatingText(
+            this.W/2, this.H/2 - 30,
             allApples ? 'PERFECT CLEAR!' : 'STAGE CLEAR!',
             '#00FF88', 24, 140
         );
-        this.spawnFloat(
-            this.canvas.width/2, this.canvas.height/2 + 20,
-            `+${totalBonus} pts  +${coins} Coins  +${dias} Diamonds`,
-            '#FFD700', 14, 130
+        this.addFloatingText(
+            this.W/2, this.H/2 + 20,
+            `+${totalBonus} pts  +${coins} Coins  +${dias} Dia`,
+            '#FFD700', 13, 130
         );
+        this.spawnCelebration(this.W/2, this.H/3, 20);
         if (window.audioManager) audioManager.play('levelUp');
     }
 
@@ -974,10 +1088,8 @@ class KnifeHit {
             const speed = Math.random() * 6 + 3;
             this.breakPieces.push({
                 x: tx, y: ty,
-                vx: Math.cos(angle) * speed,
-                vy: Math.sin(angle) * speed - 1.5,
-                w: Math.random() * 22 + 10,
-                h: Math.random() * 22 + 10,
+                vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed - 1.5,
+                w: Math.random() * 22 + 10, h: Math.random() * 22 + 10,
                 rotation: Math.random() * Math.PI * 2,
                 rotSpeed: (Math.random()-0.5) * 0.22,
                 life: 70,
@@ -999,17 +1111,14 @@ class KnifeHit {
     }
 
     // ============================================================
-    // COINS / DIAMONDS
+    // ECONOMY
     // ============================================================
     earnCoins(amount, x, y) {
         this.playerData.coins            += amount;
         this.playerData.totalCoinsEarned += amount;
         this.sessionCoins                += amount;
         this.hudFlash.coins               = 18;
-        this.coinPickups.push({
-            x, y, text: `+${amount} Coins`,
-            color: '#FFD700', life: 75, opacity: 1, vy: -1.2
-        });
+        this.coinPickups.push({ x, y, text: `+${amount} Coins`, color: '#FFD700', life: 75, opacity: 1, vy: -1.2 });
     }
 
     earnDiamonds(amount, x, y) {
@@ -1017,10 +1126,7 @@ class KnifeHit {
         this.playerData.totalDiamondsEarned += amount;
         this.sessionDias                    += amount;
         this.hudFlash.diamonds               = 18;
-        this.coinPickups.push({
-            x, y, text: `+${amount} Diamonds`,
-            color: '#00D4FF', life: 90, opacity: 1, vy: -1.0
-        });
+        this.coinPickups.push({ x, y, text: `+${amount} Diamonds`, color: '#00D4FF', life: 90, opacity: 1, vy: -1.0 });
         if (window.audioManager) audioManager.play('achievement');
     }
 
@@ -1028,9 +1134,8 @@ class KnifeHit {
         for (const m of this.milestones) {
             if (this.score >= m * 10 && !this.milestonesClaimed.has(m)) {
                 this.milestonesClaimed.add(m);
-                this.earnDiamonds(1, this.canvas.width/2, this.canvas.height*0.3);
-                this.spawnFloat(this.canvas.width/2, this.canvas.height*0.28,
-                    `${m*10} pts! +1 Diamond`, '#00D4FF', 15, 110);
+                this.earnDiamonds(1, this.W/2, this.H * 0.3);
+                this.addFloatingText(this.W/2, this.H*0.28, `${m*10} pts! +1 Diamond`, '#00D4FF', 15, 110);
             }
         }
     }
@@ -1054,23 +1159,21 @@ class KnifeHit {
         };
     }
 
-    getSkinColor() {
-        return this.knifeSkins[this.currentSkin]?.blade[1] || '#ddd';
-    }
+    getSkinColor() { return this.knifeSkins[this.currentSkin]?.blade[1] || '#ddd'; }
 
-    spawnFloat(x, y, text, color, size = 16, life = 80) {
-        this.floatingTexts.push({ x, y, text, color, size, life, opacity: 1 });
+    addFloatingText(x, y, text, color, size = 16, life = 80) {
+        this.floatingTexts.push({ x, y, text, color, size, life, opacity: 1, scale: 0.3 });
     }
 
     spawnParticles(x, y, color, count) {
-        for (let i = 0; i < count; i++) {
+        for (let i = 0; i < count && this.particles.length < this.MAX_PARTICLES; i++) {
             const angle = Math.random() * Math.PI * 2;
             const speed = Math.random() * 6 + 2;
             this.particles.push({
                 x, y,
                 vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed - 1,
                 color, size: Math.random() * 5 + 2,
-                life: 1, decay: Math.random()*0.04+0.02, gravity: 0.14
+                life: 1, decay: Math.random()*0.04+0.02, grav: 0.14
             });
         }
     }
@@ -1082,28 +1185,48 @@ class KnifeHit {
             red:     ['#FF4444','#FF8888','#fff']
         };
         const cols = colors[type] || colors.red;
-        for (let i = 0; i < 22; i++) {
+        for (let i = 0; i < 22 && this.particles.length < this.MAX_PARTICLES; i++) {
             const angle = Math.random() * Math.PI * 2;
             const speed = Math.random() * 8 + 3;
             this.particles.push({
                 x, y,
                 vx: Math.cos(angle)*speed, vy: Math.sin(angle)*speed - 3,
                 color: cols[Math.floor(Math.random()*cols.length)],
-                size: Math.random()*6+2, life: 1, decay: 0.022, gravity: 0.18
+                size: Math.random()*6+2, life: 1, decay: 0.022, grav: 0.18
             });
         }
     }
 
-    createBgParticles() {
-        return Array.from({ length: 45 }, () => ({
-            x:     Math.random() * this.canvas.width,
-            y:     Math.random() * this.canvas.height,
-            vx:    (Math.random()-0.5) * 0.25,
-            vy:    (Math.random()-0.5) * 0.25,
-            size:  Math.random() * 1.8 + 0.4,
-            color: ['#b347d9','#00d4ff','#ff006e','#00ff88'][Math.floor(Math.random()*4)],
-            alpha: Math.random() * 0.35 + 0.08
+    spawnCelebration(cx, cy, count) {
+        for (let i = 0; i < count; i++) {
+            setTimeout(() => {
+                if (this.destroyed) return;
+                const x = cx + (Math.random()-0.5) * this.W * 0.7;
+                const y = cy + (Math.random()-0.5) * this.H * 0.25;
+                this.spawnParticles(x, y, this.getSkinColor(), 6);
+                if (this.popRings.length < this.MAX_POP_RINGS)
+                    this.popRings.push({ x, y, radius: 5, opacity: 0.6, color: this.getSkinColor() });
+            }, i * 40);
+        }
+    }
+
+    shake(timer, force) { this.shakeTimer = timer; this.shakeForce = force; }
+
+    makeStars(count) {
+        return Array.from({ length: count }, () => ({
+            x: Math.random() * this.W,
+            y: Math.random() * this.H,
+            size: Math.random() * 1.5 + 0.3,
+            phase: Math.random() * 6.28,
+            speed: Math.random() * 0.015 + 0.005,
+            color: Math.random() > 0.85 ? '#b347d9' : Math.random() > 0.6 ? '#00d4ff' : '#ffffff'
         }));
+    }
+
+    fmtNum(n) {
+        if (n >= 1e6) return (n/1e6).toFixed(1) + 'M';
+        if (n >= 1e3) return (n/1e3).toFixed(1) + 'K';
+        return '' + n;
     }
 
     // ============================================================
@@ -1111,115 +1234,123 @@ class KnifeHit {
     // ============================================================
     draw() {
         const ctx = this.ctx;
-        ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+
+        // Clear with solid color (fast, no alpha)
+        ctx.fillStyle = '#050510';
+        ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
         ctx.save();
-        ctx.translate(Math.round(this.screenShake.x), Math.round(this.screenShake.y));
 
-        this.drawBackground();
+        // Shake
+        if (this.shakeX || this.shakeY) {
+            ctx.translate(this.dS(this.shakeX), this.dS(this.shakeY));
+        }
 
-        // Flash overlay (use integer coords)
+        this.drawBackground(ctx);
+
+        // Flash overlay
         if (this.flashTimer > 0) {
-            const a = (this.flashTimer / 18) * 0.25;
+            const a = (this.flashTimer / 18) * 0.22;
             ctx.fillStyle = this.hexToRgba(this.flashColor, a);
             ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
         }
 
         if (this.stageComplete) {
-            this.drawStageComplete();
+            this.drawStageComplete(ctx);
         } else {
-            this.drawOrbitCoins();
-            this.drawTarget();
-            this.drawExplosions();
-            this.drawParticles();
-            if (this.flyingKnife) this.drawFlyingKnife();
-            else                   this.drawIdleKnife();
-            this.drawScorePopups();
-            this.drawCoinPickups();
-            this.drawFloatingTexts();
+            this.drawOrbitCoins(ctx);
+            this.drawTarget(ctx);
+            this.drawExplosions(ctx);
+            this.drawPopRings(ctx);
+            this.drawParticles(ctx);
+            this.drawScorePopups(ctx);
+            this.drawCoinPickups(ctx);
+            if (this.flyingKnife) this.drawFlyingKnife(ctx);
+            else                   this.drawIdleKnife(ctx);
+            this.drawFloatingTexts(ctx);
         }
 
-        this.drawHUD();
-        this.drawPowerUpBar();
+        this.drawHUD(ctx);
+        this.drawPowerUpBar(ctx);
 
         ctx.restore();
 
-        if (this.showDailyReward && !this.dailyRewardClaimed) this.drawDailyReward();
-        if (this.gameOver) this.drawGameOver();
+        // Overlays — no shake
+        if (this.showDailyReward && !this.dailyRewardClaimed) this.drawDailyReward(ctx);
+        if (this.gameOver) this.drawGameOver(ctx);
     }
 
     // ============================================================
     // DRAW: BACKGROUND
     // ============================================================
-    drawBackground() {
-        const ctx = this.ctx;
-        const W   = this.canvas.width;
-        const H   = this.canvas.height;
+    drawBackground(ctx) {
+        const W = this.W, H = this.H;
 
-        const bg = ctx.createRadialGradient(W/2, H*0.4, 0, W/2, H/2, H);
+        const bg = ctx.createRadialGradient(
+            this.dX(W/2), this.dY(H*0.4), 0,
+            this.dX(W/2), this.dY(H/2), this.dS(H)
+        );
         bg.addColorStop(0,   this.target.bossMode ? '#1a0408' : '#120828');
         bg.addColorStop(0.5, this.target.bossMode ? '#0d0208' : '#080518');
         bg.addColorStop(1,   '#040210');
         ctx.fillStyle = bg;
-        ctx.fillRect(0, 0, W, H);
+        ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
-        // Ambient BG particles
-        ctx.save();
-        this.bgParticles.forEach(p => {
-            ctx.globalAlpha = p.alpha;
-            ctx.fillStyle   = p.color;
-            ctx.beginPath();
-            ctx.arc(Math.round(p.x), Math.round(p.y), p.size, 0, Math.PI * 2);
+        // Stars
+        for (const s of this.stars) {
+            const alpha = 0.15 + ((Math.sin(s.phase) + 1) / 2) * 0.55;
+            ctx.globalAlpha = alpha;
+            ctx.fillStyle   = s.color;
+            this.drawCircle(ctx, s.x, s.y, s.size);
             ctx.fill();
-        });
-        ctx.restore();
-
-        // Platform glow
-        const pg = ctx.createRadialGradient(W/2, H-90, 10, W/2, H-90, 90);
-        pg.addColorStop(0, 'rgba(179,71,217,0.15)');
-        pg.addColorStop(1, 'transparent');
-        ctx.fillStyle = pg;
-        ctx.fillRect(0, H-180, W, 180);
+        }
+        ctx.globalAlpha = 1;
 
         // Vignette
-        const vg = ctx.createRadialGradient(W/2, H/2, H*0.15, W/2, H/2, H*0.85);
-        vg.addColorStop(0, 'transparent');
+        const vg = ctx.createRadialGradient(
+            this.dX(W/2), this.dY(H/2), this.dS(H*0.15),
+            this.dX(W/2), this.dY(H/2), this.dS(H*0.85)
+        );
+        vg.addColorStop(0, 'rgba(0,0,0,0)');
         vg.addColorStop(1, 'rgba(0,0,0,0.5)');
         ctx.fillStyle = vg;
-        ctx.fillRect(0, 0, W, H);
+        ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
     }
 
     // ============================================================
-    // DRAW: TARGET
+    // DRAW: TARGET (LOG)
     // ============================================================
-    drawTarget() {
-        const ctx = this.ctx;
-        const t   = this.target;
-        const ty  = Math.round(t.y + t.wobbleY);
-        const tx  = Math.round(t.x);
+    drawTarget(ctx) {
+        const t  = this.target;
+        const tx = this.dX(t.x);
+        const ty = this.dY(t.y + t.wobbleY);
+        const tr = this.dS(t.radius);
 
         ctx.save();
         ctx.translate(tx, ty);
 
-        // Glow ring (pre-rotation)
+        // Outer glow ring
         ctx.save();
-        ctx.shadowBlur  = t.bossMode ? 32 : 18;
+        ctx.shadowBlur  = t.bossMode ? this.dS(30) : this.dS(18);
         ctx.shadowColor = t.bossMode ? '#ff0050' : '#ff8c00';
+        const glowA = 0.25 + Math.abs(Math.sin(this.time/250)) * 0.28;
         ctx.strokeStyle = t.bossMode
-            ? `rgba(255,0,50,${0.28 + Math.abs(Math.sin(Date.now()/250))*0.3})`
-            : 'rgba(255,140,60,0.16)';
-        ctx.lineWidth = 5;
+            ? `rgba(255,0,50,${glowA})`
+            : `rgba(255,140,60,${glowA * 0.7})`;
+        ctx.lineWidth   = this.dS(5);
         ctx.beginPath();
-        ctx.arc(0, 0, t.radius + 4, 0, Math.PI * 2);
+        ctx.arc(0, 0, tr + this.dS(4), 0, Math.PI * 2);
         ctx.stroke();
         ctx.shadowBlur = 0;
         ctx.restore();
 
-        // Rotate
         ctx.rotate(t.angle);
 
         // Log body
-        const lg = ctx.createRadialGradient(-t.radius*0.22, -t.radius*0.22, t.radius*0.07, 0, 0, t.radius);
+        const lg = ctx.createRadialGradient(
+            -tr*0.22, -tr*0.22, tr*0.07,
+            0, 0, tr
+        );
         if (t.bossMode) {
             lg.addColorStop(0,   '#b03500');
             lg.addColorStop(0.35,'#881000');
@@ -1232,60 +1363,59 @@ class KnifeHit {
             lg.addColorStop(1,   '#5a2d0a');
         }
         ctx.beginPath();
-        ctx.arc(0, 0, t.radius, 0, Math.PI * 2);
+        ctx.arc(0, 0, tr, 0, Math.PI * 2);
         ctx.fillStyle = lg;
         ctx.fill();
 
-        // Clip for interior
+        // Wood details clipped
         ctx.save();
         ctx.beginPath();
-        ctx.arc(0, 0, t.radius, 0, Math.PI * 2);
+        ctx.arc(0, 0, tr, 0, Math.PI * 2);
         ctx.clip();
 
-        // Wood grain
-        ctx.globalAlpha = 0.065;
-        for (let i = -t.radius; i < t.radius; i += 9) {
+        // Grain lines
+        ctx.globalAlpha = 0.06;
+        for (let i = -tr; i < tr; i += this.dS(9)) {
             ctx.beginPath();
-            ctx.moveTo(i, -t.radius);
-            ctx.bezierCurveTo(i+4, -t.radius/2, i-4, 0, i+2, t.radius);
+            ctx.moveTo(i, -tr);
+            ctx.bezierCurveTo(i + this.dS(4), -tr/2, i - this.dS(4), 0, i + this.dS(2), tr);
             ctx.strokeStyle = t.bossMode ? '#ff4400' : '#c8a060';
-            ctx.lineWidth   = 2;
+            ctx.lineWidth   = this.dS(2);
             ctx.stroke();
         }
         ctx.globalAlpha = 1;
 
         // Growth rings
-        const ringAlphas = t.bossMode
-            ? [0.16, 0.11, 0.08, 0.06]
-            : [0.12, 0.09, 0.06, 0.04];
+        const ringA = t.bossMode
+            ? [0.15, 0.10, 0.07, 0.05]
+            : [0.12, 0.08, 0.06, 0.04];
         for (let i = 1; i <= 4; i++) {
             ctx.beginPath();
-            ctx.arc(0, 0, t.radius * (i/4.8), 0, Math.PI * 2);
+            ctx.arc(0, 0, tr * (i/4.8), 0, Math.PI * 2);
             ctx.strokeStyle = t.bossMode
-                ? `rgba(255,80,0,${ringAlphas[i-1]})`
-                : `rgba(255,200,140,${ringAlphas[i-1]})`;
-            ctx.lineWidth = i === 1 ? 2.5 : 1.5;
+                ? `rgba(255,80,0,${ringA[i-1]})`
+                : `rgba(255,200,140,${ringA[i-1]})`;
+            ctx.lineWidth = i === 1 ? this.dS(2.5) : this.dS(1.5);
             ctx.stroke();
         }
         ctx.restore();
 
-        // Center bullseye
-        const cg = ctx.createRadialGradient(0, 0, 0, 0, 0, t.radius*0.13);
+        // Bullseye
+        const cg = ctx.createRadialGradient(0, 0, 0, 0, 0, tr*0.13);
         cg.addColorStop(0, t.bossMode ? '#ff6600' : '#f0b060');
         cg.addColorStop(1, t.bossMode ? '#cc2200' : '#b07030');
         ctx.beginPath();
-        ctx.arc(0, 0, t.radius * 0.11, 0, Math.PI * 2);
-        ctx.fillStyle   = cg;
-        ctx.shadowBlur  = t.bossMode ? 10 : 4;
-        ctx.shadowColor = t.bossMode ? '#ff4400' : '#ff8c00';
+        ctx.arc(0, 0, tr * 0.11, 0, Math.PI * 2);
+        ctx.fillStyle = cg;
         ctx.fill();
-        ctx.shadowBlur = 0;
 
-        // Stuck knives
+        // Stuck knives — VERTICAL (pointing up from rim)
         this.stuckKnives.forEach(sk => {
             ctx.save();
             ctx.rotate(sk.angle);
-            this.drawKnifeShape(ctx, t.radius - 6, 0, sk.skin || this.currentSkin, 0.9);
+            ctx.translate(t.radius - 6, 0); // move to rim in logical space...
+            // Draw knife vertically (pointing away from center = outward)
+            this.drawKnifeVertical(ctx, sk.skin || this.currentSkin, 0.9);
             ctx.restore();
         });
 
@@ -1294,7 +1424,7 @@ class KnifeHit {
             if (a.hit && a.scale <= 0) return;
             ctx.save();
             ctx.rotate(a.angle);
-            ctx.translate(t.radius, 0);
+            ctx.translate(tr, 0);
             ctx.rotate(-a.angle - t.angle + a.wobble);
             ctx.scale(a.scale, a.scale);
             this.drawApple(ctx, 0, 0, a.type);
@@ -1303,100 +1433,92 @@ class KnifeHit {
 
         ctx.restore(); // un-translate
 
-        // Boss label (crisp text, no shadow blur on main pass)
+        // Boss label — crisp
         if (t.bossMode) {
-            const pulse = 0.65 + Math.sin(Date.now()/180) * 0.35;
-            // Glow pass
-            ctx.save();
-            ctx.textAlign    = 'center';
-            ctx.textBaseline = 'alphabetic';
-            ctx.font         = 'bold 12px Orbitron, Arial';
-            ctx.shadowBlur   = 10;
-            ctx.shadowColor  = '#ff0055';
-            ctx.fillStyle    = `rgba(255,0,55,${pulse * 0.5})`;
-            ctx.fillText('BOSS', tx, ty - t.radius - 13);
-            // Sharp pass
-            ctx.shadowBlur  = 0;
-            ctx.globalAlpha = pulse;
-            ctx.fillStyle   = '#ff0055';
-            ctx.fillText('BOSS', tx, ty - t.radius - 13);
-            ctx.restore();
+            const pulse = 0.65 + Math.sin(this.time/180) * 0.35;
+            this.drawText(ctx, 'BOSS', t.x, t.y + t.wobbleY - t.radius - 14, {
+                size: 12, weight: 'bold', color: '#ff3355',
+                align: 'center', family: this.FONT_TITLE,
+                glow: true, glowColor: '#ff0055', glowBlur: 8,
+                opacity: pulse
+            });
         }
     }
 
     // ============================================================
-    // DRAW: KNIFE SHAPE
+    // DRAW: KNIFE VERTICAL (pointing UP = outward from log rim)
+    // Called when ctx is already rotated to sk.angle and translated to rim
+    // The tip points outward (positive local X), handle inward
     // ============================================================
-    drawKnifeShape(ctx, x, y, skinName = 'default', scale = 1) {
+    drawKnifeVertical(ctx, skinName = 'default', scale = 1) {
         const skin = this.knifeSkins[skinName] || this.knifeSkins.default;
 
         ctx.save();
-        ctx.translate(Math.round(x), Math.round(y));
-        ctx.scale(scale, scale);
+        ctx.scale(this.dpr * scale, this.dpr * scale);
 
-        // Blade glow (only glow layer)
-        ctx.shadowBlur  = 7;
+        // Knife is drawn pointing in +X direction (outward from center)
+        // Tip at +X, handle at -X
+
+        // Blade glow
+        ctx.shadowBlur  = 6;
         ctx.shadowColor = skin.blade[1];
 
-        const bg = ctx.createLinearGradient(-3, -36, 3, 0);
+        const bg = ctx.createLinearGradient(38, -3, 0, 3);
         bg.addColorStop(0,   skin.blade[2]);
         bg.addColorStop(0.4, skin.blade[1]);
         bg.addColorStop(1,   skin.blade[0]);
         ctx.fillStyle = bg;
         ctx.beginPath();
-        ctx.moveTo(0,    0);
-        ctx.lineTo(-3.5, -10);
-        ctx.lineTo(-2,   -34);
-        ctx.lineTo(0,    -38);
-        ctx.lineTo(2,    -34);
-        ctx.lineTo(3.5,  -10);
+        ctx.moveTo(0,  0);
+        ctx.lineTo(10,  -3.5);
+        ctx.lineTo(34,  -2);
+        ctx.lineTo(38,   0);
+        ctx.lineTo(34,   2);
+        ctx.lineTo(10,   3.5);
         ctx.closePath();
         ctx.fill();
         ctx.shadowBlur = 0;
 
         // Blade shine
-        ctx.fillStyle   = 'rgba(255,255,255,0.42)';
+        ctx.fillStyle = 'rgba(255,255,255,0.38)';
         ctx.beginPath();
-        ctx.moveTo(0.5,  -6);
-        ctx.lineTo(-0.3, -30);
-        ctx.lineTo(1.8,  -30);
-        ctx.lineTo(1.8,  -6);
+        ctx.moveTo(8,  -0.5);
+        ctx.lineTo(32, -1.5);
+        ctx.lineTo(32,  0.5);
+        ctx.lineTo(8,   1.0);
         ctx.closePath();
         ctx.fill();
 
         // Guard
         ctx.fillStyle = skin.guard;
-        ctx.fillRect(-7, -5, 14, 6);
-        const guardGrad = ctx.createLinearGradient(0, -5, 0, 1);
+        ctx.fillRect(-5, -7, 6, 14);
+        const guardGrad = ctx.createLinearGradient(-5, -7, 1, -7);
         guardGrad.addColorStop(0, 'rgba(255,255,255,0.18)');
         guardGrad.addColorStop(1, 'rgba(0,0,0,0.18)');
         ctx.fillStyle = guardGrad;
-        ctx.fillRect(-7, -5, 14, 6);
+        ctx.fillRect(-5, -7, 6, 14);
 
         // Handle
-        const hg = ctx.createLinearGradient(-5.5, 0, 5.5, 0);
+        const hg = ctx.createLinearGradient(-5.5, -5, -5.5, 5);
         hg.addColorStop(0,   skin.handle[0]);
         hg.addColorStop(0.5, skin.handle[1]);
         hg.addColorStop(1,   skin.handle[2]);
         ctx.fillStyle = hg;
-        ctx.beginPath();
-        ctx.rect(-5.5, 1, 11, 24);
-        ctx.fill();
+        ctx.fillRect(-26, -5.5, 22, 11);
 
-        // Handle grip lines
-        ctx.strokeStyle = 'rgba(255,200,100,0.3)';
+        // Grip lines
+        ctx.strokeStyle = 'rgba(255,200,100,0.28)';
         ctx.lineWidth   = 1;
-        for (let i = 5; i < 22; i += 4.5) {
+        for (let i = -24; i < -5; i += 4.5) {
             ctx.beginPath();
-            ctx.moveTo(-5, i);
-            ctx.lineTo(5, i);
+            ctx.moveTo(i, -5); ctx.lineTo(i, 5);
             ctx.stroke();
         }
 
-        // Handle end cap
+        // End cap
         ctx.fillStyle = skin.handle[0];
         ctx.beginPath();
-        ctx.ellipse(0, 25, 5, 3, 0, 0, Math.PI * 2);
+        ctx.ellipse(-26, 0, 3, 5, 0, 0, Math.PI * 2);
         ctx.fill();
 
         ctx.restore();
@@ -1414,44 +1536,51 @@ class KnifeHit {
         const s = styles[type] || styles.red;
 
         ctx.save();
-        ctx.translate(Math.round(x), Math.round(y));
-        ctx.shadowBlur  = 12;
+        ctx.translate(0, 0); // already translated by caller
+
+        ctx.shadowBlur  = this.dS(10);
         ctx.shadowColor = s.glow;
 
-        const ag = ctx.createRadialGradient(-3, -3, 1, 0, 1, 11);
-        ag.addColorStop(0,   s.shine);
+        const ag = ctx.createRadialGradient(
+            -this.dS(3), -this.dS(3), this.dS(1),
+            0, this.dS(1), this.dS(11)
+        );
+        ag.addColorStop(0, s.shine);
         ag.addColorStop(0.5, s.body);
-        ag.addColorStop(1,   this.darkenHex(s.body, 30));
+        ag.addColorStop(1, this.darkenHex(s.body, 30));
         ctx.fillStyle = ag;
         ctx.beginPath();
-        ctx.ellipse(0, 2, 9, 10, 0, 0, Math.PI * 2);
+        ctx.ellipse(0, this.dS(2), this.dS(9), this.dS(10), 0, 0, Math.PI * 2);
         ctx.fill();
         ctx.shadowBlur = 0;
 
-        ctx.globalAlpha = 0.42;
+        // Shine
+        ctx.globalAlpha = 0.4;
         ctx.fillStyle   = s.shine;
         ctx.beginPath();
-        ctx.ellipse(-3, -2, 3, 4, -0.5, 0, Math.PI * 2);
+        ctx.ellipse(this.dS(-3), this.dS(-2), this.dS(3), this.dS(4), -0.5, 0, Math.PI * 2);
         ctx.fill();
         ctx.globalAlpha = 1;
 
+        // Stem
         ctx.strokeStyle = s.stem;
-        ctx.lineWidth   = 1.8;
+        ctx.lineWidth   = this.dS(1.8);
         ctx.beginPath();
-        ctx.moveTo(0, -8);
-        ctx.quadraticCurveTo(5, -14, 2, -17);
+        ctx.moveTo(0, this.dS(-8));
+        ctx.quadraticCurveTo(this.dS(5), this.dS(-14), this.dS(2), this.dS(-17));
         ctx.stroke();
 
+        // Leaf
         ctx.fillStyle = s.leaf;
         ctx.beginPath();
-        ctx.ellipse(3.5, -13, 5.5, 3, 0.5, 0, Math.PI * 2);
+        ctx.ellipse(this.dS(3.5), this.dS(-13), this.dS(5.5), this.dS(3), 0.5, 0, Math.PI * 2);
         ctx.fill();
 
         if (type === 'diamond') {
             ctx.fillStyle = 'rgba(255,255,255,0.65)';
             [[0,-4],[6,2],[-5,4]].forEach(([sx,sy]) => {
                 ctx.beginPath();
-                ctx.arc(sx, sy, 1.5, 0, Math.PI*2);
+                ctx.arc(this.dS(sx), this.dS(sy), this.dS(1.5), 0, Math.PI*2);
                 ctx.fill();
             });
         }
@@ -1459,128 +1588,193 @@ class KnifeHit {
     }
 
     // ============================================================
-    // DRAW: FLYING KNIFE
+    // DRAW: FLYING KNIFE (vertical, pointing UP)
     // ============================================================
-    drawFlyingKnife() {
-        const ctx = this.ctx;
-        const k   = this.flyingKnife;
+    drawFlyingKnife(ctx) {
+        const k = this.flyingKnife;
 
         // Trail
         k.trail.forEach((t, i) => {
             const ratio = i / k.trail.length;
             ctx.save();
-            ctx.globalAlpha = ratio * 0.28;
-            ctx.translate(Math.round(t.x), Math.round(t.y));
-            ctx.rotate(k.angle);
-            ctx.scale(1, ratio * 0.6);
-            this.drawKnifeShape(ctx, 0, 0, k.skin, 0.72);
+            ctx.globalAlpha = ratio * 0.25;
+            ctx.translate(this.dX(t.x), this.dY(t.y));
+            // Trail shows knife moving upward
+            this.drawKnifeAtShooter(ctx, k.skin, ratio * 0.65);
             ctx.restore();
         });
         ctx.globalAlpha = 1;
 
         ctx.save();
-        ctx.translate(Math.round(k.x), Math.round(k.y));
-        ctx.rotate(k.angle);
-        this.drawKnifeShape(ctx, 0, 0, k.skin, 1);
+        ctx.translate(this.dX(k.x), this.dY(k.y));
+        this.drawKnifeAtShooter(ctx, k.skin, 1);
+        ctx.restore();
+    }
+
+    // Knife pointing UP (for shooter position and flying)
+    drawKnifeAtShooter(ctx, skinName = 'default', scale = 1) {
+        const skin = this.knifeSkins[skinName] || this.knifeSkins.default;
+
+        ctx.save();
+        ctx.scale(this.dpr * scale, this.dpr * scale);
+
+        // Blade points UP (negative Y), handle DOWN (+Y)
+
+        // Glow
+        ctx.shadowBlur  = 7;
+        ctx.shadowColor = skin.blade[1];
+
+        const bg = ctx.createLinearGradient(-3, -38, 3, 0);
+        bg.addColorStop(0,   skin.blade[2]);
+        bg.addColorStop(0.4, skin.blade[1]);
+        bg.addColorStop(1,   skin.blade[0]);
+        ctx.fillStyle = bg;
+        ctx.beginPath();
+        ctx.moveTo(0,    0);
+        ctx.lineTo(-3.5, -10);
+        ctx.lineTo(-2,   -34);
+        ctx.lineTo(0,    -38);
+        ctx.lineTo(2,    -34);
+        ctx.lineTo(3.5,  -10);
+        ctx.closePath();
+        ctx.fill();
+        ctx.shadowBlur = 0;
+
+        // Shine
+        ctx.fillStyle = 'rgba(255,255,255,0.4)';
+        ctx.beginPath();
+        ctx.moveTo(0.5,  -6);
+        ctx.lineTo(-0.3, -30);
+        ctx.lineTo(1.8,  -30);
+        ctx.lineTo(1.8,  -6);
+        ctx.closePath();
+        ctx.fill();
+
+        // Guard
+        ctx.fillStyle = skin.guard;
+        ctx.fillRect(-7, -5, 14, 6);
+        const gg = ctx.createLinearGradient(0, -5, 0, 1);
+        gg.addColorStop(0, 'rgba(255,255,255,0.18)');
+        gg.addColorStop(1, 'rgba(0,0,0,0.18)');
+        ctx.fillStyle = gg;
+        ctx.fillRect(-7, -5, 14, 6);
+
+        // Handle
+        const hg = ctx.createLinearGradient(-5.5, 0, 5.5, 0);
+        hg.addColorStop(0,   skin.handle[0]);
+        hg.addColorStop(0.5, skin.handle[1]);
+        hg.addColorStop(1,   skin.handle[2]);
+        ctx.fillStyle = hg;
+        ctx.fillRect(-5.5, 1, 11, 24);
+
+        // Grip lines
+        ctx.strokeStyle = 'rgba(255,200,100,0.28)';
+        ctx.lineWidth   = 1;
+        for (let i = 5; i < 22; i += 4.5) {
+            ctx.beginPath();
+            ctx.moveTo(-5, i); ctx.lineTo(5, i);
+            ctx.stroke();
+        }
+
+        // End cap
+        ctx.fillStyle = skin.handle[0];
+        ctx.beginPath();
+        ctx.ellipse(0, 25, 5, 3, 0, 0, Math.PI * 2);
+        ctx.fill();
+
         ctx.restore();
     }
 
     // ============================================================
-    // DRAW: IDLE KNIFE
+    // DRAW: IDLE KNIFE (at shooter, pointing UP)
     // ============================================================
-    drawIdleKnife() {
+    drawIdleKnife(ctx) {
         if (!this.idleKnife || this.knivesLeft <= 0) return;
-        const ctx = this.ctx;
-        const k   = this.idleKnife;
-        const bY  = k.bounce > 0 ? k.bounce * -1.5 : k.wobble;
+        const k  = this.idleKnife;
+        const bY = k.bounce > 0 ? k.bounce * -1.5 : k.wobble;
 
         ctx.save();
-        ctx.translate(Math.round(k.x), Math.round(k.y + bY));
-        ctx.rotate(-Math.PI / 2);
-        this.drawKnifeShape(ctx, 0, 0, this.currentSkin, 1);
+        ctx.translate(this.dX(k.x), this.dY(k.y + bY));
+        this.drawKnifeAtShooter(ctx, this.currentSkin, 1);
         ctx.restore();
 
-        // Platform shadow
-        const pg = ctx.createRadialGradient(k.x, k.y + 32, 5, k.x, k.y + 32, 55);
-        pg.addColorStop(0, 'rgba(179,71,217,0.18)');
-        pg.addColorStop(1, 'transparent');
+        // Platform glow
+        const pg = ctx.createRadialGradient(
+            this.dX(k.x), this.dY(k.y + 32), this.dS(8),
+            this.dX(k.x), this.dY(k.y + 32), this.dS(50)
+        );
+        pg.addColorStop(0, 'rgba(179,71,217,0.15)');
+        pg.addColorStop(1, 'rgba(0,0,0,0)');
         ctx.fillStyle = pg;
         ctx.beginPath();
-        ctx.ellipse(k.x, k.y + 32, 55, 12, 0, 0, Math.PI * 2);
+        ctx.ellipse(this.dX(k.x), this.dY(k.y + 32), this.dS(52), this.dS(11), 0, 0, Math.PI*2);
         ctx.fill();
 
-        // Remaining knife dots
+        // Knives-remaining dots
         const total  = this.knivesTotal;
         const left   = this.knivesLeft;
-        const dotW   = total * 14;
-        const startX = k.x - dotW / 2;
+        const dotSpacing = 13;
+        const dotsW  = total * dotSpacing;
+        const startX = k.x - dotsW / 2;
 
         for (let i = 0; i < total; i++) {
-            const dx = startX + i * 14;
-            const dy = k.y + 52;
+            const dx = startX + i * dotSpacing;
+            const dy = k.y + 50;
             ctx.save();
-            ctx.shadowBlur  = i < left ? 5 : 0;
+            ctx.shadowBlur  = i < left ? this.dS(5) : 0;
             ctx.shadowColor = '#b347d9';
-            ctx.fillStyle   = i < left ? '#b347d9' : 'rgba(120,120,120,0.28)';
-            ctx.fillRect(Math.round(dx - 1.5), Math.round(dy - 8), 3, 16);
+            ctx.fillStyle   = i < left ? '#b347d9' : 'rgba(120,120,120,0.25)';
+            this.fillRect(ctx, dx - 1.5, dy - 8, 3, 16);
             ctx.restore();
         }
 
-        // Tap hint — crisp text
+        // Tap hint
         if (this.knivesThrown === 0) {
-            const pulse = 0.5 + Math.sin(Date.now()/400) * 0.5;
-            ctx.save();
-            ctx.globalAlpha  = pulse * 0.72;
-            ctx.textAlign    = 'center';
-            ctx.textBaseline = 'alphabetic';
-            ctx.font         = '11px Rajdhani, Arial';
-            ctx.shadowBlur   = 0;
-            ctx.fillStyle    = '#ffffff';
-            ctx.fillText('TAP TO THROW', Math.round(k.x), Math.round(k.y + 72));
-            ctx.restore();
+            const pulse = 0.45 + Math.sin(this.time/400) * 0.45;
+            this.drawText(ctx, 'TAP TO THROW', k.x, k.y + 72, {
+                size: 10, weight: '600', color: '#ffffff',
+                align: 'center', opacity: pulse * 0.7,
+                family: this.FONT_MONO
+            });
         }
     }
 
     // ============================================================
     // DRAW: ORBIT COINS
     // ============================================================
-    drawOrbitCoins() {
-        const ctx = this.ctx;
-        const t   = this.target;
-
-        this.coins.forEach(c => {
+    drawOrbitCoins(ctx) {
+        const t = this.target;
+        this.orbitCoins.forEach(c => {
             if (c.collected) return;
             const angle = t.angle + c.angle;
-            const cx    = Math.round(t.x + Math.cos(angle) * c.orbitR);
-            const cy    = Math.round(t.y + t.wobbleY + Math.sin(angle) * c.orbitR);
+            const cx    = t.x + Math.cos(angle) * c.orbitR;
+            const cy    = t.y + t.wobbleY + Math.sin(angle) * c.orbitR;
             const pulse = 0.85 + Math.sin(c.wobble) * 0.15;
 
             ctx.save();
-            ctx.translate(cx, cy);
+            ctx.translate(this.dX(cx), this.dY(cy));
             ctx.scale(pulse, pulse);
 
-            ctx.shadowBlur  = 9;
+            ctx.shadowBlur  = this.dS(9);
             ctx.shadowColor = '#FFD700';
             ctx.fillStyle   = '#FFD700';
             ctx.beginPath();
-            ctx.arc(0, 0, 7, 0, Math.PI * 2);
+            ctx.arc(0, 0, this.dS(7), 0, Math.PI * 2);
             ctx.fill();
             ctx.shadowBlur = 0;
 
             ctx.fillStyle = '#FFF8C0';
             ctx.beginPath();
-            ctx.arc(-2, -2, 2.5, 0, Math.PI * 2);
+            ctx.arc(this.dS(-2), this.dS(-2), this.dS(2.5), 0, Math.PI * 2);
             ctx.fill();
 
-            // Coin $ symbol — crisp
-            ctx.save();
+            // Coin symbol — crisp
             ctx.shadowBlur   = 0;
             ctx.textAlign    = 'center';
             ctx.textBaseline = 'middle';
-            ctx.font         = 'bold 8px Arial';
+            ctx.font         = `bold ${this.dSr(8)}px Arial`;
             ctx.fillStyle    = '#AA7700';
-            ctx.fillText('$', 0, 1);
-            ctx.restore();
+            ctx.fillText('$', 0, this.dS(1));
 
             ctx.restore();
         });
@@ -1589,550 +1783,478 @@ class KnifeHit {
     // ============================================================
     // DRAW: PARTICLES & FX
     // ============================================================
-    drawExplosions() {
-        const ctx = this.ctx;
+    drawExplosions(ctx) {
         ctx.save();
         this.explosions.forEach(e => {
             ctx.globalAlpha = e.opacity;
-            ctx.shadowBlur  = 13;
+            ctx.shadowBlur  = this.dS(12);
             ctx.shadowColor = e.color;
             ctx.strokeStyle = e.color;
-            ctx.lineWidth   = 3;
+            ctx.lineWidth   = this.dS(3);
             ctx.beginPath();
-            ctx.arc(Math.round(e.x), Math.round(e.y), e.radius, 0, Math.PI * 2);
+            ctx.arc(this.dX(e.x), this.dY(e.y), this.dS(e.radius), 0, Math.PI * 2);
             ctx.stroke();
-            ctx.globalAlpha = e.opacity * 0.22;
+            ctx.globalAlpha = e.opacity * 0.2;
             ctx.fillStyle   = e.color;
             ctx.beginPath();
-            ctx.arc(Math.round(e.x), Math.round(e.y), e.radius * 0.5, 0, Math.PI * 2);
+            ctx.arc(this.dX(e.x), this.dY(e.y), this.dS(e.radius * 0.5), 0, Math.PI * 2);
             ctx.fill();
             ctx.shadowBlur = 0;
         });
         ctx.restore();
     }
 
-    drawParticles() {
-        const ctx = this.ctx;
+    drawPopRings(ctx) {
+        ctx.save();
+        for (const r of this.popRings) {
+            ctx.globalAlpha = r.opacity;
+            ctx.strokeStyle = r.color;
+            ctx.lineWidth   = this.dS(2 * r.opacity);
+            ctx.beginPath();
+            ctx.arc(this.dX(r.x), this.dY(r.y), this.dS(r.radius), 0, Math.PI * 2);
+            ctx.stroke();
+        }
+        ctx.restore();
+    }
+
+    drawParticles(ctx) {
         ctx.save();
         this.particles.forEach(p => {
-            ctx.globalAlpha = p.life;
-            ctx.shadowBlur  = 4;
+            ctx.globalAlpha = Math.min(1, p.life);
+            ctx.shadowBlur  = this.dS(4);
             ctx.shadowColor = p.color;
             ctx.fillStyle   = p.color;
-            ctx.beginPath();
-            ctx.arc(Math.round(p.x), Math.round(p.y), p.size, 0, Math.PI * 2);
+            this.drawCircle(ctx, p.x, p.y, Math.max(0.5, p.size * p.life));
             ctx.fill();
             ctx.shadowBlur = 0;
         });
         ctx.restore();
     }
 
-    // Score popups — high quality, no blur on text itself
-    drawScorePopups() {
-        const ctx = this.ctx;
-        ctx.save();
+    drawScorePopups(ctx) {
         this.scorePopups.forEach(p => {
-            ctx.globalAlpha  = p.opacity;
-            ctx.textAlign    = 'center';
-            ctx.textBaseline = 'alphabetic';
-
-            // Glow pass
-            ctx.font        = 'bold 14px Orbitron, Arial';
-            ctx.shadowBlur  = 8;
-            ctx.shadowColor = p.color;
-            ctx.fillStyle   = p.color;
-            ctx.fillText(p.text, Math.round(p.x), Math.round(p.y));
-
-            // Sharp pass
-            ctx.shadowBlur = 0;
-            ctx.fillText(p.text, Math.round(p.x), Math.round(p.y));
+            this.drawText(ctx, p.text, p.x, p.y, {
+                size: 13, weight: 'bold', color: p.color,
+                align: 'center', opacity: p.opacity,
+                stroke: true, strokeColor: 'rgba(0,0,0,0.6)', strokeWidth: 2.5,
+                glow: true, glowColor: p.color, glowBlur: 6,
+                family: this.FONT_TITLE
+            });
         });
-        ctx.restore();
     }
 
-    drawCoinPickups() {
-        const ctx = this.ctx;
-        ctx.save();
+    drawCoinPickups(ctx) {
         this.coinPickups.forEach(p => {
-            ctx.globalAlpha  = p.opacity;
-            ctx.textAlign    = 'center';
-            ctx.textBaseline = 'alphabetic';
-            ctx.shadowBlur   = 0;
-            ctx.font         = 'bold 11px Orbitron, Arial';
-            ctx.fillStyle    = p.color;
-            ctx.fillText(p.text, Math.round(p.x), Math.round(p.y));
+            this.drawText(ctx, p.text, p.x, p.y, {
+                size: 11, weight: 'bold', color: p.color,
+                align: 'center', opacity: p.opacity,
+                family: this.FONT_TITLE
+            });
         });
-        ctx.restore();
     }
 
-    drawFloatingTexts() {
-        const ctx = this.ctx;
-        ctx.save();
+    drawFloatingTexts(ctx) {
         this.floatingTexts.forEach(t => {
-            ctx.globalAlpha  = t.opacity;
-            ctx.textAlign    = 'center';
-            ctx.textBaseline = 'alphabetic';
-
-            const sz = Math.round(t.size);
-            ctx.font = `bold ${sz}px Orbitron, Arial`;
-
-            // Soft glow
-            ctx.shadowBlur  = 9;
-            ctx.shadowColor = t.color;
-            ctx.fillStyle   = t.color;
-            ctx.fillText(t.text, Math.round(t.x), Math.round(t.y));
-
-            // Crisp top layer
-            ctx.shadowBlur = 0;
-            ctx.fillText(t.text, Math.round(t.x), Math.round(t.y));
+            const sc = t.scale || 1;
+            this.drawText(ctx, t.text, t.x, t.y, {
+                size: (t.size || 16) * Math.min(1, sc),
+                weight: 'bold', color: t.color,
+                align: 'center', opacity: t.opacity,
+                stroke: true, strokeColor: 'rgba(0,0,0,0.5)', strokeWidth: 3,
+                glow: true, glowColor: t.color, glowBlur: 8,
+                family: this.FONT_TITLE
+            });
         });
-        ctx.restore();
     }
 
     // ============================================================
     // DRAW: STAGE COMPLETE
     // ============================================================
-    drawStageComplete() {
-        this.drawBackground();
-        const ctx = this.ctx;
+    drawStageComplete(ctx) {
+        this.drawBackground(ctx);
 
         this.breakPieces.forEach(p => {
             ctx.save();
             ctx.globalAlpha = Math.max(0, p.life / 70);
-            ctx.translate(Math.round(p.x), Math.round(p.y));
+            ctx.translate(this.dX(p.x), this.dY(p.y));
             ctx.rotate(p.rotation);
             ctx.fillStyle = p.color;
-            ctx.fillRect(-Math.round(p.w/2), -Math.round(p.h/2), Math.round(p.w), Math.round(p.h));
+            this.fillRect(ctx, -p.w/2, -p.h/2, p.w, p.h);
             ctx.restore();
         });
 
-        this.drawParticles();
-        this.drawFloatingTexts();
-        this.drawCoinPickups();
+        this.drawParticles(ctx);
+        this.drawPopRings(ctx);
+        this.drawFloatingTexts(ctx);
+        this.drawCoinPickups(ctx);
     }
 
     // ============================================================
-    // DRAW: HUD — fully crisp
+    // DRAW: HUD
     // ============================================================
-    drawHUD() {
-        const ctx = this.ctx;
-        const W   = this.canvas.width;
+    drawHUD(ctx) {
+        const W = this.W;
 
         // Top bar
-        ctx.fillStyle = 'rgba(0,0,0,0.5)';
-        ctx.fillRect(0, 0, W, 38);
+        const hudGrad = ctx.createLinearGradient(0, 0, 0, this.dY(40));
+        hudGrad.addColorStop(0, 'rgba(0,0,0,0.72)');
+        hudGrad.addColorStop(1, 'rgba(0,0,0,0.12)');
+        ctx.fillStyle = hudGrad;
+        ctx.fillRect(0, 0, this.canvas.width, this.dY(40));
 
-        // Bottom separator line
-        ctx.fillStyle = 'rgba(179,71,217,0.18)';
-        ctx.fillRect(0, 37, W, 1);
+        // Bottom separator
+        ctx.strokeStyle = 'rgba(179,71,217,0.15)';
+        ctx.lineWidth   = this.dS(0.5);
+        this.drawLine(ctx, 0, 40, W, 40);
+        ctx.stroke();
 
         // Level label
-        this.drawGlowText(`LV.${this.level}`, 10, 23, '#cc66ff', '#b347d9', 13, 'Orbitron', 'bold', 'left', 7);
+        this.drawText(ctx, `LV.${this.level}`, 10, 18, {
+            size: 12, weight: 'bold', color: '#cc66ff',
+            family: this.FONT_TITLE,
+            glow: true, glowColor: '#b347d9', glowBlur: 5
+        });
 
         // Level name
-        ctx.save();
-        ctx.textAlign    = 'left';
-        ctx.textBaseline = 'alphabetic';
-        ctx.font         = '9px Rajdhani, Arial';
-        ctx.shadowBlur   = 0;
-        ctx.fillStyle    = 'rgba(200,200,255,0.42)';
-        ctx.fillText(this.levelCfg?.name || '', 10, 34);
-        ctx.restore();
+        this.drawText(ctx, this.levelCfg?.name || '', 10, 32, {
+            size: 9, weight: '500', color: 'rgba(200,200,255,0.4)',
+            family: this.FONT_MONO
+        });
 
-        // Stage (center)
-        this.drawGlowText(`STAGE ${this.stage}`, W/2, 21, '#44ddff', '#00D4FF', 11, 'Rajdhani', 'bold', 'center', 5);
+        // Stage label (center)
+        this.drawText(ctx, `STAGE ${this.stage}`, W/2, 19, {
+            size: 11, weight: '600', color: '#44ddff',
+            align: 'center', family: this.FONT_MONO
+        });
 
         // Pattern label (center)
-        const patNames = {
-            constant: 'STEADY',
-            wobble:   'WOBBLE',
-            reverse:  'REVERSE',
-            erratic:  'ERRATIC',
-            crazy:    'CRAZY'
-        };
-        ctx.save();
-        ctx.textAlign    = 'center';
-        ctx.textBaseline = 'alphabetic';
-        ctx.font         = '9px Orbitron, Arial';
-        ctx.shadowBlur   = 0;
-        ctx.fillStyle    = 'rgba(255,200,0,0.5)';
-        ctx.fillText(patNames[this.target.pattern] || '', Math.round(W/2), 33);
-        ctx.restore();
+        const patNames = { constant:'STEADY', wobble:'WOBBLE', reverse:'REVERSE', erratic:'ERRATIC', crazy:'CRAZY' };
+        this.drawText(ctx, patNames[this.target.pattern] || '', W/2, 32, {
+            size: 8, weight: '600', color: 'rgba(255,200,0,0.5)',
+            align: 'center', family: this.FONT_TITLE
+        });
 
-        // Coins
-        const coinColor = this.hudFlash.coins > 0 ? '#FFD700' : '#ccaa00';
-        const diaColor  = this.hudFlash.diamonds > 0 ? '#00eeff' : '#00aacc';
+        // Coins (right)
+        const coinFlash = this.hudFlash.coins > 0;
+        const diaFlash  = this.hudFlash.diamonds > 0;
 
-        // Currency box bg
-        ctx.fillStyle = 'rgba(0,0,0,0.38)';
-        ctx.beginPath();
-        ctx.rect(W - 95, 4, 87, 32);
+        // Currency bg
+        ctx.fillStyle = 'rgba(0,0,0,0.35)';
+        this.drawRoundRect(ctx, W - 92, 4, 84, 34, 6);
         ctx.fill();
 
-        ctx.save();
-        ctx.textAlign    = 'right';
-        ctx.textBaseline = 'alphabetic';
+        this.drawText(ctx, `C ${this.fmtNum(this.playerData.coins)}`, W - 10, 18, {
+            size: coinFlash ? 11 : 10, weight: 'bold',
+            color: coinFlash ? '#ffffff' : '#FFD700',
+            align: 'right', family: this.FONT_TITLE,
+            glow: coinFlash, glowColor: '#FFD700', glowBlur: 5
+        });
 
-        // Coins line
-        ctx.font         = `bold ${this.hudFlash.coins > 0 ? 11 : 10}px Orbitron, Arial`;
-        ctx.shadowBlur   = 0;
-        ctx.fillStyle    = coinColor;
-        ctx.fillText(`C ${this.playerData.coins}`, W - 10, 19);
-
-        // Diamonds line
-        ctx.font      = `bold ${this.hudFlash.diamonds > 0 ? 11 : 10}px Orbitron, Arial`;
-        ctx.fillStyle = diaColor;
-        ctx.fillText(`D ${this.playerData.diamonds}`, W - 10, 33);
-
-        ctx.restore();
+        this.drawText(ctx, `D ${this.fmtNum(this.playerData.diamonds)}`, W - 10, 32, {
+            size: diaFlash ? 11 : 10, weight: 'bold',
+            color: diaFlash ? '#ffffff' : '#00D4FF',
+            align: 'right', family: this.FONT_TITLE,
+            glow: diaFlash, glowColor: '#00D4FF', glowBlur: 5
+        });
 
         // Hearts
         for (let i = 0; i < this.maxLives; i++) {
             const alive = i < this.lives;
             ctx.save();
-            ctx.textAlign    = 'right';
+            ctx.shadowBlur  = alive ? this.dS(6) : 0;
+            ctx.shadowColor = '#ff0055';
+            ctx.font        = `${this.dSr(16)}px serif`;
+            ctx.textAlign   = 'right';
             ctx.textBaseline = 'alphabetic';
-            ctx.shadowBlur   = alive ? 6 : 0;
-            ctx.shadowColor  = '#ff0055';
-            ctx.font         = '17px serif';
-            ctx.globalAlpha  = alive ? 1 : 0.2;
-            ctx.fillStyle    = '#ff0055';
-            ctx.fillText('\u2665', W - 100 - i * 21, 22);
+            ctx.globalAlpha = alive ? 1 : 0.18;
+            ctx.fillStyle   = '#ff0055';
+            ctx.fillText('\u2665', this.dX(W - 96 - i*21), this.dY(23));
             ctx.restore();
         }
 
         // Slow bar
         if (this.activeEffects.slow) {
             const pct = this.activeEffects.slowTimer / 5000;
-            ctx.fillStyle = 'rgba(0,0,0,0.38)';
-            ctx.fillRect(8, 40, 84, 7);
-            ctx.fillStyle = '#00D4FF';
-            ctx.fillRect(8, 40, Math.round(84 * pct), 7);
-
-            ctx.save();
-            ctx.textAlign    = 'left';
-            ctx.textBaseline = 'alphabetic';
-            ctx.font         = '8px Orbitron, Arial';
-            ctx.shadowBlur   = 0;
-            ctx.fillStyle    = '#00D4FF';
-            ctx.fillText('SLOW', 10, 58);
-            ctx.restore();
+            ctx.fillStyle = 'rgba(0,0,0,0.35)';
+            this.fillRect(ctx, 8, 42, 82, 7);
+            const slg = ctx.createLinearGradient(this.dX(8), 0, this.dX(8 + 82*pct), 0);
+            slg.addColorStop(0, '#00D4FF');
+            slg.addColorStop(1, '#00FF88');
+            ctx.fillStyle = slg;
+            this.fillRect(ctx, 8, 42, 82 * pct, 7);
+            this.drawText(ctx, 'SLOW', 10, 58, { size: 8, color: '#00D4FF', family: this.FONT_TITLE });
         }
 
-        // Shield indicator
+        // Shield
         if (this.activeEffects.shield) {
-            ctx.save();
-            ctx.textAlign    = 'center';
-            ctx.textBaseline = 'alphabetic';
-            ctx.font         = 'bold 11px Orbitron, Arial';
-            ctx.shadowBlur   = 7;
-            ctx.shadowColor  = '#b347d9';
-            ctx.fillStyle    = '#cc77ff';
-            ctx.fillText('SHIELD ACTIVE', Math.round(W/2), 52);
-            ctx.shadowBlur = 0;
-            ctx.fillStyle  = '#cc77ff';
-            ctx.fillText('SHIELD ACTIVE', Math.round(W/2), 52);
-            ctx.restore();
+            this.drawText(ctx, 'SHIELD ACTIVE', W/2, 52, {
+                size: 10, weight: 'bold', color: '#cc77ff',
+                align: 'center', family: this.FONT_TITLE,
+                glow: true, glowColor: '#b347d9', glowBlur: 6
+            });
         }
 
-        // Combo indicator
+        // Combo
         if (this.combo > 1) {
-            const ca  = 0.7 + Math.sin(Date.now()/120) * 0.3;
-            const cY  = this.canvas.height - 20;
-            ctx.save();
-            ctx.textAlign    = 'center';
-            ctx.textBaseline = 'alphabetic';
-            ctx.globalAlpha  = ca;
-            ctx.font         = 'bold 15px Orbitron, Arial';
-            // Glow
-            ctx.shadowBlur  = 10;
-            ctx.shadowColor = '#FFD700';
-            ctx.fillStyle   = '#FFD700';
-            ctx.fillText(`x${this.combo} COMBO`, Math.round(W/2), Math.round(cY));
-            // Sharp
-            ctx.shadowBlur = 0;
-            ctx.fillText(`x${this.combo} COMBO`, Math.round(W/2), Math.round(cY));
-            ctx.restore();
+            const ca  = 0.7 + Math.sin(this.time/120) * 0.3;
+            this.drawText(ctx, `x${this.combo} COMBO`, W/2, this.H - 18, {
+                size: 15, weight: 'bold', color: '#FFD700',
+                align: 'center', opacity: ca,
+                glow: true, glowColor: '#FFD700', glowBlur: 8,
+                family: this.FONT_TITLE
+            });
         }
 
-        // Boss label
+        // Boss pulsing label
         if (this.target.bossMode && !this.stageComplete) {
-            const ba = 0.65 + Math.sin(Date.now()/200) * 0.35;
-            ctx.save();
-            ctx.textAlign    = 'center';
-            ctx.textBaseline = 'alphabetic';
-            ctx.globalAlpha  = ba;
-            ctx.font         = 'bold 13px Orbitron, Arial';
-            // Glow
-            ctx.shadowBlur  = 11;
-            ctx.shadowColor = '#ff0055';
-            ctx.fillStyle   = '#ff3366';
-            ctx.fillText('BOSS STAGE!', Math.round(W/2), 60);
-            // Sharp
-            ctx.shadowBlur = 0;
-            ctx.fillText('BOSS STAGE!', Math.round(W/2), 60);
-            ctx.restore();
+            const ba = 0.65 + Math.sin(this.time/200) * 0.35;
+            this.drawText(ctx, 'BOSS STAGE!', W/2, 60, {
+                size: 13, weight: 'bold', color: '#ff3366',
+                align: 'center', opacity: ba,
+                glow: true, glowColor: '#ff0055', glowBlur: 10,
+                family: this.FONT_TITLE
+            });
         }
     }
 
     // ============================================================
     // DRAW: POWER-UP BAR
     // ============================================================
-    drawPowerUpBar() {
-        const ctx     = this.ctx;
-        const btnSize = 36;
-        const startX  = 8;
-        const btnY    = this.canvas.height - 46;
-        let idx = 0;
+    drawPowerUpBar(ctx) {
+        const btnS   = this.isMobile ? 40 : 36;
+        const btnY   = this.idleKnife ? this.idleKnife.y + 42 : this.H - 46;
+        const startX = 8;
+        let   idx    = 0;
 
         for (const [key, pup] of Object.entries(this.powerUps)) {
-            const bx     = Math.round(startX + idx * (btnSize + 6));
+            const bx     = startX + idx * (btnS + 6);
             const canUse = pup.count > 0;
 
             // BG
-            ctx.fillStyle   = canUse ? `${pup.color}18` : 'rgba(25,25,25,0.32)';
-            ctx.strokeStyle = canUse ? `${pup.color}70` : 'rgba(70,70,70,0.28)';
-            ctx.lineWidth   = 1.5;
-            ctx.beginPath();
-            ctx.rect(bx, Math.round(btnY), btnSize, btnSize);
+            ctx.fillStyle = canUse ? `rgba(${this.hexToRgbParts(pup.color)},0.1)` : 'rgba(20,20,20,0.28)';
+            this.drawRoundRect(ctx, bx, btnY, btnS, btnS, 8);
             ctx.fill();
+
+            // Border
+            ctx.strokeStyle = canUse ? `rgba(${this.hexToRgbParts(pup.color)},0.45)` : 'rgba(70,70,70,0.22)';
+            ctx.lineWidth   = this.dS(1);
+            this.drawRoundRect(ctx, bx, btnY, btnS, btnS, 8);
             ctx.stroke();
 
             // Icon
             ctx.save();
+            ctx.globalAlpha  = canUse ? 1 : 0.25;
             ctx.textAlign    = 'center';
             ctx.textBaseline = 'middle';
             ctx.shadowBlur   = 0;
-            ctx.font         = '15px Arial';
-            ctx.globalAlpha  = canUse ? 1 : 0.3;
+            ctx.font         = `${this.dSr(this.isMobile ? 16 : 14)}px Arial`;
             ctx.fillStyle    = '#fff';
-            ctx.fillText(pup.icon, Math.round(bx + btnSize/2), Math.round(btnY + btnSize/2 - 4));
+            ctx.fillText(pup.icon, this.dX(bx + btnS/2), this.dY(btnY + btnS/2 - 4));
             ctx.restore();
 
-            // Count — crisp
-            ctx.save();
-            ctx.textAlign    = 'center';
-            ctx.textBaseline = 'alphabetic';
-            ctx.shadowBlur   = 0;
-            ctx.font         = 'bold 9px Orbitron, Arial';
-            ctx.globalAlpha  = 1;
-            ctx.fillStyle    = canUse ? '#00FF88' : '#ff4455';
-            ctx.fillText(`${pup.count}`, Math.round(bx + btnSize/2), Math.round(btnY + btnSize - 5));
-            ctx.restore();
+            // Count badge
+            if (canUse) {
+                ctx.fillStyle = 'rgba(0,0,0,0.65)';
+                ctx.beginPath();
+                ctx.arc(this.dX(bx + btnS - 4), this.dY(btnY + btnS - 5), this.dS(7), 0, Math.PI*2);
+                ctx.fill();
 
-            // Key hint — crisp
-            ctx.save();
-            ctx.textAlign    = 'left';
-            ctx.textBaseline = 'alphabetic';
-            ctx.shadowBlur   = 0;
-            ctx.font         = '8px Arial';
-            ctx.globalAlpha  = 0.35;
-            ctx.fillStyle    = '#fff';
-            ctx.fillText(`${idx+1}`, Math.round(bx + 2), Math.round(btnY + 10));
-            ctx.restore();
+                this.drawText(ctx, `${pup.count}`, bx + btnS - 4, btnY + btnS - 5, {
+                    size: 7, weight: 'bold', color: '#00FF88',
+                    align: 'center', baseline: 'middle',
+                    family: this.FONT_TITLE
+                });
+            }
+
+            // Key hint
+            this.drawText(ctx, `${idx+1}`, bx + 3, btnY + 10, {
+                size: 7, color: 'rgba(255,255,255,0.28)', family: this.FONT_UI
+            });
 
             idx++;
         }
     }
 
     // ============================================================
-    // DRAW: DAILY REWARD — crisp
+    // DRAW: DAILY REWARD
     // ============================================================
-    drawDailyReward() {
-        const ctx = this.ctx;
-        const W   = this.canvas.width;
-        const H   = this.canvas.height;
+    drawDailyReward(ctx) {
+        const a = this.dailyRewardAnim;
+        ctx.fillStyle = `rgba(0,0,0,${0.88 * a})`;
+        ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        if (a < 0.3) return;
 
-        // Overlay
-        ctx.fillStyle = 'rgba(0,0,0,0.88)';
-        ctx.fillRect(0, 0, W, H);
+        const W  = this.W, H = this.H;
+        const cw = Math.min(282, W - 30);
+        const ch = 258;
+        const cx = (W - cw) / 2;
+        const cy = (H - ch) / 2;
 
-        const cw = Math.min(288, W - 28);
-        const ch = 248;
-        const cx = Math.round((W - cw) / 2);
-        const cy = Math.round((H - ch) / 2);
-
-        // Card bg
-        ctx.fillStyle   = 'rgba(8,4,22,0.97)';
-        ctx.strokeStyle = '#FFD700';
-        ctx.lineWidth   = 2;
-        ctx.shadowBlur  = 16;
-        ctx.shadowColor = '#FFD700';
-        ctx.beginPath();
-        ctx.rect(cx, cy, cw, ch);
-        ctx.fill();
-        ctx.stroke();
-        ctx.shadowBlur = 0;
-
-        // Inner top accent line
-        ctx.fillStyle = 'rgba(255,215,0,0.12)';
-        ctx.fillRect(cx, cy, cw, 3);
+        this.drawCardBG(ctx, cx, cy, cw, ch, '#FFD700');
 
         const streak = this.playerData.dailyStreak;
         const mult   = Math.min(1 + streak * 0.3, 4);
         const coins  = Math.floor(60 * mult);
         const dias   = Math.floor(2 * Math.max(1, Math.floor(streak / 3)));
 
-        const midX = Math.round(W / 2);
+        this.drawText(ctx, 'Daily Reward!', W/2, cy + 38, {
+            size: 19, weight: 'bold', color: '#FFD700',
+            align: 'center', family: this.FONT_TITLE,
+            glow: true, glowColor: '#FFD700', glowBlur: 7
+        });
 
-        // Title
-        this.drawGlowText('Daily Reward!', midX, cy + 36, '#FFD700', '#cc9900', 17, 'Orbitron', 'bold', 'center', 8);
-
-        // Streak
-        ctx.save();
-        ctx.textAlign    = 'center';
-        ctx.textBaseline = 'alphabetic';
-        ctx.font         = 'bold 12px Rajdhani, Arial';
-        ctx.shadowBlur   = 0;
-        ctx.fillStyle    = '#00D4FF';
-        ctx.fillText(`Day ${streak + 1} Streak!`, midX, cy + 60);
-        ctx.restore();
-
-        // Divider
-        ctx.fillStyle = 'rgba(255,255,255,0.07)';
-        ctx.fillRect(cx + 16, cy + 68, cw - 32, 1);
-
-        // Coins
-        this.drawGlowText(`${coins} Coins`, midX, cy + 104, '#FFD700', '#aa8800', 20, 'Orbitron', 'bold', 'center', 6);
-
-        // Diamonds
-        this.drawGlowText(`${dias} Diamonds`, midX, cy + 136, '#00D4FF', '#007799', 18, 'Orbitron', 'bold', 'center', 6);
-
-        // Bonus power-up
-        if (streak > 0 && streak % 5 === 0) {
-            ctx.save();
-            ctx.textAlign    = 'center';
-            ctx.textBaseline = 'alphabetic';
-            ctx.font         = 'bold 11px Rajdhani, Arial';
-            ctx.shadowBlur   = 0;
-            ctx.fillStyle    = '#00FF88';
-            ctx.fillText('+ Bonus Power-up!', midX, cy + 160);
-            ctx.restore();
-        }
-
-        // Claim button
-        const bw  = 140;
-        const bh  = 38;
-        const bx  = Math.round((W - bw) / 2);
-        const by  = Math.round(cy + ch - 55);
-        const grd = ctx.createLinearGradient(bx, 0, bx + bw, 0);
-        grd.addColorStop(0, '#B347D9');
-        grd.addColorStop(1, '#FF006E');
-        ctx.fillStyle = grd;
-        ctx.beginPath();
-        ctx.rect(bx, by, bw, bh);
-        ctx.fill();
-
-        // Button text — crisp
-        ctx.save();
-        ctx.textAlign    = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.shadowBlur   = 0;
-        ctx.font         = 'bold 13px Orbitron, Arial';
-        ctx.fillStyle    = '#ffffff';
-        ctx.fillText('CLAIM!', Math.round(bx + bw/2), Math.round(by + bh/2));
-        ctx.restore();
-    }
-
-    // ============================================================
-    // DRAW: GAME OVER — crisp
-    // ============================================================
-    drawGameOver() {
-        const ctx = this.ctx;
-        const W   = this.canvas.width;
-        const H   = this.canvas.height;
-
-        ctx.fillStyle = 'rgba(0,0,0,0.84)';
-        ctx.fillRect(0, 0, W, H);
-
-        const pw = Math.min(W - 28, 302);
-        const ph = 290;
-        const px = Math.round((W - pw) / 2);
-        const py = Math.round((H - ph) / 2);
-
-        // Card
-        ctx.fillStyle   = 'rgba(8,3,18,0.97)';
-        ctx.strokeStyle = 'rgba(179,71,217,0.45)';
-        ctx.lineWidth   = 2;
-        ctx.shadowBlur  = 16;
-        ctx.shadowColor = '#b347d9';
-        ctx.beginPath();
-        ctx.rect(px, py, pw, ph);
-        ctx.fill();
-        ctx.stroke();
-        ctx.shadowBlur = 0;
-
-        // Top accent
-        ctx.fillStyle = 'rgba(255,0,110,0.12)';
-        ctx.fillRect(px, py, pw, 3);
-
-        const midX = Math.round(W / 2);
-
-        // Title
-        this.drawGlowText('GAME OVER', midX, py + 46, '#FF006E', '#aa0044', 26, 'Orbitron', 'bold', 'center', 14);
-
-        // Sub-label
-        ctx.save();
-        ctx.textAlign    = 'center';
-        ctx.textBaseline = 'alphabetic';
-        ctx.font         = '13px Rajdhani, Arial';
-        ctx.shadowBlur   = 0;
-        ctx.fillStyle    = '#666688';
-        ctx.fillText(`Level ${this.level}  ${this.levelCfg?.name || ''}`, midX, py + 68);
-        ctx.restore();
-
-        // Divider
-        ctx.fillStyle = 'rgba(255,255,255,0.07)';
-        ctx.fillRect(px + 16, py + 78, pw - 32, 1);
-
-        // Stats — crisp
-        const rows = [
-            ['SCORE',      String(this.score),                           '#ffffff'],
-            ['BEST',       String(this.playerData.bestScore),            this.score >= this.playerData.bestScore ? '#FFD700' : '#ffffff'],
-            ['KNIVES',     String(this.knivesThrown),                   '#ffffff'],
-            ['APPLES HIT', String(this.playerData.totalApplesHit),      '#ffffff'],
-            ['BEST COMBO', `x${this.maxCombo}`,                         '#FFD700']
-        ];
-
-        rows.forEach((row, i) => {
-            const ry = py + 102 + i * 26;
-
-            ctx.save();
-            ctx.shadowBlur = 0;
-
-            ctx.textAlign    = 'left';
-            ctx.textBaseline = 'alphabetic';
-            ctx.font         = 'bold 11px Orbitron, Arial';
-            ctx.fillStyle    = '#556';
-            ctx.fillText(row[0], px + 20, ry);
-
-            ctx.textAlign = 'right';
-            ctx.font      = 'bold 12px Orbitron, Arial';
-            ctx.fillStyle = row[2];
-            ctx.fillText(row[1], px + pw - 20, ry);
-
-            ctx.restore();
+        this.drawText(ctx, `Day ${streak + 1} Streak!`, W/2, cy + 60, {
+            size: 12, color: '#00D4FF', align: 'center', family: this.FONT_MONO
         });
 
         // Divider
         ctx.fillStyle = 'rgba(255,255,255,0.07)';
-        ctx.fillRect(px + 16, py + ph - 72, pw - 32, 1);
+        this.fillRect(ctx, cx + 16, cy + 68, cw - 32, 1);
 
-        // Session earnings
-        this.drawGlowText(`+${this.sessionCoins} Coins`, midX - 44, py + ph - 48, '#FFD700', '#aa8800', 13, 'Orbitron', 'bold', 'center', 5);
-        this.drawGlowText(`+${this.sessionDias} Diamonds`, midX + 50, py + ph - 48, '#00D4FF', '#007799', 13, 'Orbitron', 'bold', 'center', 5);
+        this.drawText(ctx, `${coins} Coins`, W/2, cy + 106, {
+            size: 24, weight: 'bold', color: '#FFD700',
+            align: 'center', family: this.FONT_TITLE,
+            glow: true, glowColor: '#FFD700', glowBlur: 5
+        });
 
-        // Blink restart hint
-        const blink = 0.4 + Math.sin(Date.now()/400) * 0.45;
-        ctx.save();
-        ctx.globalAlpha  = blink;
-        ctx.textAlign    = 'center';
-        ctx.textBaseline = 'alphabetic';
-        ctx.font         = '12px Rajdhani, Arial';
-        ctx.shadowBlur   = 0;
-        ctx.fillStyle    = '#aaaacc';
-        ctx.fillText('Tap restart to play again', midX, py + ph - 14);
-        ctx.restore();
+        this.drawText(ctx, `${dias} Diamonds`, W/2, cy + 140, {
+            size: 20, weight: 'bold', color: '#00D4FF',
+            align: 'center', family: this.FONT_TITLE,
+            glow: true, glowColor: '#00D4FF', glowBlur: 5
+        });
+
+        if (streak > 0 && streak % 5 === 0) {
+            this.drawText(ctx, '+ Bonus Power-up!', W/2, cy + 166, {
+                size: 11, color: '#00FF88', align: 'center', family: this.FONT_MONO
+            });
+        }
+
+        this.drawBtn(ctx, W/2, cy + ch - 44, 150, 38, 'CLAIM!', '#B94FE3', '#FF006E');
+    }
+
+    // ============================================================
+    // DRAW: GAME OVER
+    // ============================================================
+    drawGameOver(ctx) {
+        const W = this.W, H = this.H;
+
+        ctx.fillStyle = 'rgba(0,0,0,0.84)';
+        ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+        const pw = Math.min(W - 28, 302);
+        const ph = 292;
+        const px = (W - pw) / 2;
+        const py = (H - ph) / 2;
+
+        this.drawCardBG(ctx, px, py, pw, ph, '#b347d9');
+
+        // Top accent
+        ctx.fillStyle = 'rgba(255,0,110,0.12)';
+        this.fillRect(ctx, px, py, pw, 3);
+
+        this.drawText(ctx, 'GAME OVER', W/2, py + 46, {
+            size: 26, weight: 'bold', color: '#FF006E',
+            align: 'center', family: this.FONT_TITLE,
+            glow: true, glowColor: '#FF006E', glowBlur: 14
+        });
+
+        this.drawText(ctx, `Level ${this.level}  ${this.levelCfg?.name || ''}`, W/2, py + 68, {
+            size: 12, color: '#555577', align: 'center', family: this.FONT_MONO
+        });
+
+        // Divider
+        ctx.fillStyle = 'rgba(255,255,255,0.07)';
+        this.fillRect(ctx, px + 16, py + 78, pw - 32, 1);
+
+        const rows = [
+            ['SCORE',      String(this.score),                       '#ffffff'],
+            ['BEST',       String(this.playerData.bestScore),        this.score >= this.playerData.bestScore ? '#FFD700' : '#ffffff'],
+            ['KNIVES',     String(this.knivesThrown),                '#ffffff'],
+            ['APPLES HIT', String(this.playerData.totalApplesHit),   '#ffffff'],
+            ['BEST COMBO', `x${this.maxCombo}`,                      '#FFD700']
+        ];
+
+        rows.forEach((row, i) => {
+            const ry = py + 102 + i * 26;
+            this.drawText(ctx, row[0], px + 20, ry, {
+                size: 10, weight: 'bold', color: '#445566',
+                family: this.FONT_TITLE
+            });
+            this.drawText(ctx, row[1], px + pw - 20, ry, {
+                size: 12, weight: 'bold', color: row[2],
+                align: 'right', family: this.FONT_TITLE
+            });
+        });
+
+        // Divider
+        ctx.fillStyle = 'rgba(255,255,255,0.07)';
+        this.fillRect(ctx, px + 16, py + ph - 74, pw - 32, 1);
+
+        this.drawText(ctx, `+${this.sessionCoins} Coins`, W/2 - 42, py + ph - 48, {
+            size: 13, weight: 'bold', color: '#FFD700',
+            align: 'center', family: this.FONT_TITLE,
+            glow: true, glowColor: '#FFD700', glowBlur: 4
+        });
+        this.drawText(ctx, `+${this.sessionDias} Dia`, W/2 + 48, py + ph - 48, {
+            size: 13, weight: 'bold', color: '#00D4FF',
+            align: 'center', family: this.FONT_TITLE,
+            glow: true, glowColor: '#00D4FF', glowBlur: 4
+        });
+
+        const blink = 0.4 + Math.sin(this.time/400) * 0.45;
+        this.drawText(ctx, 'Tap restart to play again', W/2, py + ph - 14, {
+            size: 11, color: '#8888aa',
+            align: 'center', opacity: blink, family: this.FONT_MONO
+        });
+    }
+
+    // ============================================================
+    // UI HELPERS
+    // ============================================================
+    drawCardBG(ctx, x, y, w, h, borderColor) {
+        ctx.fillStyle = 'rgba(6,3,16,0.97)';
+        this.drawRoundRect(ctx, x, y, w, h, 14);
+        ctx.fill();
+
+        ctx.strokeStyle = borderColor + '48';
+        ctx.lineWidth   = this.dS(1.5);
+        this.drawRoundRect(ctx, x, y, w, h, 14);
+        ctx.stroke();
+
+        // Top accent
+        const tg = ctx.createLinearGradient(this.dX(x + 20), 0, this.dX(x + w - 20), 0);
+        tg.addColorStop(0,   'rgba(0,0,0,0)');
+        tg.addColorStop(0.5, borderColor + '35');
+        tg.addColorStop(1,   'rgba(0,0,0,0)');
+        ctx.fillStyle = tg;
+        ctx.fillRect(this.dX(x + 20), this.dY(y + 1), this.dSr(w - 40), this.dSr(2));
+    }
+
+    drawBtn(ctx, cx, cy, w, h, text, c1, c2) {
+        const bx = cx - w/2, by = cy - h/2;
+        const grd = ctx.createLinearGradient(this.dX(bx), 0, this.dX(bx + w), 0);
+        grd.addColorStop(0, c1);
+        grd.addColorStop(1, c2);
+        ctx.fillStyle = grd;
+        this.drawRoundRect(ctx, bx, by, w, h, h/2);
+        ctx.fill();
+
+        // Shimmer
+        const sg = ctx.createLinearGradient(this.dX(bx), 0, this.dX(bx + w), 0);
+        sg.addColorStop(0,    'rgba(255,255,255,0)');
+        sg.addColorStop(0.48, 'rgba(255,255,255,0)');
+        sg.addColorStop(0.5,  'rgba(255,255,255,0.1)');
+        sg.addColorStop(0.52, 'rgba(255,255,255,0)');
+        sg.addColorStop(1,    'rgba(255,255,255,0)');
+        ctx.fillStyle = sg;
+        this.drawRoundRect(ctx, bx, by, w, h, h/2);
+        ctx.fill();
+
+        this.drawText(ctx, text, cx, cy + 1, {
+            size: 13, weight: 'bold', color: '#ffffff',
+            align: 'center', baseline: 'middle',
+            family: this.FONT_TITLE
+        });
     }
 
     // ============================================================
@@ -2141,6 +2263,11 @@ class KnifeHit {
     hexToRgba(hex, alpha) {
         if (!hex || !hex.startsWith('#')) return hex;
         return `rgba(${parseInt(hex.slice(1,3),16)},${parseInt(hex.slice(3,5),16)},${parseInt(hex.slice(5,7),16)},${Math.max(0,Math.min(1,alpha))})`;
+    }
+
+    hexToRgbParts(hex) {
+        if (!hex || !hex.startsWith('#')) return '255,255,255';
+        return `${parseInt(hex.slice(1,3),16)},${parseInt(hex.slice(3,5),16)},${parseInt(hex.slice(5,7),16)}`;
     }
 
     darkenHex(hex, amt) {
@@ -2153,7 +2280,7 @@ class KnifeHit {
     // ============================================================
     loop(timestamp) {
         if (this.destroyed) return;
-        const dt = Math.min(timestamp - (this.lastTime || timestamp), 50); // cap dt
+        const dt = Math.min(timestamp - (this.lastTime || timestamp), 50);
         this.lastTime = timestamp;
         if (!this.paused) this.update(dt);
         this.draw();
@@ -2163,19 +2290,23 @@ class KnifeHit {
     togglePause() {
         this.paused   = !this.paused;
         this.isPaused = this.paused;
-        if (!this.paused) this.lastTime = performance.now();
         return this.paused;
     }
 
     resize() {
-        this.target.x      = this.canvas.width  / 2;
-        this.target.y      = this.canvas.height / 2 - 50;
-        this.target.radius = Math.min(this.canvas.width, this.canvas.height) * 0.155;
+        this.setupHDCanvas();
+        this.W = this.canvas.width  / this.dpr;
+        this.H = this.canvas.height / this.dpr;
+        this.isMobile      = this.W < 768 || ('ontouchstart' in window);
+        this.isSmallScreen = this.W < 380;
+        this.target.x      = this.W / 2;
+        this.target.y      = this.H / 2 - 60;
+        this.target.radius = Math.min(this.W, this.H) * 0.155;
         if (this.idleKnife) {
-            this.idleKnife.x = this.canvas.width  / 2;
-            this.idleKnife.y = this.canvas.height - 90;
+            this.idleKnife.x = this.W / 2;
+            this.idleKnife.y = this.H - (this.isMobile ? 75 : 90);
         }
-        this.bgParticles = this.createBgParticles();
+        this.stars = this.makeStars(this.isMobile ? 40 : 70);
     }
 
     destroy() {
