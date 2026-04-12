@@ -1,9 +1,3 @@
-/* ============================================================
-   BUBBLE SHOOTER v6.0 - FULLSCREEN EDITION
-   Tap Bubble = Change Color | Fullscreen Bottom-Right
-   Crystal Clear | Mobile-First | Zero Blur
-   ============================================================ */
-
 'use strict';
 
 class BubbleShooter {
@@ -16,33 +10,35 @@ class BubbleShooter {
         this.isPaused = false;
         this.gameOver = false;
 
-        this.dpr = Math.min(window.devicePixelRatio || 1, 3);
+        // ✅ MOBILE FIX: DPR cap 1.5 on mobile, 2 on desktop
+        this.isMobile = /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
+            || ('ontouchstart' in window)
+            || (window.innerWidth < 768);
+        this.dpr = this.isMobile ? Math.min(window.devicePixelRatio || 1, 1.5) : Math.min(window.devicePixelRatio || 1, 2);
+
         this.setupHDCanvas();
 
         this.ctx = this.canvas.getContext('2d', {
             alpha: false,
-            desynchronized: true
+            desynchronized: true,
+            willReadFrequently: false
         });
 
-        this.ctx.imageSmoothingEnabled = true;
-        this.ctx.imageSmoothingQuality = 'high';
+        // ✅ MOBILE FIX: Disable smoothing on mobile for speed
+        this.ctx.imageSmoothingEnabled = !this.isMobile;
+        if (!this.isMobile) this.ctx.imageSmoothingQuality = 'low';
 
         this.W = this.canvas.width / this.dpr;
         this.H = this.canvas.height / this.dpr;
-
-        this.isMobile = /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
-            || ('ontouchstart' in window)
-            || (window.innerWidth < 768);
         this.isSmallScreen = this.W < 380;
 
-        this.FONT_UI    = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-        this.FONT_TITLE = '"Orbitron", "Rajdhani", "Segoe UI", monospace';
-        this.FONT_MONO  = '"Rajdhani", "Segoe UI", Roboto, sans-serif';
-        this.loadFonts();
+        this.FONT_UI    = '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+        this.FONT_TITLE = '"Segoe UI", sans-serif';
+        this.FONT_MONO  = '"Segoe UI", Roboto, sans-serif';
 
         this.cache = { bubbles: new Map(), glows: new Map() };
 
-        this.saveKey    = 'neonarcade_bubbleshooter_v6';
+        this.saveKey    = 'neonarcade_bubbleshooter_v7';
         this.playerData = this.loadPlayerData();
 
         this.COLS      = this.isSmallScreen ? 8 : 10;
@@ -74,7 +70,8 @@ class BubbleShooter {
         this.currentBubble   = null;
         this.nextBubble      = null;
         this.projectile      = null;
-        this.projectileSpeed = this.isMobile ? 13 : 15;
+        // ✅ MOBILE FIX: Reduce speed slightly for smoother arc
+        this.projectileSpeed = this.isMobile ? 11 : 14;
         this.canShoot        = true;
         this.shootCooldown   = 0;
 
@@ -82,8 +79,8 @@ class BubbleShooter {
         this.swapColorIdx = 0;
 
         this.isFullscreen     = false;
-        this.fullscreenBtnHit = false;
 
+        // ✅ MOBILE FIX: Drastically reduced limits
         this.particles      = [];
         this.fallingBubbles = [];
         this.aimDots        = [];
@@ -92,16 +89,23 @@ class BubbleShooter {
         this.floatingTexts  = [];
         this.ripples        = [];
 
-        this.MAX_PARTICLES = this.isMobile ? 60 : 120;
-        this.MAX_FALLING   = 20;
-        this.MAX_POP_RINGS = 15;
-        this.MAX_POPUPS    = 10;
+        this.MAX_PARTICLES = this.isMobile ? 25 : 80;
+        this.MAX_FALLING   = this.isMobile ? 8  : 16;
+        this.MAX_POP_RINGS = this.isMobile ? 5  : 12;
+        this.MAX_POPUPS    = this.isMobile ? 5  : 10;
 
         this.shakeX = 0; this.shakeY = 0;
         this.shakeTimer = 0; this.shakeForce = 0;
 
         this.time  = 0;
         this.frame = 0;
+
+        // ✅ MOBILE FIX: Frame skip for weak devices
+        this.frameSkip    = 0;
+        this.frameSkipMax = this.isMobile ? 1 : 0; // skip every 2nd frame on mobile if needed
+        this.fpsHistory   = [];
+        this.lastFpsCheck = 0;
+        this.adaptiveMode = false;
 
         this.grid          = [];
         this.score         = 0;
@@ -139,14 +143,14 @@ class BubbleShooter {
         this.activePowerUp = null;
 
         this.hudFlash = {};
-        this.hudPulse = {};
 
         this.showDailyReward    = false;
         this.dailyRewardClaimed = false;
         this.dailyRewardAnim    = 0;
         this.checkDailyReward();
 
-        this.stars = this.makeStars(this.isMobile ? 40 : 70);
+        // ✅ MOBILE FIX: Fewer stars
+        this.stars = this.makeStars(this.isMobile ? 25 : 60);
 
         this.initLevel(this.level);
         this.generateShooter();
@@ -160,7 +164,6 @@ class BubbleShooter {
         this.boundFSChange = this.onFullscreenChange.bind(this);
         document.addEventListener('fullscreenchange',       this.boundFSChange);
         document.addEventListener('webkitfullscreenchange', this.boundFSChange);
-        document.addEventListener('mozfullscreenchange',    this.boundFSChange);
 
         this.lastTime = 0;
         this.animId   = requestAnimationFrame(t => this.loop(t));
@@ -179,59 +182,35 @@ class BubbleShooter {
         this.canvas.style.height = h + 'px';
     }
 
-    loadFonts() {
-        if (document.fonts) {
-            document.fonts.ready.then(() => {
-                if (document.fonts.check('12px Orbitron')) this.FONT_TITLE = 'Orbitron';
-                if (document.fonts.check('12px Rajdhani')) this.FONT_MONO  = 'Rajdhani';
-            });
-        }
-    }
-
     // ============================================================
     // FULLSCREEN
     // ============================================================
     toggleFullscreen() {
         const el = document.documentElement;
         if (!document.fullscreenElement && !document.webkitFullscreenElement) {
-            const req = el.requestFullscreen
-                || el.webkitRequestFullscreen
-                || el.mozRequestFullScreen
-                || el.msRequestFullscreen;
+            const req = el.requestFullscreen || el.webkitRequestFullscreen;
             if (req) req.call(el).catch(() => {});
         } else {
-            const ex = document.exitFullscreen
-                || document.webkitExitFullscreen
-                || document.mozCancelFullScreen
-                || document.msExitFullscreen;
+            const ex = document.exitFullscreen || document.webkitExitFullscreen;
             if (ex) ex.call(document);
         }
     }
 
     onFullscreenChange() {
-        this.isFullscreen = !!(
-            document.fullscreenElement ||
-            document.webkitFullscreenElement ||
-            document.mozFullScreenElement
-        );
-        setTimeout(() => this.resize(), 150);
-        setTimeout(() => this.resize(), 500);
+        this.isFullscreen = !!(document.fullscreenElement || document.webkitFullscreenElement);
+        setTimeout(() => this.resize(), 200);
     }
 
     // ============================================================
-    // DPR HELPERS
+    // DPR HELPERS — ✅ Inline math for speed
     // ============================================================
-    dX(x) { return Math.round(x * this.dpr); }
-    dY(y) { return Math.round(y * this.dpr); }
+    dX(x) { return x * this.dpr | 0; }
+    dY(y) { return y * this.dpr | 0; }
     dS(s) { return s * this.dpr; }
 
     // ============================================================
     // CRISP TEXT
     // ============================================================
-    setFont(ctx, weight, size, family) {
-        ctx.font = `${weight} ${Math.round(size * this.dpr)}px ${family || this.FONT_UI}`;
-    }
-
     drawText(ctx, text, x, y, options = {}) {
         const {
             size = 14, weight = 'bold', color = '#FFFFFF',
@@ -245,7 +224,7 @@ class BubbleShooter {
         const sx = x * this.dpr;
         const sy = y * this.dpr;
         ctx.globalAlpha = opacity;
-        this.setFont(ctx, weight, size, family || (size > 16 ? this.FONT_TITLE : this.FONT_UI));
+        ctx.font = `${weight} ${Math.round(size * this.dpr)}px ${family || this.FONT_UI}`;
         ctx.textAlign    = align;
         ctx.textBaseline = baseline;
 
@@ -253,39 +232,35 @@ class BubbleShooter {
             ctx.strokeStyle = strokeColor;
             ctx.lineWidth   = strokeWidth * this.dpr;
             ctx.lineJoin    = 'round';
-            ctx.miterLimit  = 2;
-            ctx.strokeText(text, sx, sy, maxWidth ? maxWidth * this.dpr : undefined);
+            ctx.strokeText(text, sx, sy);
         }
 
-        if (glow && glowBlur > 0) {
+        // ✅ MOBILE FIX: Only glow on desktop
+        if (glow && glowBlur > 0 && !this.isMobile) {
             ctx.shadowBlur  = glowBlur * this.dpr;
             ctx.shadowColor = glowColor || color;
-            ctx.fillStyle   = glowColor || color;
-            ctx.globalAlpha = opacity * 0.45;
-            ctx.fillText(text, sx, sy, maxWidth ? maxWidth * this.dpr : undefined);
         }
 
-        ctx.shadowBlur  = 0;
-        ctx.shadowColor = 'transparent';
-        ctx.globalAlpha = opacity;
-        ctx.fillStyle   = color;
-        ctx.fillText(text, sx, sy, maxWidth ? maxWidth * this.dpr : undefined);
+        ctx.fillStyle = color;
+        ctx.fillText(text, sx, sy);
+        ctx.shadowBlur = 0;
         ctx.restore();
     }
 
     // ============================================================
-    // SHAPES
+    // SHAPES — ✅ Fast integer math
     // ============================================================
-    fillRect(ctx, x, y, w, h) { ctx.fillRect(this.dX(x), this.dY(y), this.dS(w), this.dS(h)); }
-
     drawCircle(ctx, x, y, r) {
         ctx.beginPath();
-        ctx.arc(this.dX(x), this.dY(y), this.dS(r), 0, Math.PI * 2);
+        ctx.arc(x * this.dpr, y * this.dpr, r * this.dpr, 0, 6.2832);
     }
 
     drawRoundRect(ctx, x, y, w, h, radius) {
-        const dx = this.dX(x), dy = this.dY(y);
-        const dw = this.dS(w), dh = this.dS(h), dr = this.dS(radius);
+        const dx = x * this.dpr | 0;
+        const dy = y * this.dpr | 0;
+        const dw = w * this.dpr;
+        const dh = h * this.dpr;
+        const dr = radius * this.dpr;
         ctx.beginPath();
         ctx.moveTo(dx + dr, dy);
         ctx.arcTo(dx + dw, dy,      dx + dw, dy + dh, dr);
@@ -295,14 +270,8 @@ class BubbleShooter {
         ctx.closePath();
     }
 
-    drawLine(ctx, x1, y1, x2, y2) {
-        ctx.beginPath();
-        ctx.moveTo(this.dX(x1), this.dY(y1));
-        ctx.lineTo(this.dX(x2), this.dY(y2));
-    }
-
     // ============================================================
-    // PRE-RENDER BUBBLES
+    // PRE-RENDER BUBBLES — ✅ Simpler shading on mobile
     // ============================================================
     preRenderAll() {
         this.cache.bubbles.clear();
@@ -310,63 +279,81 @@ class BubbleShooter {
         const r = this.BUBBLE_R;
 
         this.COLORS.forEach((col, idx) => {
-            const bSize = Math.ceil((r + 4) * 2 * this.dpr);
+            const bSize = Math.ceil((r + 3) * 2 * this.dpr);
             const bC = document.createElement('canvas');
             bC.width = bC.height = bSize;
-            this.renderHDBubble(bC.getContext('2d'), bSize/2, bSize/2, r * this.dpr, col);
+            const bCtx = bC.getContext('2d');
+
+            if (this.isMobile) {
+                // ✅ MOBILE FIX: Simple 2-stop gradient, no multiple layers
+                this.renderSimpleBubble(bCtx, bSize/2, bSize/2, r * this.dpr, col);
+            } else {
+                this.renderHDBubble(bCtx, bSize/2, bSize/2, r * this.dpr, col);
+            }
             this.cache.bubbles.set(idx, bC);
 
-            const gSize = Math.ceil((r + 14) * 2 * this.dpr);
-            const gC = document.createElement('canvas');
-            gC.width = gC.height = gSize;
-            const gCtx = gC.getContext('2d');
-            const gcx = gSize/2, gcy = gSize/2;
-            const gg = gCtx.createRadialGradient(gcx, gcy, r*this.dpr*0.3, gcx, gcy, (r+12)*this.dpr);
-            gg.addColorStop(0, col.glow + '0.25)');
-            gg.addColorStop(0.6, col.glow + '0.08)');
-            gg.addColorStop(1, 'rgba(0,0,0,0)');
-            gCtx.fillStyle = gg;
-            gCtx.beginPath();
-            gCtx.arc(gcx, gcy, (r+12)*this.dpr, 0, Math.PI*2);
-            gCtx.fill();
-            this.cache.glows.set(idx, gC);
+            // ✅ MOBILE FIX: Skip glow cache on mobile
+            if (!this.isMobile) {
+                const gSize = Math.ceil((r + 12) * 2 * this.dpr);
+                const gC = document.createElement('canvas');
+                gC.width = gC.height = gSize;
+                const gCtx = gC.getContext('2d');
+                const gcx = gSize/2, gcy = gSize/2;
+                const gg = gCtx.createRadialGradient(gcx, gcy, r*this.dpr*0.3, gcx, gcy, (r+10)*this.dpr);
+                gg.addColorStop(0, col.glow + '0.2)');
+                gg.addColorStop(1, 'rgba(0,0,0,0)');
+                gCtx.fillStyle = gg;
+                gCtx.beginPath();
+                gCtx.arc(gcx, gcy, (r+10)*this.dpr, 0, 6.2832);
+                gCtx.fill();
+                this.cache.glows.set(idx, gC);
+            }
         });
+    }
+
+    // ✅ NEW: Fast simple bubble for mobile
+    renderSimpleBubble(ctx, cx, cy, r, col) {
+        const grad = ctx.createRadialGradient(cx - r*0.2, cy - r*0.25, r*0.05, cx, cy, r);
+        grad.addColorStop(0, col.light);
+        grad.addColorStop(0.7, col.hex);
+        grad.addColorStop(1, col.dark);
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, 6.2832);
+        ctx.fillStyle = grad;
+        ctx.fill();
+
+        // Simple highlight
+        const hl = ctx.createRadialGradient(cx - r*0.28, cy - r*0.3, 0, cx - r*0.15, cy - r*0.15, r*0.45);
+        hl.addColorStop(0, 'rgba(255,255,255,0.55)');
+        hl.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = hl;
+        ctx.fill();
     }
 
     renderHDBubble(ctx, cx, cy, r, col) {
         const baseGrad = ctx.createRadialGradient(cx-r*0.25, cy-r*0.3, r*0.05, cx+r*0.05, cy+r*0.1, r);
         baseGrad.addColorStop(0, col.light);
         baseGrad.addColorStop(0.35, col.hex);
-        baseGrad.addColorStop(0.75, col.hex);
         baseGrad.addColorStop(1, col.dark);
-        ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI*2);
+        ctx.beginPath(); ctx.arc(cx, cy, r, 0, 6.2832);
         ctx.fillStyle = baseGrad; ctx.fill();
 
         const edgeGrad = ctx.createRadialGradient(cx, cy, r*0.65, cx, cy, r);
         edgeGrad.addColorStop(0, 'rgba(0,0,0,0)');
-        edgeGrad.addColorStop(0.7, 'rgba(0,0,0,0.05)');
-        edgeGrad.addColorStop(1, 'rgba(0,0,0,0.3)');
+        edgeGrad.addColorStop(1, 'rgba(0,0,0,0.28)');
         ctx.fillStyle = edgeGrad;
-        ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.arc(cx, cy, r, 0, 6.2832); ctx.fill();
 
         const hl = ctx.createRadialGradient(cx-r*0.3, cy-r*0.35, 0, cx-r*0.15, cy-r*0.15, r*0.55);
-        hl.addColorStop(0, 'rgba(255,255,255,0.65)');
-        hl.addColorStop(0.3, 'rgba(255,255,255,0.2)');
+        hl.addColorStop(0, 'rgba(255,255,255,0.6)');
         hl.addColorStop(1, 'rgba(255,255,255,0)');
         ctx.fillStyle = hl;
-        ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI*2); ctx.fill();
-
-        const spec = ctx.createRadialGradient(cx-r*0.22, cy-r*0.28, 0, cx-r*0.22, cy-r*0.28, r*0.13);
-        spec.addColorStop(0, 'rgba(255,255,255,0.95)');
-        spec.addColorStop(0.5, 'rgba(255,255,255,0.3)');
-        spec.addColorStop(1, 'rgba(255,255,255,0)');
-        ctx.fillStyle = spec;
-        ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.arc(cx, cy, r, 0, 6.2832); ctx.fill();
     }
 
     calculateBubbleRadius() {
         const maxR = Math.floor((this.W - 16) / (this.COLS * 2 + 0.5));
-        return Math.min(maxR, this.isMobile ? 18 : 20);
+        return Math.min(maxR, this.isMobile ? 17 : 20);
     }
 
     recalcGrid() {
@@ -417,10 +404,9 @@ class BubbleShooter {
 
     claimDailyReward() {
         if (this.dailyRewardClaimed) return;
-        const streak = this.playerData.dailyStreak;
+        const streak   = this.playerData.dailyStreak;
         const coins    = Math.floor(50 * Math.min(1 + streak * 0.25, 3));
         const diamonds = Math.floor(2 * Math.max(1, Math.floor(streak / 3)));
-
         this.playerData.coins    += coins;
         this.playerData.diamonds += diamonds;
         this.playerData.totalCoinsEarned    += coins;
@@ -429,11 +415,8 @@ class BubbleShooter {
         this.playerData.dailyStreak++;
         this.dailyRewardClaimed = true;
         this.showDailyReward    = false;
-
-        this.addFloatingText(this.W/2, this.H/2-30, `+${coins} Coins`,   '#FFD700', 22);
+        this.addFloatingText(this.W/2, this.H/2-30, `+${coins} Coins`, '#FFD700', 22);
         this.addFloatingText(this.W/2, this.H/2+10, `+${diamonds} Gems`, '#00D4FF', 20);
-        this.spawnCelebration(this.W/2, this.H/2, 20);
-        if (window.audioManager) audioManager.play('achievement');
         this.savePlayerData();
     }
 
@@ -442,31 +425,31 @@ class BubbleShooter {
     // ============================================================
     getLevelConfig(lvl) {
         const configs = {
-            1:  { rows:4, colors:3, goal:25,  drop:45000, name:'Warm Up',        layout:'std'        },
-            2:  { rows:4, colors:3, goal:30,  drop:42000, name:'Getting Started', layout:'std'        },
-            3:  { rows:5, colors:4, goal:40,  drop:40000, name:'Color Mix',       layout:'std'        },
-            4:  { rows:5, colors:4, goal:45,  drop:38000, name:'Rising Tide',     layout:'std'        },
-            5:  { rows:6, colors:4, goal:55,  drop:35000, name:'The Wall',        layout:'boss_wall'  },
-            6:  { rows:5, colors:5, goal:50,  drop:35000, name:'Rainbow Rush',    layout:'std'        },
-            7:  { rows:5, colors:5, goal:55,  drop:33000, name:'Quick Fire',      layout:'zigzag'     },
-            8:  { rows:6, colors:5, goal:60,  drop:32000, name:'Deep Colors',     layout:'std'        },
-            9:  { rows:6, colors:5, goal:65,  drop:30000, name:'Speed Run',       layout:'diamond'    },
-            10: { rows:7, colors:5, goal:75,  drop:28000, name:'Pyramid',         layout:'boss_pyr'   },
-            11: { rows:6, colors:6, goal:70,  drop:28000, name:'Hex Mix',         layout:'std'        },
-            12: { rows:6, colors:6, goal:75,  drop:26000, name:'Cascade',         layout:'checker'    },
-            13: { rows:7, colors:6, goal:80,  drop:25000, name:'Tight Squeeze',   layout:'std'        },
-            14: { rows:7, colors:6, goal:85,  drop:24000, name:'Storm',           layout:'zigzag'     },
-            15: { rows:7, colors:6, goal:90,  drop:22000, name:'The Cross',       layout:'boss_cross' },
-            16: { rows:7, colors:7, goal:85,  drop:22000, name:'Spectrum',        layout:'std'        },
-            17: { rows:7, colors:7, goal:90,  drop:20000, name:'Maze Runner',     layout:'maze'       },
-            18: { rows:8, colors:7, goal:95,  drop:20000, name:'Dense Pack',      layout:'std'        },
-            19: { rows:8, colors:7, goal:100, drop:18000, name:'Pressure',        layout:'diamond'    },
-            20: { rows:8, colors:7, goal:110, drop:16000, name:'Spiral',          layout:'boss_spiral'},
-            21: { rows:8, colors:8, goal:100, drop:16000, name:'Octachrome',      layout:'std'        },
-            22: { rows:8, colors:8, goal:110, drop:15000, name:'Blitz',           layout:'checker'    },
-            23: { rows:9, colors:8, goal:120, drop:14000, name:'Endurance',       layout:'zigzag'     },
-            24: { rows:9, colors:8, goal:130, drop:12000, name:'Nightmare',       layout:'maze'       },
-            25: { rows:10,colors:8, goal:150, drop:10000, name:'FINAL BOSS',      layout:'boss_final' }
+            1:  { rows:4,  colors:3, goal:25,  drop:45000, name:'Warm Up',        layout:'std'        },
+            2:  { rows:4,  colors:3, goal:30,  drop:42000, name:'Getting Started', layout:'std'        },
+            3:  { rows:5,  colors:4, goal:40,  drop:40000, name:'Color Mix',       layout:'std'        },
+            4:  { rows:5,  colors:4, goal:45,  drop:38000, name:'Rising Tide',     layout:'std'        },
+            5:  { rows:6,  colors:4, goal:55,  drop:35000, name:'The Wall',        layout:'boss_wall'  },
+            6:  { rows:5,  colors:5, goal:50,  drop:35000, name:'Rainbow Rush',    layout:'std'        },
+            7:  { rows:5,  colors:5, goal:55,  drop:33000, name:'Quick Fire',      layout:'zigzag'     },
+            8:  { rows:6,  colors:5, goal:60,  drop:32000, name:'Deep Colors',     layout:'std'        },
+            9:  { rows:6,  colors:5, goal:65,  drop:30000, name:'Speed Run',       layout:'diamond'    },
+            10: { rows:7,  colors:5, goal:75,  drop:28000, name:'Pyramid',         layout:'boss_pyr'   },
+            11: { rows:6,  colors:6, goal:70,  drop:28000, name:'Hex Mix',         layout:'std'        },
+            12: { rows:6,  colors:6, goal:75,  drop:26000, name:'Cascade',         layout:'checker'    },
+            13: { rows:7,  colors:6, goal:80,  drop:25000, name:'Tight Squeeze',   layout:'std'        },
+            14: { rows:7,  colors:6, goal:85,  drop:24000, name:'Storm',           layout:'zigzag'     },
+            15: { rows:7,  colors:6, goal:90,  drop:22000, name:'The Cross',       layout:'boss_cross' },
+            16: { rows:7,  colors:7, goal:85,  drop:22000, name:'Spectrum',        layout:'std'        },
+            17: { rows:7,  colors:7, goal:90,  drop:20000, name:'Maze Runner',     layout:'maze'       },
+            18: { rows:8,  colors:7, goal:95,  drop:20000, name:'Dense Pack',      layout:'std'        },
+            19: { rows:8,  colors:7, goal:100, drop:18000, name:'Pressure',        layout:'diamond'    },
+            20: { rows:8,  colors:7, goal:110, drop:16000, name:'Spiral',          layout:'boss_spiral'},
+            21: { rows:8,  colors:8, goal:100, drop:16000, name:'Octachrome',      layout:'std'        },
+            22: { rows:8,  colors:8, goal:110, drop:15000, name:'Blitz',           layout:'checker'    },
+            23: { rows:9,  colors:8, goal:120, drop:14000, name:'Endurance',       layout:'zigzag'     },
+            24: { rows:9,  colors:8, goal:130, drop:12000, name:'Nightmare',       layout:'maze'       },
+            25: { rows:10, colors:8, goal:150, drop:10000, name:'FINAL BOSS',      layout:'boss_final' }
         };
         if (configs[lvl]) return configs[lvl];
         return {
@@ -509,9 +492,8 @@ class BubbleShooter {
         this.popRings       = [];
         this.ripples        = [];
 
-        this.addFloatingText(this.W/2, this.H/2-35, `Level ${level}`, '#B94FE3', 28);
-        this.addFloatingText(this.W/2, this.H/2+5,  this.levelConfig.name, '#00D4FF', 16);
-        this.addFloatingText(this.W/2, this.H/2+35, `Pop ${this.levelGoal} bubbles`, 'rgba(255,255,255,0.5)', 12);
+        this.addFloatingText(this.W/2, this.H/2-35, `Level ${level}`, '#B94FE3', 26);
+        this.addFloatingText(this.W/2, this.H/2+5,  this.levelConfig.name, '#00D4FF', 14);
     }
 
     buildLayout(cfg) {
@@ -577,7 +559,8 @@ class BubbleShooter {
 
     makeBubble(ci) {
         this.totalBubbles++;
-        return { ci, scale:1, flash:0, breathe:Math.random()*6.28, isNew:false };
+        // ✅ MOBILE FIX: No breathe animation tracking needed live
+        return { ci, scale:1, flash:0, breathe: Math.random()*6.28, isNew:false };
     }
 
     // ============================================================
@@ -587,17 +570,16 @@ class BubbleShooter {
         this.playerData.coins += amt;
         this.playerData.totalCoinsEarned += amt;
         this.levelCoins += amt;
-        this.addTextPopup(x, y, `+${amt} C`, '#FFD700');
-        this.hudFlash.coins = 15;
+        this.addTextPopup(x, y, `+${amt}C`, '#FFD700');
+        this.hudFlash.coins = 12;
     }
 
     earnDiamonds(amt, x, y) {
         this.playerData.diamonds += amt;
         this.playerData.totalDiamondsEarned += amt;
         this.levelDiamonds += amt;
-        this.addTextPopup(x, y, `+${amt} D`, '#00D4FF');
-        this.hudFlash.diamonds = 15;
-        if (window.audioManager) audioManager.play('achievement');
+        this.addTextPopup(x, y-15, `+${amt}D`, '#00D4FF');
+        this.hudFlash.diamonds = 12;
     }
 
     // ============================================================
@@ -610,11 +592,6 @@ class BubbleShooter {
         this.powerUps[type].count--;
         this.activePowerUp = type;
         this.addFloatingText(this.W/2, this.H/2, `${this.powerUps[type].name}!`, this.powerUps[type].color, 20);
-        for (let i = 0; i < 8; i++) {
-            const a = Math.PI*2*i/8;
-            this.addParticle(this.shooterX, this.shooterY, Math.cos(a)*3, Math.sin(a)*3, this.powerUps[type].color, 3, 50);
-        }
-        if (window.audioManager) audioManager.play('powerUp');
         this.savePlayerData();
     }
 
@@ -630,11 +607,11 @@ class BubbleShooter {
             this.canvas.addEventListener('pointerup',   e => { e.preventDefault(); this.handlePointerUp(e);   }, { passive: false });
             this.canvas.addEventListener('pointerdown', e => { e.preventDefault(); this.pointerDown = true;    }, { passive: false });
         } else {
-            this.canvas.addEventListener('mousemove', e => this.handleMouseMove(e));
-            this.canvas.addEventListener('click',     e => this.handleClick(e));
-            this.canvas.addEventListener('touchmove', e => { e.preventDefault(); this.handleTouchMove(e); }, { passive: false });
-            this.canvas.addEventListener('touchend',  e => { e.preventDefault(); this.handleTouchEnd(e);  }, { passive: false });
-            this.canvas.addEventListener('touchstart', e => { e.preventDefault(); }, { passive: false });
+            this.canvas.addEventListener('mousemove',  e => this.handleMouseMove(e));
+            this.canvas.addEventListener('click',      e => this.handleClick(e));
+            this.canvas.addEventListener('touchmove',  e => { e.preventDefault(); this.handleTouchMove(e); }, { passive: false });
+            this.canvas.addEventListener('touchend',   e => { e.preventDefault(); this.handleTouchEnd(e);  }, { passive: false });
+            this.canvas.addEventListener('touchstart', e => { e.preventDefault(); },                          { passive: false });
         }
         document.addEventListener('keydown', e => this.handleKey(e));
     }
@@ -702,39 +679,31 @@ class BubbleShooter {
     }
 
     // ============================================================
-    // UI CLICK HANDLER — NO FAV/PAUSE/CHANGES BUTTONS
+    // UI CLICK
     // ============================================================
     handleUIClick(x, y) {
         if (this.showDailyReward && !this.dailyRewardClaimed) { this.claimDailyReward(); return true; }
         if (this.showLevelComplete) { this.goNextLevel(); return true; }
 
-        // ✅ FULLSCREEN BUTTON — BOTTOM RIGHT
         const fsBtn = this.getFullscreenBtnRect();
-        if (x >= fsBtn.x && x <= fsBtn.x + fsBtn.w && y >= fsBtn.y && y <= fsBtn.y + fsBtn.h) {
-            this.toggleFullscreen();
-            return true;
+        if (x >= fsBtn.x && x <= fsBtn.x+fsBtn.w && y >= fsBtn.y && y <= fsBtn.y+fsBtn.h) {
+            this.toggleFullscreen(); return true;
         }
 
-        // Tap bubble = swap color
-        const bubbleRadius = this.BUBBLE_R + (this.isMobile ? 12 : 8);
-        const dx = x - this.shooterX;
-        const dy = y - this.shooterY;
-        if (Math.sqrt(dx*dx + dy*dy) < bubbleRadius) {
-            this.swapCurrentBubble();
-            return true;
+        const bubbleRadius = this.BUBBLE_R + (this.isMobile ? 14 : 10);
+        const dx = x - this.shooterX, dy = y - this.shooterY;
+        if (dx*dx + dy*dy < bubbleRadius*bubbleRadius) {
+            this.swapCurrentBubble(); return true;
         }
 
-        // ✅ POWER-UP BUTTONS — BOTTOM LEFT
-        const btnS   = this.isMobile ? 44 : 38;
+        const btnS = this.isMobile ? 44 : 38;
         const btnGap = 8;
-        const btnY   = this.H - btnS - (this.isMobile ? 12 : 10);
-        const startX = 8;
+        const btnY = this.H - btnS - (this.isMobile ? 12 : 10);
         let i = 0;
         for (const key in this.powerUps) {
-            const bx = startX + i * (btnS + btnGap);
-            if (x >= bx && x <= bx + btnS && y >= btnY && y <= btnY + btnS) {
-                this.activatePowerUp(key);
-                return true;
+            const bx = 8 + i * (btnS + btnGap);
+            if (x >= bx && x <= bx+btnS && y >= btnY && y <= btnY+btnS) {
+                this.activatePowerUp(key); return true;
             }
             i++;
         }
@@ -742,48 +711,33 @@ class BubbleShooter {
     }
 
     // ============================================================
-    // SWAP CURRENT BUBBLE COLOR
+    // SWAP BUBBLE
     // ============================================================
     swapCurrentBubble() {
         if (!this.canShoot || this.projectile) return;
-
         const pool = this.colorsInPlay.length ? this.colorsInPlay : [0,1,2];
         const curIdx  = pool.indexOf(this.currentBubble.ci);
-        const nextIdx = (curIdx + 1) % pool.length;
-        const newCi   = pool[nextIdx];
-
+        const newCi   = pool[(curIdx + 1) % pool.length];
         this.swapAnim     = 1;
         this.swapColorIdx = newCi;
         this.currentBubble = { ci: newCi, color: this.COLORS[newCi].hex };
-
-        const col = this.COLORS[newCi];
-        for (let i = 0; i < 10; i++) {
-            const a = Math.PI * 2 * i / 10;
-            const spd = 2 + Math.random() * 3;
-            this.addParticle(
-                this.shooterX + Math.cos(a) * this.BUBBLE_R,
-                this.shooterY + Math.sin(a) * this.BUBBLE_R,
-                Math.cos(a) * spd, Math.sin(a) * spd,
-                col.hex, 2.5, 35
-            );
+        // ✅ MOBILE FIX: Fewer swap particles
+        if (!this.isMobile) {
+            const col = this.COLORS[newCi];
+            for (let i = 0; i < 6; i++) {
+                const a = Math.PI * 2 * i / 6;
+                this.addParticle(this.shooterX + Math.cos(a)*this.BUBBLE_R, this.shooterY + Math.sin(a)*this.BUBBLE_R,
+                    Math.cos(a)*2, Math.sin(a)*2, col.hex, 2, 30);
+            }
         }
         this.calcAimLine();
-        if (window.audioManager) audioManager.play('click');
     }
 
-    // ============================================================
-    // ✅ FULLSCREEN BUTTON RECT — BOTTOM RIGHT CORNER
-    // ============================================================
     getFullscreenBtnRect() {
         const btnW = this.isMobile ? 44 : 38;
         const btnH = this.isMobile ? 44 : 38;
         const margin = this.isMobile ? 12 : 10;
-        return {
-            x: this.W - btnW - margin,
-            y: this.H - btnH - margin,
-            w: btnW,
-            h: btnH
-        };
+        return { x: this.W - btnW - margin, y: this.H - btnH - margin, w: btnW, h: btnH };
     }
 
     // ============================================================
@@ -804,7 +758,7 @@ class BubbleShooter {
     }
 
     // ============================================================
-    // AIM LINE
+    // AIM LINE — ✅ Fewer dots on mobile
     // ============================================================
     calcAimLine() {
         this.aimDots = [];
@@ -812,13 +766,13 @@ class BubbleShooter {
         let vx = Math.cos(this.targetAngle), vy = Math.sin(this.targetAngle);
         let bounces = 0;
         const maxB     = this.activePowerUp === 'precision' ? 4 : 2;
-        const step     = 10;
-        const maxSteps = this.activePowerUp === 'precision' ? 50 : 30;
+        const step     = this.isMobile ? 14 : 10;
+        const maxSteps = this.isMobile ? 20 : 30;
 
         for (let i = 0; i < maxSteps; i++) {
             x += vx * step; y += vy * step;
-            if (x <= this.BUBBLE_R)          { x = this.BUBBLE_R;          vx *= -1; bounces++; }
-            if (x >= this.W - this.BUBBLE_R) { x = this.W - this.BUBBLE_R; vx *= -1; bounces++; }
+            if (x <= this.BUBBLE_R)          { x = this.BUBBLE_R;          vx = -vx; bounces++; }
+            if (x >= this.W - this.BUBBLE_R) { x = this.W - this.BUBBLE_R; vx = -vx; bounces++; }
             if (y <= this.offsetY || y > this.shooterY + 10) break;
             if (bounces >= maxB) break;
 
@@ -843,11 +797,10 @@ class BubbleShooter {
         this.canShoot    = false;
         this.shotsUsed++;
         this.shootCooldown = 6;
-        this.shootRecoil   = 6;
+        this.shootRecoil   = 5;
         this.shootGlow     = 1;
 
         const isBomb = this.activePowerUp === 'bomb';
-
         this.projectile = {
             x: this.shooterX, y: this.shooterY,
             vx: Math.cos(this.angle) * this.projectileSpeed,
@@ -857,18 +810,17 @@ class BubbleShooter {
             trail: [], isBomb, age: 0
         };
 
-        for (let i = 0; i < 4; i++) {
-            const spread = (Math.random()-0.5)*0.4;
-            this.addParticle(
-                this.shooterX + Math.cos(this.angle)*25,
-                this.shooterY + Math.sin(this.angle)*25,
-                Math.cos(this.angle+spread)*2, Math.sin(this.angle+spread)*2,
-                this.currentBubble.color, 2, 30
-            );
+        // ✅ MOBILE FIX: Fewer shoot particles
+        if (!this.isMobile) {
+            for (let i = 0; i < 3; i++) {
+                const spread = (Math.random()-0.5)*0.4;
+                this.addParticle(this.shooterX + Math.cos(this.angle)*20, this.shooterY + Math.sin(this.angle)*20,
+                    Math.cos(this.angle+spread)*2, Math.sin(this.angle+spread)*2,
+                    this.currentBubble.color, 2, 25);
+            }
         }
 
         this.activePowerUp = null;
-        if (window.audioManager) audioManager.play('shoot');
         this.generateShooter();
     }
 
@@ -881,9 +833,9 @@ class BubbleShooter {
         this.time += dt;
         this.frame++;
         if (this.shootCooldown > 0) this.shootCooldown--;
-        if (this.swapAnim > 0) this.swapAnim = Math.max(0, this.swapAnim - 0.06);
+        if (this.swapAnim > 0) this.swapAnim = Math.max(0, this.swapAnim - 0.07);
 
-        if (this.showDailyReward) this.dailyRewardAnim = Math.min(1, this.dailyRewardAnim + 0.05);
+        if (this.showDailyReward) this.dailyRewardAnim = Math.min(1, this.dailyRewardAnim + 0.06);
         if (this.showLevelComplete) { this.levelCompleteTimer++; this.updateFX(dt); return; }
 
         if (this.levelTransition) {
@@ -896,37 +848,44 @@ class BubbleShooter {
             return;
         }
 
-        this.angle += (this.targetAngle - this.angle) * (this.isMobile ? 0.35 : 0.25);
+        // ✅ MOBILE FIX: Faster angle lerp on mobile
+        this.angle += (this.targetAngle - this.angle) * (this.isMobile ? 0.45 : 0.3);
 
-        if (this.shootRecoil > 0) this.shootRecoil *= 0.82;
-        if (this.shootGlow > 0)   this.shootGlow   *= 0.9;
+        if (this.shootRecoil > 0) this.shootRecoil *= 0.8;
+        if (this.shootGlow > 0)   this.shootGlow   *= 0.88;
 
+        // ✅ MOBILE FIX: Reduced shake
         if (this.shakeTimer > 0) {
-            const f = this.shakeForce * (this.shakeTimer / 12);
+            const f = this.shakeForce * (this.shakeTimer / 10) * (this.isMobile ? 0.5 : 1);
             this.shakeX = (Math.random()-0.5) * f;
-            this.shakeY = (Math.random()-0.5) * f * 0.4;
+            this.shakeY = (Math.random()-0.5) * f * 0.3;
             this.shakeTimer--;
         } else { this.shakeX = 0; this.shakeY = 0; }
 
         for (const k in this.hudFlash) if (this.hudFlash[k] > 0) this.hudFlash[k]--;
-        this.stars.forEach(s => { s.phase += s.speed; });
+
+        // ✅ MOBILE FIX: Update stars every 2nd frame
+        if (!this.isMobile || this.frame % 2 === 0) {
+            this.stars.forEach(s => { s.phase += s.speed; });
+        }
 
         if (this.projectile) this.updateProjectile();
 
+        // ✅ MOBILE FIX: Simplified bubble updates - no breathe on mobile
         for (let r = 0; r < this.ROWS; r++) {
             for (let c = 0; c < this.COLS; c++) {
                 const b = this.grid[r]?.[c];
                 if (!b) continue;
                 if (b.isNew) {
-                    b.scale += (1 - b.scale) * 0.18;
+                    b.scale += (1 - b.scale) * 0.2;
                     if (b.scale > 0.97) { b.scale = 1; b.isNew = false; }
                 }
-                if (b.flash > 0) b.flash -= 0.6;
-                b.breathe += 0.015;
+                if (b.flash > 0) b.flash -= 0.8;
+                if (!this.isMobile) b.breathe += 0.015;
                 const bk = `${r},${c}`;
                 if (this.gridBounce[bk]) {
-                    this.gridBounce[bk] *= 0.85;
-                    if (Math.abs(this.gridBounce[bk]) < 0.15) delete this.gridBounce[bk];
+                    this.gridBounce[bk] *= 0.82;
+                    if (Math.abs(this.gridBounce[bk]) < 0.2) delete this.gridBounce[bk];
                 }
             }
         }
@@ -941,7 +900,6 @@ class BubbleShooter {
         const remaining = this.grid.flat().filter(Boolean).length;
         if (remaining === 0 && !this.levelComplete && this.totalBubbles > 0) {
             this.earnCoins(100, this.W/2, this.H/2);
-            this.earnDiamonds(3, this.W/2, this.H/2+25);
             this.completeLevel();
         }
 
@@ -950,35 +908,36 @@ class BubbleShooter {
     }
 
     updateFX(dt) {
+        // ✅ MOBILE FIX: Batch update with early exit
         for (let i = this.particles.length - 1; i >= 0; i--) {
             const p = this.particles[i];
-            p.x += p.vx; p.y += p.vy; p.vy += p.grav; p.life--; p.vx *= 0.97;
+            p.x += p.vx; p.y += p.vy; p.vy += 0.08; p.life--; p.vx *= 0.97;
             if (p.life <= 0) this.particles.splice(i, 1);
         }
         for (let i = this.fallingBubbles.length - 1; i >= 0; i--) {
             const b = this.fallingBubbles[i];
-            b.vy += 0.45; b.y += b.vy; b.x += b.vx; b.rot += b.rotSpd; b.life--;
+            b.vy += 0.5; b.y += b.vy; b.x += b.vx; b.life--;
             if (b.life <= 0 || b.y > this.H + 40) this.fallingBubbles.splice(i, 1);
         }
         for (let i = this.popRings.length - 1; i >= 0; i--) {
             const r = this.popRings[i];
-            r.radius += 2.5; r.opacity -= 0.04;
+            r.radius += 3; r.opacity -= 0.05;
             if (r.opacity <= 0) this.popRings.splice(i, 1);
         }
         for (let i = this.textPopups.length - 1; i >= 0; i--) {
             const t = this.textPopups[i];
-            t.y -= 1.2; t.life--; t.opacity = Math.min(1, t.life / 25);
+            t.y -= 1.0; t.life--; t.opacity = Math.min(1, t.life / 20);
             if (t.life <= 0) this.textPopups.splice(i, 1);
         }
         for (let i = this.floatingTexts.length - 1; i >= 0; i--) {
             const t = this.floatingTexts[i];
-            t.y -= 0.6; t.life--; t.opacity = Math.min(1, t.life / 30);
-            t.scale += (1 - t.scale) * 0.12;
+            t.y -= 0.5; t.life--; t.opacity = Math.min(1, t.life / 25);
+            t.scale += (1 - t.scale) * 0.15;
             if (t.life <= 0) this.floatingTexts.splice(i, 1);
         }
         for (let i = this.ripples.length - 1; i >= 0; i--) {
             const r = this.ripples[i];
-            r.radius += 2; r.opacity -= 0.025;
+            r.radius += 2.5; r.opacity -= 0.035;
             if (r.opacity <= 0) this.ripples.splice(i, 1);
         }
     }
@@ -986,23 +945,25 @@ class BubbleShooter {
     updateProjectile() {
         const p = this.projectile;
         p.age++;
+
+        // ✅ MOBILE FIX: Shorter trail
         p.trail.push({ x: p.x, y: p.y });
-        if (p.trail.length > 10) p.trail.shift();
+        if (p.trail.length > (this.isMobile ? 5 : 9)) p.trail.shift();
 
         p.x += p.vx; p.y += p.vy;
 
-        if (p.x <= this.BUBBLE_R)          { p.x = this.BUBBLE_R;          p.vx *= -1; }
-        if (p.x >= this.W - this.BUBBLE_R) { p.x = this.W - this.BUBBLE_R; p.vx *= -1; }
-
+        if (p.x <= this.BUBBLE_R)          { p.x = this.BUBBLE_R;          p.vx = -p.vx; }
+        if (p.x >= this.W - this.BUBBLE_R) { p.x = this.W - this.BUBBLE_R; p.vx = -p.vx; }
         if (p.y <= this.BUBBLE_R + this.offsetY) { this.snapBubble(); return; }
         if (p.y > this.H + 20) { this.projectile = null; this.canShoot = true; return; }
 
+        const r2 = (this.BUBBLE_R * 1.85) ** 2;
         for (let r = 0; r < this.ROWS; r++) {
             for (let c = 0; c < this.COLS; c++) {
                 if (!this.grid[r]?.[c]) continue;
                 const pos = this.bubblePos(r, c);
                 const dx = p.x - pos.x, dy = p.y - pos.y;
-                if (dx*dx + dy*dy < (this.BUBBLE_R * 1.85)**2) { this.snapBubble(); return; }
+                if (dx*dx + dy*dy < r2) { this.snapBubble(); return; }
             }
         }
     }
@@ -1020,8 +981,8 @@ class BubbleShooter {
                 if (this.grid[r]?.[c]) continue;
                 const pos = this.bubblePos(r, c);
                 const dx = p.x - pos.x, dy = p.y - pos.y;
-                const d = Math.sqrt(dx*dx + dy*dy);
-                if (d < bestD && d < this.BUBBLE_R * 3.5) { bestD = d; bestR = r; bestC = c; }
+                const d = dx*dx + dy*dy;
+                if (d < bestD && d < (this.BUBBLE_R * 3.5)**2) { bestD = d; bestR = r; bestC = c; }
             }
         }
 
@@ -1031,15 +992,12 @@ class BubbleShooter {
         }
 
         if (bestR !== -1 && bestC !== -1) {
-            const impactPos = this.bubblePos(bestR, bestC);
-            this.ripples.push({ x: impactPos.x, y: impactPos.y, radius: this.BUBBLE_R*0.5, opacity: 0.5, color: p.color });
-
             if (p.isBomb) { this.explodeBomb(bestR, bestC); this.projectile = null; this.canShoot = true; return; }
 
-            this.grid[bestR][bestC] = { ci: p.ci, scale: 0.15, flash: 6, breathe: Math.random()*6.28, isNew: true };
+            this.grid[bestR][bestC] = { ci: p.ci, scale: 0.2, flash: 5, breathe: 0, isNew: true };
 
             const nbs = this.getNeighbors(bestR, bestC);
-            for (const [nr, nc] of nbs) if (this.grid[nr]?.[nc]) this.gridBounce[`${nr},${nc}`] = 2.5;
+            for (const [nr, nc] of nbs) if (this.grid[nr]?.[nc]) this.gridBounce[`${nr},${nc}`] = 2;
 
             const matches = this.findMatches(bestR, bestC);
             if (matches.length >= 3) {
@@ -1048,7 +1006,6 @@ class BubbleShooter {
                 this.popMatches(matches, bestR, bestC);
             } else {
                 this.combo = 0;
-                if (window.audioManager) audioManager.play('pop');
             }
 
             setTimeout(() => this.dropFloating(), 100);
@@ -1066,9 +1023,9 @@ class BubbleShooter {
             for (let dc = -3; dc <= 3; dc++) {
                 const nr = r+dr, nc = c+dc;
                 if (nr<0||nr>=this.ROWS||nc<0||nc>=this.COLS||!this.grid[nr]?.[nc]) continue;
-                if (Math.sqrt(dr*dr+dc*dc) > 2.5) continue;
+                if (dr*dr + dc*dc > 6.25) continue;
                 const bp = this.bubblePos(nr, nc);
-                this.spawnPop(bp.x, bp.y, this.COLORS[this.grid[nr][nc].ci].hex, 6);
+                this.spawnPop(bp.x, bp.y, this.COLORS[this.grid[nr][nc].ci].hex, this.isMobile ? 3 : 5);
                 this.grid[nr][nc] = null;
                 count++;
             }
@@ -1077,10 +1034,8 @@ class BubbleShooter {
         this.score += count * 15;
         this.onScore(this.score);
         this.earnCoins(count*3, pos.x, pos.y);
-        this.shake(12, 8);
+        this.shake(8, 6);
         this.addTextPopup(pos.x, pos.y-15, `Bomb +${count*15}`, '#FF8811');
-        this.ripples.push({ x: pos.x, y: pos.y, radius: 10, opacity: 0.7, color: '#FF8811' });
-        if (window.audioManager) audioManager.play('levelUp');
         setTimeout(() => this.dropFloating(), 150);
     }
 
@@ -1145,20 +1100,21 @@ class BubbleShooter {
             this.earnDiamonds(combo >= 5 ? 2 : 1, oPos.x, oPos.y-20);
         }
 
+        // ✅ MOBILE FIX: Batch pop, fewer particles
         matches.forEach(([r, c], i) => {
+            const delay = this.isMobile ? i * 15 : i * 25;
             setTimeout(() => {
                 if (this.destroyed) return;
                 const pos = this.bubblePos(r, c);
                 const col = this.grid[r]?.[c] ? this.COLORS[this.grid[r][c].ci].hex : '#FFF';
-                this.spawnPop(pos.x, pos.y, col, 8);
+                this.spawnPop(pos.x, pos.y, col, this.isMobile ? 4 : 7);
                 if (this.grid[r]) this.grid[r][c] = null;
-            }, i * 25);
+            }, delay);
         });
 
         this.addTextPopup(oPos.x, oPos.y-12, combo>1 ? `x${combo}! +${pts}` : `+${pts}`, combo>2 ? '#FFD700' : '#00FF88');
         this.onScore(this.score);
-        this.shake(combo>2 ? 10 : 4, combo>2 ? 7 : 3);
-        if (window.audioManager) { combo >= 3 ? audioManager.play('levelUp') : audioManager.play('success'); }
+        this.shake(combo>2 ? 8 : 3, combo>2 ? 5 : 2);
     }
 
     dropFloating() {
@@ -1178,7 +1134,7 @@ class BubbleShooter {
                 if (this.grid[r]?.[c] && !connected.has(`${r},${c}`)) {
                     const pos = this.bubblePos(r,c);
                     if (this.fallingBubbles.length < this.MAX_FALLING)
-                        this.fallingBubbles.push({ x:pos.x, y:pos.y, vx:(Math.random()-0.5)*3, vy:-Math.random()*3-1, ci:this.grid[r][c].ci, rot:0, rotSpd:(Math.random()-0.5)*0.2, life:80 });
+                        this.fallingBubbles.push({ x:pos.x, y:pos.y, vx:(Math.random()-0.5)*2.5, vy:-Math.random()*2.5-0.5, ci:this.grid[r][c].ci, life:60 });
                     this.grid[r][c] = null;
                     dropped++;
                     this.bubblesPopped++;
@@ -1191,12 +1147,11 @@ class BubbleShooter {
             this.earnCoins(dropped*2, this.W/2, this.H/2);
             this.onScore(this.score);
             this.addTextPopup(this.W/2, this.H/2, `${dropped} Drop! +${bonus}`, '#FF8811');
-            if (window.audioManager) audioManager.play('levelUp');
         }
     }
 
     dropRow() {
-        for (let r=this.ROWS-1;r>0;r--) this.grid[r]=this.grid[r-1] ? [...this.grid[r-1]] : new Array(this.COLS).fill(null);
+        for (let r=this.ROWS-1;r>0;r--) this.grid[r] = this.grid[r-1] ? [...this.grid[r-1]] : new Array(this.COLS).fill(null);
         this.grid[0] = [];
         const n = this.levelConfig?.colors||4;
         for (let c=0;c<this.COLS;c++) {
@@ -1205,23 +1160,19 @@ class BubbleShooter {
             this.grid[0][c] = b;
         }
         this.updateColorsInPlay();
-        this.shake(8, 5);
-        if (window.audioManager) audioManager.play('fail');
+        this.shake(6, 4);
     }
 
     completeLevel() {
         this.levelComplete     = true;
         this.showLevelComplete = true;
         this.levelCompleteTimer = 0;
-
         const eff = this.levelGoal / Math.max(1, this.shotsUsed);
         this.starRating = eff >= 0.8 ? 3 : eff >= 0.5 ? 2 : 1;
-
         const lc = 50 + this.level*10 + this.starRating*20 + this.maxCombo*5;
         const ld = this.starRating >= 3 ? 3 : this.starRating >= 2 ? 1 : 0;
         this.earnCoins(lc, this.W/2, this.H/2-50);
         if (ld > 0) this.earnDiamonds(ld, this.W/2, this.H/2-25);
-
         const prev = this.playerData.levelStars[this.level] || 0;
         if (this.starRating > prev) this.playerData.levelStars[this.level] = this.starRating;
         if (this.level >= this.playerData.highestLevel) this.playerData.highestLevel = this.level+1;
@@ -1230,9 +1181,6 @@ class BubbleShooter {
         this.playerData.totalPopped += this.bubblesPopped;
         this.playerData.gamesPlayed++;
         this.savePlayerData();
-
-        this.spawnCelebration(this.W/2, this.H*0.3, 30);
-        if (window.audioManager) audioManager.play('achievement');
     }
 
     goNextLevel() {
@@ -1240,7 +1188,7 @@ class BubbleShooter {
         this.score = 0;
         this.showLevelComplete    = false;
         this.levelTransition      = true;
-        this.levelTransitionTimer = 50;
+        this.levelTransitionTimer = 40;
         this.playerData.currentLevel = this.level;
         this.savePlayerData();
     }
@@ -1260,53 +1208,44 @@ class BubbleShooter {
     }
 
     // ============================================================
-    // FX HELPERS
+    // FX HELPERS — ✅ Reduced on mobile
     // ============================================================
     addParticle(x, y, vx, vy, color, size, life) {
         if (this.particles.length >= this.MAX_PARTICLES) return;
-        this.particles.push({ x, y, vx, vy, color, size, life, maxLife: life, grav: 0.08 });
+        this.particles.push({ x, y, vx, vy, color, size, life, maxLife: life });
     }
 
     spawnPop(x, y, color, count) {
-        for (let i=0;i<count;i++) {
-            const a = Math.PI*2*i/count + Math.random()*0.3;
-            const spd = Math.random()*4+1.5;
-            this.addParticle(x, y, Math.cos(a)*spd, Math.sin(a)*spd, color, Math.random()*3+1.5, 40);
+        const c = this.isMobile ? Math.min(count, 4) : count;
+        for (let i=0;i<c;i++) {
+            const a = Math.PI*2*i/c;
+            const spd = Math.random()*3+1.5;
+            this.addParticle(x, y, Math.cos(a)*spd, Math.sin(a)*spd, color, Math.random()*2.5+1, 35);
         }
-        for (let i=0;i<3;i++)
-            this.addParticle(x+(Math.random()-0.5)*12, y+(Math.random()-0.5)*12, (Math.random()-0.5)*2, -Math.random()*2-1, '#FFF', Math.random()*2+0.5, 30);
         if (this.popRings.length < this.MAX_POP_RINGS)
-            this.popRings.push({ x, y, radius: this.BUBBLE_R*0.4, opacity: 0.6, color });
-    }
-
-    spawnCelebration(cx, cy, count) {
-        for (let i=0;i<count;i++) {
-            setTimeout(() => {
-                if (this.destroyed) return;
-                const x = cx + (Math.random()-0.5)*this.W*0.8;
-                const y = cy + (Math.random()-0.5)*this.H*0.3;
-                this.spawnPop(x, y, this.COLORS[Math.floor(Math.random()*this.COLORS.length)].hex, 5);
-            }, i*40);
-        }
+            this.popRings.push({ x, y, radius: this.BUBBLE_R*0.3, opacity: 0.55, color });
     }
 
     addTextPopup(x, y, text, color) {
         if (this.textPopups.length >= this.MAX_POPUPS) this.textPopups.shift();
-        this.textPopups.push({ x, y, text, color, life: 60, opacity: 1, scale: 0.5 });
+        this.textPopups.push({ x, y, text, color, life: 50, opacity: 1 });
     }
 
     addFloatingText(x, y, text, color, size) {
-        this.floatingTexts.push({ x, y, text, color, size: size||16, life: 110, opacity: 1, scale: 0.3 });
+        this.floatingTexts.push({ x, y, text, color, size: size||16, life: 90, opacity: 1, scale: 0.4 });
     }
 
-    shake(timer, force) { this.shakeTimer = timer; this.shakeForce = force; }
+    shake(timer, force) {
+        this.shakeTimer = this.isMobile ? Math.ceil(timer*0.6) : timer;
+        this.shakeForce = force;
+    }
 
     makeStars(count) {
         return Array.from({ length: count }, () => ({
             x: Math.random()*this.W, y: Math.random()*this.H,
-            size: Math.random()*1.5+0.3, phase: Math.random()*6.28,
-            speed: Math.random()*0.015+0.005,
-            color: Math.random()>0.85 ? '#B94FE3' : Math.random()>0.6 ? '#00D4FF' : '#FFF'
+            size: Math.random()*1.2+0.3, phase: Math.random()*6.28,
+            speed: Math.random()*0.012+0.004,
+            color: Math.random()>0.7 ? '#B94FE3' : '#FFF'
         }));
     }
 
@@ -1317,7 +1256,7 @@ class BubbleShooter {
     }
 
     // ============================================================
-    // DRAW
+    // DRAW — ✅ Main draw, all optimized
     // ============================================================
     draw() {
         const ctx = this.ctx;
@@ -1331,20 +1270,19 @@ class BubbleShooter {
 
         this.drawBG(ctx, W, H);
         this.drawProgressBar(ctx, W);
-        this.drawDropWarningFX(ctx, W, H);
-        this.drawRipplesFX(ctx);
+        if (this.dropWarning) this.drawDropWarningFX(ctx, W, H);
         this.drawGridBubbles(ctx);
-        this.drawFallingBubblesFX(ctx);
         this.drawPopRingsFX(ctx);
         this.drawAimLineFX(ctx);
         this.drawShooterFX(ctx);
         this.drawProjectileFX(ctx);
+        this.drawFallingBubblesFX(ctx);
         this.drawParticlesFX(ctx);
         this.drawTextPopupsFX(ctx);
         this.drawFloatingTextsFX(ctx);
         this.drawHUD(ctx, W, H);
         this.drawPowerUpButtons(ctx);
-        this.drawFullscreenBtn(ctx);   // ✅ drawn last = always on top
+        this.drawFullscreenBtn(ctx);
 
         ctx.restore();
 
@@ -1355,39 +1293,40 @@ class BubbleShooter {
     }
 
     // ============================================================
-    // DRAW: BACKGROUND
+    // DRAW: BG — ✅ Static gradient on mobile
     // ============================================================
     drawBG(ctx, W, H) {
-        const g = ctx.createRadialGradient(this.dX(W/2), this.dY(H*0.25), 0, this.dX(W/2), this.dY(H*0.5), this.dS(H));
-        g.addColorStop(0, '#110825');
-        g.addColorStop(0.4, '#0a0518');
-        g.addColorStop(1, '#030210');
-        ctx.fillStyle = g;
+        if (!this.bgGrad || this._bgW !== W || this._bgH !== H) {
+            this.bgGrad = ctx.createRadialGradient(this.dX(W/2), this.dY(H*0.3), 0, this.dX(W/2), this.dY(H*0.5), this.dS(H));
+            this.bgGrad.addColorStop(0, '#110825');
+            this.bgGrad.addColorStop(1, '#030210');
+            this._bgW = W; this._bgH = H;
+        }
+        ctx.fillStyle = this.bgGrad;
         ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
-        for (const s of this.stars) {
-            const alpha = 0.15 + ((Math.sin(s.phase)+1)/2)*0.6;
-            ctx.globalAlpha = alpha;
-            ctx.fillStyle   = s.color;
-            this.drawCircle(ctx, s.x, s.y, s.size);
-            ctx.fill();
+        // ✅ MOBILE FIX: Stars every 2 frames
+        if (!this.isMobile || this.frame % 2 === 0) {
+            for (const s of this.stars) {
+                const alpha = 0.15 + ((Math.sin(s.phase)+1)/2)*0.55;
+                ctx.globalAlpha = alpha;
+                ctx.fillStyle   = s.color;
+                ctx.beginPath();
+                ctx.arc(s.x * this.dpr, s.y * this.dpr, s.size * this.dpr, 0, 6.2832);
+                ctx.fill();
+            }
+            ctx.globalAlpha = 1;
         }
-        ctx.globalAlpha = 1;
     }
 
-    // ============================================================
-    // DRAW: PROGRESS BAR
-    // ============================================================
     drawProgressBar(ctx, W) {
         const bw = W-20, bh = 4, bx = 10, by = this.offsetY - 8;
         ctx.fillStyle = 'rgba(255,255,255,0.06)';
         this.drawRoundRect(ctx, bx, by, bw, bh, 2); ctx.fill();
-
         if (this.levelProgress > 0) {
             const fw = bw * this.levelProgress;
             const gr = ctx.createLinearGradient(this.dX(bx), 0, this.dX(bx+fw), 0);
             gr.addColorStop(0, '#B94FE3');
-            gr.addColorStop(0.5, '#FF1A6D');
             gr.addColorStop(1, '#00D4FF');
             ctx.fillStyle = gr;
             this.drawRoundRect(ctx, bx, by, fw, bh, 2); ctx.fill();
@@ -1395,18 +1334,14 @@ class BubbleShooter {
     }
 
     drawDropWarningFX(ctx, W, H) {
-        if (!this.dropWarning) return;
-        const pulse = Math.abs(Math.sin(this.time/180));
-        const alpha = ((1 - (this.dropInterval - this.dropTimer)/5000)) * 0.1 * pulse;
-        const vg = ctx.createRadialGradient(this.dX(W/2), this.dY(H/2), this.dS(W*0.3), this.dX(W/2), this.dY(H/2), this.dS(W*0.7));
-        vg.addColorStop(0, 'rgba(0,0,0,0)');
-        vg.addColorStop(1, `rgba(255,0,50,${alpha})`);
-        ctx.fillStyle = vg;
+        const pulse = Math.abs(Math.sin(this.time/200));
+        const alpha = ((1-(this.dropInterval-this.dropTimer)/5000))*0.08*pulse;
+        ctx.fillStyle = `rgba(255,0,50,${alpha.toFixed(3)})`;
         ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
     }
 
     // ============================================================
-    // DRAW: GRID BUBBLES
+    // DRAW: GRID — ✅ No glow on mobile, integer positions
     // ============================================================
     drawGridBubbles(ctx) {
         const R = this.BUBBLE_R;
@@ -1414,24 +1349,28 @@ class BubbleShooter {
             for (let c=0;c<this.COLS;c++) {
                 const b = this.grid[r]?.[c];
                 if (!b) continue;
-                const pos    = this.bubblePos(r, c);
-                const scale  = b.scale * (1 + Math.sin(b.breathe)*0.006);
+                const pos   = this.bubblePos(r, c);
+                const scale = b.isNew ? b.scale : (this.isMobile ? 1 : 1 + Math.sin(b.breathe)*0.005);
                 const bounce = this.gridBounce[`${r},${c}`] || 0;
-                const dX = pos.x, dY = pos.y - bounce;
+                const px = pos.x, py = pos.y - bounce;
 
-                const glowImg = this.cache.glows.get(b.ci);
-                if (glowImg) {
-                    ctx.globalAlpha = 0.3;
-                    const gs = (R+14)*2*scale;
-                    ctx.drawImage(glowImg, this.dX(dX)-this.dS(gs/2), this.dY(dY)-this.dS(gs/2), this.dS(gs), this.dS(gs));
-                    ctx.globalAlpha = 1;
+                // Glow: desktop only
+                if (!this.isMobile) {
+                    const glowImg = this.cache.glows.get(b.ci);
+                    if (glowImg) {
+                        ctx.globalAlpha = 0.28;
+                        const gs = (R+12)*2*scale;
+                        ctx.drawImage(glowImg, this.dX(px)-this.dS(gs/2), this.dY(py)-this.dS(gs/2), this.dS(gs), this.dS(gs));
+                        ctx.globalAlpha = 1;
+                    }
                 }
-                if (b.flash > 0) ctx.globalAlpha = 0.65 + (b.flash/6)*0.35;
+
+                if (b.flash > 0) ctx.globalAlpha = 0.7 + (b.flash/5)*0.3;
 
                 const bubImg = this.cache.bubbles.get(b.ci);
                 if (bubImg) {
-                    const bs = (R+4)*2*scale;
-                    ctx.drawImage(bubImg, this.dX(dX)-this.dS(bs/2), this.dY(dY)-this.dS(bs/2), this.dS(bs), this.dS(bs));
+                    const bs = (R+3)*2*scale;
+                    ctx.drawImage(bubImg, this.dX(px) - this.dS(bs/2), this.dY(py) - this.dS(bs/2), this.dS(bs), this.dS(bs));
                 }
                 ctx.globalAlpha = 1;
             }
@@ -1440,16 +1379,12 @@ class BubbleShooter {
 
     drawFallingBubblesFX(ctx) {
         for (const b of this.fallingBubbles) {
-            ctx.globalAlpha = Math.min(1, b.life/40);
-            ctx.save();
-            ctx.translate(this.dX(b.x), this.dY(b.y));
-            ctx.rotate(b.rot);
+            ctx.globalAlpha = Math.min(1, b.life/30);
             const bubImg = this.cache.bubbles.get(b.ci);
             if (bubImg) {
-                const bs = (this.BUBBLE_R+4)*2;
-                ctx.drawImage(bubImg, this.dS(-bs/2), this.dS(-bs/2), this.dS(bs), this.dS(bs));
+                const bs = (this.BUBBLE_R+3)*2;
+                ctx.drawImage(bubImg, this.dX(b.x) - this.dS(bs/2), this.dY(b.y) - this.dS(bs/2), this.dS(bs), this.dS(bs));
             }
-            ctx.restore();
         }
         ctx.globalAlpha = 1;
     }
@@ -1464,184 +1399,120 @@ class BubbleShooter {
         ctx.globalAlpha = 1;
     }
 
-    drawRipplesFX(ctx) {
-        for (const r of this.ripples) {
-            ctx.globalAlpha = r.opacity;
-            ctx.strokeStyle = r.color;
-            ctx.lineWidth   = this.dS(1.5*r.opacity);
-            this.drawCircle(ctx, r.x, r.y, r.radius); ctx.stroke();
-        }
-        ctx.globalAlpha = 1;
-    }
-
     // ============================================================
-    // DRAW: AIM LINE
+    // DRAW: AIM LINE — ✅ Simpler on mobile
     // ============================================================
     drawAimLineFX(ctx) {
         if (!this.aimDots.length || this.projectile) return;
-        const anim = this.time / 60;
+        const anim = this.time / 80;
+        const col  = this.COLORS[this.currentBubble?.ci || 0];
 
         for (let i=0;i<this.aimDots.length;i++) {
             const d     = this.aimDots[i];
-            const alpha = (1 - d.t) * 0.45;
-            const phase = ((i*0.25 + anim) % 1);
-            const size  = 2 - d.t * 1.2;
-            ctx.globalAlpha = alpha * (0.3 + phase * 0.7);
-            ctx.fillStyle   = '#FFFFFF';
-            this.drawCircle(ctx, d.x, d.y, Math.max(0.8, size));
+            const alpha = (1 - d.t) * 0.5;
+            const size  = this.isMobile ? 2.5 : (2 - d.t*1.2);
+            ctx.globalAlpha = alpha;
+            ctx.fillStyle   = col.hex;
+            ctx.beginPath();
+            ctx.arc(d.x * this.dpr, d.y * this.dpr, Math.max(1, size) * this.dpr, 0, 6.2832);
             ctx.fill();
-        }
-
-        const last = this.aimDots[this.aimDots.length-1];
-        if (last) {
-            ctx.globalAlpha = 0.35;
-            ctx.strokeStyle = '#FF1A6D';
-            ctx.lineWidth   = this.dS(1);
-            this.drawCircle(ctx, last.x, last.y, this.BUBBLE_R+2);
-            ctx.stroke();
         }
         ctx.globalAlpha = 1;
     }
 
     // ============================================================
-    // DRAW: SHOOTER
+    // DRAW: SHOOTER — ✅ Simplified on mobile
     // ============================================================
     drawShooterFX(ctx) {
         const x = this.shooterX, y = this.shooterY;
-
-        const pg = ctx.createRadialGradient(this.dX(x), this.dY(y+28), this.dS(8), this.dX(x), this.dY(y+28), this.dS(50));
-        pg.addColorStop(0, 'rgba(185,79,227,0.12)');
-        pg.addColorStop(1, 'rgba(0,0,0,0)');
-        ctx.fillStyle = pg;
-        ctx.beginPath();
-        ctx.arc(this.dX(x), this.dY(y+28), this.dS(50), 0, Math.PI*2);
-        ctx.fill();
-
-        ctx.fillStyle = '#1a0f2e';
-        ctx.beginPath();
-        ctx.ellipse(this.dX(x), this.dY(y+32), this.dS(38), this.dS(9), 0, 0, Math.PI*2);
-        ctx.fill();
-        ctx.strokeStyle = 'rgba(185,79,227,0.3)';
-        ctx.lineWidth   = this.dS(1);
-        ctx.stroke();
 
         ctx.save();
         ctx.translate(this.dX(x), this.dY(y));
         ctx.rotate(this.angle);
 
         const recoil = -this.shootRecoil;
-        const bg = ctx.createLinearGradient(0, this.dS(-5), 0, this.dS(5));
-        bg.addColorStop(0, '#9955dd');
-        bg.addColorStop(0.5, '#b347d9');
-        bg.addColorStop(1, '#7733bb');
-        ctx.fillStyle = bg;
-        this.drawRoundRectRaw(ctx, this.dS(8+recoil), this.dS(-5), this.dS(28), this.dS(10), this.dS(3));
-        ctx.fill();
-
-        ctx.fillStyle = '#d477ff';
+        ctx.fillStyle = '#9944cc';
+        const rx = this.dS(8+recoil), ry = this.dS(-4.5);
+        const rw = this.dS(26), rh = this.dS(9), rr = this.dS(3);
         ctx.beginPath();
-        ctx.arc(this.dS(36+recoil), 0, this.dS(3), 0, Math.PI*2);
+        ctx.moveTo(rx+rr, ry);
+        ctx.arcTo(rx+rw, ry, rx+rw, ry+rh, rr);
+        ctx.arcTo(rx+rw, ry+rh, rx, ry+rh, rr);
+        ctx.arcTo(rx, ry+rh, rx, ry, rr);
+        ctx.arcTo(rx, ry, rx+rw, ry, rr);
+        ctx.closePath();
         ctx.fill();
-
-        if (this.shootGlow > 0.1) {
-            ctx.globalAlpha = this.shootGlow;
-            const mf = ctx.createRadialGradient(this.dS(36), 0, this.dS(2), this.dS(36), 0, this.dS(15));
-            mf.addColorStop(0, '#FFFFFF');
-            mf.addColorStop(0.3, '#d477ff');
-            mf.addColorStop(1, 'rgba(0,0,0,0)');
-            ctx.fillStyle = mf;
-            ctx.beginPath();
-            ctx.arc(this.dS(36), 0, this.dS(15), 0, Math.PI*2);
-            ctx.fill();
-            ctx.globalAlpha = 1;
-        }
         ctx.restore();
 
+        // Current bubble
         const bci    = this.currentBubble.ci;
         const bubImg = this.cache.bubbles.get(bci);
-        const pulse  = 1 + Math.sin(this.time/500)*0.03;
+        const pulse  = this.isMobile ? 1 : (1 + Math.sin(this.time/500)*0.025);
 
         if (bubImg) {
-            const bs = (this.BUBBLE_R+4)*2*pulse;
+            const bs = (this.BUBBLE_R+3)*2*pulse;
             ctx.drawImage(bubImg, this.dX(x)-this.dS(bs/2), this.dY(y)-this.dS(bs/2), this.dS(bs), this.dS(bs));
         }
 
         if (this.swapAnim > 0) {
             const col = this.COLORS[this.swapColorIdx];
-            ctx.save();
             ctx.globalAlpha = this.swapAnim;
-            ctx.shadowBlur  = this.dS(12);
-            ctx.shadowColor = col.hex;
             ctx.strokeStyle = col.hex;
-            ctx.lineWidth   = this.dS(3);
-            this.drawCircle(ctx, x, y, this.BUBBLE_R + 4 + (1 - this.swapAnim) * 10);
+            ctx.lineWidth   = this.dS(2.5);
+            this.drawCircle(ctx, x, y, this.BUBBLE_R + 4 + (1-this.swapAnim)*8);
             ctx.stroke();
-            ctx.shadowBlur  = 0;
-            ctx.restore();
+            ctx.globalAlpha = 1;
         }
 
-        // TAP hint below bubble — always visible, subtle pulse
-        const hAlpha = 0.25 + Math.sin(this.time/400)*0.2;
-        this.drawText(ctx, 'TAP TO CHANGE COLOR', x, y + this.BUBBLE_R + (this.isMobile ? 16 : 14), {
+        // Tap hint
+        const hAlpha = 0.2 + Math.sin(this.time/450)*0.18;
+        this.drawText(ctx, 'TAP = COLOR', x, y + this.BUBBLE_R + (this.isMobile ? 15 : 13), {
             size: this.isMobile ? 8 : 7, color: '#ffffff',
-            align: 'center', baseline: 'top',
-            opacity: hAlpha, family: this.FONT_MONO, weight: '500'
+            align: 'center', baseline: 'top', opacity: hAlpha, family: this.FONT_MONO, weight: '500'
         });
 
-        // Next bubble preview
-        this.drawText(ctx, 'NEXT', x+50, y+4, {
-            size: 8, color: 'rgba(255,255,255,0.35)', align: 'center', baseline: 'middle', weight: '600'
+        // Next bubble
+        this.drawText(ctx, 'NEXT', x+48, y+2, {
+            size: 8, color: 'rgba(255,255,255,0.3)', align: 'center', baseline: 'middle', weight: '600'
         });
-        const nci  = this.nextBubble.ci;
-        const nImg = this.cache.bubbles.get(nci);
+        const nImg = this.cache.bubbles.get(this.nextBubble.ci);
         if (nImg) {
-            ctx.globalAlpha = 0.75;
-            const ns = (this.BUBBLE_R+4)*2*0.65;
-            ctx.drawImage(nImg, this.dX(x+50)-this.dS(ns/2), this.dY(y+20)-this.dS(ns/2), this.dS(ns), this.dS(ns));
+            ctx.globalAlpha = 0.7;
+            const ns = (this.BUBBLE_R+3)*2*0.62;
+            ctx.drawImage(nImg, this.dX(x+48)-this.dS(ns/2), this.dY(y+18)-this.dS(ns/2), this.dS(ns), this.dS(ns));
             ctx.globalAlpha = 1;
         }
     }
 
-    // ============================================================
-    // DRAW: PROJECTILE
-    // ============================================================
     drawProjectileFX(ctx) {
         if (!this.projectile) return;
         const p = this.projectile;
 
+        // Trail
         for (let i=0;i<p.trail.length;i++) {
             const t = p.trail[i];
             const prog = i / p.trail.length;
-            ctx.globalAlpha = prog * 0.3;
-            const s = this.BUBBLE_R * prog * 0.5;
-            ctx.fillStyle = p.isBomb ? '#888' : p.color;
-            this.drawCircle(ctx, t.x, t.y, Math.max(1, s));
+            ctx.globalAlpha = prog * 0.28;
+            ctx.fillStyle   = p.color;
+            ctx.beginPath();
+            ctx.arc(t.x * this.dpr, t.y * this.dpr, this.BUBBLE_R * prog * 0.45 * this.dpr, 0, 6.2832);
             ctx.fill();
         }
         ctx.globalAlpha = 1;
 
-        if (p.isBomb) {
-            ctx.fillStyle = '#555';
-            this.drawCircle(ctx, p.x, p.y, this.BUBBLE_R);
-            ctx.fill();
-            this.drawText(ctx, 'B', p.x, p.y, { size: 12, weight: 'bold', color: '#FF8811', align: 'center', baseline: 'middle', family: this.FONT_TITLE });
-        } else {
-            const bubImg = this.cache.bubbles.get(p.ci);
-            if (bubImg) {
-                const bs = (this.BUBBLE_R+4)*2;
-                ctx.drawImage(bubImg, this.dX(p.x)-this.dS(bs/2), this.dY(p.y)-this.dS(bs/2), this.dS(bs), this.dS(bs));
-            }
+        const bubImg = this.cache.bubbles.get(p.ci);
+        if (bubImg) {
+            const bs = (this.BUBBLE_R+3)*2;
+            ctx.drawImage(bubImg, this.dX(p.x)-this.dS(bs/2), this.dY(p.y)-this.dS(bs/2), this.dS(bs), this.dS(bs));
         }
     }
 
-    // ============================================================
-    // DRAW: PARTICLES
-    // ============================================================
     drawParticlesFX(ctx) {
         for (const p of this.particles) {
-            ctx.globalAlpha = Math.min(1, p.life/p.maxLife);
+            ctx.globalAlpha = p.life / p.maxLife;
             ctx.fillStyle   = p.color;
-            this.drawCircle(ctx, p.x, p.y, Math.max(0.5, p.size*(p.life/p.maxLife)));
+            ctx.beginPath();
+            ctx.arc(p.x * this.dpr, p.y * this.dpr, Math.max(0.5, p.size*(p.life/p.maxLife)) * this.dpr, 0, 6.2832);
             ctx.fill();
         }
         ctx.globalAlpha = 1;
@@ -1649,269 +1520,195 @@ class BubbleShooter {
 
     drawTextPopupsFX(ctx) {
         for (const t of this.textPopups) {
-            const scale = Math.min(1.1, 0.5 + (1 - t.life/60)*0.8);
             this.drawText(ctx, t.text, t.x, t.y, {
-                size: 13*scale, weight: 'bold', color: t.color,
+                size: 12, weight: 'bold', color: t.color,
                 align: 'center', baseline: 'middle',
-                stroke: true, strokeColor: 'rgba(0,0,0,0.6)', strokeWidth: 2.5,
-                opacity: t.opacity, family: this.FONT_TITLE
+                stroke: true, strokeColor: 'rgba(0,0,0,0.6)', strokeWidth: 2,
+                opacity: t.opacity, family: this.FONT_UI
             });
         }
     }
 
     drawFloatingTextsFX(ctx) {
         for (const t of this.floatingTexts) {
-            const scale = t.scale || 1;
             this.drawText(ctx, t.text, t.x, t.y, {
-                size: (t.size||16) * Math.min(1, scale),
+                size: (t.size||14) * Math.min(1, t.scale||1),
                 weight: 'bold', color: t.color,
                 align: 'center', baseline: 'middle',
-                stroke: true, strokeColor: 'rgba(0,0,0,0.5)', strokeWidth: 3,
-                glow: true, glowColor: t.color, glowBlur: 8,
-                opacity: t.opacity, family: this.FONT_TITLE
+                stroke: true, strokeColor: 'rgba(0,0,0,0.5)', strokeWidth: 2.5,
+                glow: !this.isMobile, glowColor: t.color, glowBlur: 6,
+                opacity: t.opacity, family: this.FONT_UI
             });
         }
     }
 
     // ============================================================
-    // ✅ DRAW: FULLSCREEN BUTTON — BOTTOM RIGHT
+    // DRAW: FULLSCREEN BTN — Bottom Right
     // ============================================================
     drawFullscreenBtn(ctx) {
         const r   = this.getFullscreenBtnRect();
         const isFS = this.isFullscreen;
 
-        // Subtle pulse hint
-        const pulse = 0.12 + Math.sin(this.time / 700) * 0.04;
-
-        // BG
-        ctx.fillStyle = `rgba(185,79,227,${isFS ? 0.18 : 0.14 + pulse})`;
-        this.drawRoundRect(ctx, r.x, r.y, r.w, r.h, this.isMobile ? 10 : 8);
+        ctx.fillStyle = `rgba(185,79,227,${isFS ? 0.18 : 0.13})`;
+        this.drawRoundRect(ctx, r.x, r.y, r.w, r.h, 10);
         ctx.fill();
 
-        // Border
-        ctx.strokeStyle = `rgba(185,79,227,${isFS ? 0.5 : 0.35 + pulse})`;
+        ctx.strokeStyle = `rgba(185,79,227,${isFS ? 0.5 : 0.3})`;
         ctx.lineWidth   = this.dS(0.8);
-        this.drawRoundRect(ctx, r.x, r.y, r.w, r.h, this.isMobile ? 10 : 8);
+        this.drawRoundRect(ctx, r.x, r.y, r.w, r.h, 10);
         ctx.stroke();
 
-        // Icon
-        const cx  = r.x + r.w / 2;
-        const cy  = r.y + r.h / 2;
-        const sz  = this.isMobile ? 7 : 6;
+        const cx = r.x + r.w/2, cy = r.y + r.h/2;
+        const sz = this.isMobile ? 7 : 6;
         const arm = this.isMobile ? 4 : 3.5;
 
-        ctx.strokeStyle = 'rgba(255,255,255,0.85)';
-        ctx.lineWidth   = this.dS(this.isMobile ? 2 : 1.5);
-        ctx.lineCap     = 'round';
-        ctx.lineJoin    = 'round';
+        ctx.strokeStyle = 'rgba(255,255,255,0.82)';
+        ctx.lineWidth   = this.dS(this.isMobile ? 1.8 : 1.5);
+        ctx.lineCap = 'round';
 
         const corners = [[-1,-1],[1,-1],[1,1],[-1,1]];
-
         if (!isFS) {
-            // Expand: brackets pointing outward
             corners.forEach(([sx, sy]) => {
-                const tx = cx + sx * sz;
-                const ty = cy + sy * sz;
+                const tx = cx + sx*sz, ty = cy + sy*sz;
                 ctx.beginPath();
-                ctx.moveTo(this.dX(tx - sx * arm), this.dY(ty));
+                ctx.moveTo(this.dX(tx - sx*arm), this.dY(ty));
                 ctx.lineTo(this.dX(tx), this.dY(ty));
-                ctx.lineTo(this.dX(tx), this.dY(ty - sy * arm));
+                ctx.lineTo(this.dX(tx), this.dY(ty - sy*arm));
                 ctx.stroke();
             });
         } else {
-            // Compress: brackets pointing inward
-            const ins = sz - arm * 0.6;
+            const ins = sz - arm*0.6;
             corners.forEach(([sx, sy]) => {
-                const tx = cx + sx * ins;
-                const ty = cy + sy * ins;
+                const tx = cx + sx*ins, ty = cy + sy*ins;
                 ctx.beginPath();
-                ctx.moveTo(this.dX(tx + sx * arm), this.dY(ty));
+                ctx.moveTo(this.dX(tx + sx*arm), this.dY(ty));
                 ctx.lineTo(this.dX(tx), this.dY(ty));
-                ctx.lineTo(this.dX(tx), this.dY(ty + sy * arm));
+                ctx.lineTo(this.dX(tx), this.dY(ty + sy*arm));
                 ctx.stroke();
             });
         }
-        ctx.lineCap  = 'butt';
-        ctx.lineJoin = 'miter';
+        ctx.lineCap = 'butt';
     }
 
     // ============================================================
-    // DRAW: HUD — CLEAN TOP BAR
+    // DRAW: HUD
     // ============================================================
     drawHUD(ctx, W, H) {
-        const hudGrad = ctx.createLinearGradient(0, 0, 0, this.dY(44));
-        hudGrad.addColorStop(0, 'rgba(0,0,0,0.78)');
-        hudGrad.addColorStop(1, 'rgba(0,0,0,0.12)');
-        ctx.fillStyle = hudGrad;
+        ctx.fillStyle = 'rgba(0,0,0,0.72)';
         ctx.fillRect(0, 0, this.canvas.width, this.dY(44));
 
-        ctx.strokeStyle = 'rgba(185,79,227,0.15)';
-        ctx.lineWidth   = this.dS(0.5);
-        this.drawLine(ctx, 0, 44, W, 44);
-        ctx.stroke();
-
-        // LEFT: Level
         this.drawText(ctx, `LVL ${this.level}`, 10, 17, {
-            size: 12, weight: 'bold', color: '#B94FE3',
-            family: this.FONT_TITLE,
-            glow: true, glowColor: '#B94FE3', glowBlur: 4
+            size: 12, weight: 'bold', color: '#B94FE3', family: this.FONT_UI,
+            glow: !this.isMobile, glowColor: '#B94FE3', glowBlur: 4
         });
         this.drawText(ctx, this.levelConfig?.name || '', 10, 33, {
-            size: 9, weight: '500', color: 'rgba(255,255,255,0.4)',
-            family: this.FONT_MONO
+            size: 9, color: 'rgba(255,255,255,0.38)', family: this.FONT_MONO
         });
 
-        // CENTER: Goal / Combo
         this.drawText(ctx, `${this.bubblesPopped}/${this.levelGoal}`, W/2, 17, {
-            size: 11, weight: '600', color: '#00D4FF',
-            align: 'center', family: this.FONT_MONO
+            size: 11, weight: '600', color: '#00D4FF', align: 'center', family: this.FONT_MONO
         });
 
         if (this.combo > 1) {
-            const cp = 1 + Math.sin(this.time/80)*0.04;
             this.drawText(ctx, `x${this.combo} COMBO`, W/2, 33, {
-                size: 10*cp, weight: 'bold', color: '#FFD700',
-                align: 'center', family: this.FONT_TITLE,
-                glow: true, glowColor: '#FFD700', glowBlur: 5
+                size: 10, weight: 'bold', color: '#FFD700',
+                align: 'center', family: this.FONT_UI,
+                glow: !this.isMobile, glowColor: '#FFD700', glowBlur: 4
             });
         }
 
-        // RIGHT: Currency (full width, no FS button here anymore)
         const coinFlash = this.hudFlash.coins > 0;
-        this.drawText(ctx, `C ${this.fmtNum(this.playerData.coins)}`, W - 10, 17, {
+        this.drawText(ctx, `C ${this.fmtNum(this.playerData.coins)}`, W-10, 17, {
             size: coinFlash ? 11 : 10, weight: 'bold',
             color: coinFlash ? '#FFFFFF' : '#FFD700',
-            align: 'right', family: this.FONT_TITLE,
-            glow: coinFlash, glowColor: '#FFD700', glowBlur: 5
+            align: 'right', family: this.FONT_UI
         });
 
         const diaFlash = this.hudFlash.diamonds > 0;
-        this.drawText(ctx, `D ${this.fmtNum(this.playerData.diamonds)}`, W - 10, 33, {
+        this.drawText(ctx, `D ${this.fmtNum(this.playerData.diamonds)}`, W-10, 33, {
             size: diaFlash ? 11 : 10, weight: 'bold',
             color: diaFlash ? '#FFFFFF' : '#00D4FF',
-            align: 'right', family: this.FONT_TITLE,
-            glow: diaFlash, glowColor: '#00D4FF', glowBlur: 5
+            align: 'right', family: this.FONT_UI
         });
     }
 
     // ============================================================
-    // ✅ DRAW: POWER-UP BUTTONS — BOTTOM LEFT
-    // (No fav / pause / changes buttons)
+    // DRAW: POWER-UP BUTTONS
     // ============================================================
     drawPowerUpButtons(ctx) {
-        const btnS   = this.isMobile ? 44 : 38;
+        const btnS = this.isMobile ? 44 : 38;
         const btnGap = 8;
-        const btnY   = this.H - btnS - (this.isMobile ? 12 : 10);
-        const startX = 8;
-        let   idx    = 0;
+        const btnY = this.H - btnS - (this.isMobile ? 12 : 10);
+        let idx = 0;
 
         for (const [key, pup] of Object.entries(this.powerUps)) {
-            const bx     = startX + idx * (btnS + btnGap);
+            const bx     = 8 + idx * (btnS + btnGap);
             const active = this.activePowerUp === key;
             const has    = pup.count > 0;
 
-            // Button BG
-            ctx.fillStyle = active
-                ? (pup.color + '55')
-                : `rgba(185,79,227,${has ? 0.12 : 0.04})`;
-            this.drawRoundRect(ctx, bx, btnY, btnS, btnS, this.isMobile ? 10 : 8);
-            ctx.fill();
+            ctx.fillStyle = active ? (pup.color + '44') : `rgba(185,79,227,${has ? 0.1 : 0.04})`;
+            this.drawRoundRect(ctx, bx, btnY, btnS, btnS, 10); ctx.fill();
 
-            // Border
-            ctx.strokeStyle = active ? pup.color : (has ? 'rgba(185,79,227,0.25)' : 'rgba(80,80,80,0.12)');
+            ctx.strokeStyle = active ? pup.color : (has ? 'rgba(185,79,227,0.22)' : 'rgba(80,80,80,0.1)');
             ctx.lineWidth   = this.dS(active ? 1.5 : 0.5);
-            this.drawRoundRect(ctx, bx, btnY, btnS, btnS, this.isMobile ? 10 : 8);
-            ctx.stroke();
+            this.drawRoundRect(ctx, bx, btnY, btnS, btnS, 10); ctx.stroke();
 
-            // Icon letter
-            ctx.globalAlpha = has ? 1 : 0.25;
-            this.drawText(ctx, pup.icon, bx + btnS/2, btnY + btnS/2 - (this.isMobile ? 6 : 5), {
-                size: this.isMobile ? 20 : 16, weight: 'bold',
-                color: pup.color, align: 'center', baseline: 'middle',
-                family: this.FONT_TITLE
+            ctx.globalAlpha = has ? 1 : 0.22;
+            this.drawText(ctx, pup.icon, bx+btnS/2, btnY+btnS/2-(this.isMobile?6:5), {
+                size: this.isMobile ? 19 : 15, weight: 'bold',
+                color: pup.color, align: 'center', baseline: 'middle', family: this.FONT_UI
             });
-
-            // Label
-            this.drawText(ctx, pup.name, bx + btnS/2, btnY + btnS - (this.isMobile ? 9 : 8), {
-                size: this.isMobile ? 7 : 6, color: 'rgba(255,255,255,0.6)',
+            this.drawText(ctx, pup.name, bx+btnS/2, btnY+btnS-(this.isMobile?9:8), {
+                size: this.isMobile ? 7 : 6, color: 'rgba(255,255,255,0.55)',
                 align: 'center', baseline: 'middle', family: this.FONT_MONO
             });
 
-            // Count badge
             if (has) {
                 ctx.globalAlpha = 1;
-                ctx.fillStyle   = 'rgba(0,0,0,0.7)';
-                this.drawCircle(ctx, bx + btnS - 6, btnY + 6, this.isMobile ? 8 : 7);
-                ctx.fill();
-                ctx.strokeStyle = pup.color + '50';
-                ctx.lineWidth   = this.dS(0.5);
-                this.drawCircle(ctx, bx + btnS - 6, btnY + 6, this.isMobile ? 8 : 7);
-                ctx.stroke();
-                this.drawText(ctx, `${pup.count}`, bx + btnS - 6, btnY + 6, {
+                ctx.fillStyle = 'rgba(0,0,0,0.65)';
+                this.drawCircle(ctx, bx+btnS-6, btnY+6, this.isMobile ? 8 : 7); ctx.fill();
+                this.drawText(ctx, `${pup.count}`, bx+btnS-6, btnY+6, {
                     size: this.isMobile ? 8 : 7, weight: 'bold', color: '#00FF88',
-                    align: 'center', baseline: 'middle', family: this.FONT_TITLE
+                    align: 'center', baseline: 'middle', family: this.FONT_UI
                 });
             }
-
             ctx.globalAlpha = 1;
             idx++;
         }
 
-        // Keyboard hint — subtle, for desktop
         if (!this.isMobile) {
-            this.drawText(ctx, '1=Bomb  2=Aim+  C=Color  F=Full', startX, btnY - 6, {
-                size: 6, color: 'rgba(255,255,255,0.18)', family: this.FONT_MONO
+            this.drawText(ctx, '1=Bomb  2=Aim+  C=Color  F=Full', 8, btnY-6, {
+                size: 6, color: 'rgba(255,255,255,0.15)', family: this.FONT_MONO
             });
         }
     }
 
     // ============================================================
-    // OVERLAY SCREENS
+    // OVERLAY HELPERS
     // ============================================================
     drawCardBG(ctx, x, y, w, h, borderColor) {
-        ctx.fillStyle   = 'rgba(8,5,20,0.95)';
-        this.drawRoundRect(ctx, x, y, w, h, 14);
-        ctx.fill();
-
-        ctx.strokeStyle = borderColor + '50';
+        ctx.fillStyle = 'rgba(8,5,20,0.96)';
+        this.drawRoundRect(ctx, x, y, w, h, 12); ctx.fill();
+        ctx.strokeStyle = borderColor + '45';
         ctx.lineWidth   = this.dS(1.5);
-        this.drawRoundRect(ctx, x, y, w, h, 14);
-        ctx.stroke();
-
-        const tg = ctx.createLinearGradient(this.dX(x+20), 0, this.dX(x+w-20), 0);
-        tg.addColorStop(0, 'rgba(0,0,0,0)');
-        tg.addColorStop(0.5, borderColor + '40');
-        tg.addColorStop(1, 'rgba(0,0,0,0)');
-        ctx.fillStyle = tg;
-        ctx.fillRect(this.dX(x+20), this.dY(y+1), this.dS(w-40), this.dS(2));
+        this.drawRoundRect(ctx, x, y, w, h, 12); ctx.stroke();
     }
 
     drawBtn(ctx, cx, cy, w, h, text, c1, c2) {
-        const bx = cx - w/2, by = cy - h/2;
+        const bx = cx-w/2, by = cy-h/2;
         const grad = ctx.createLinearGradient(this.dX(bx), 0, this.dX(bx+w), 0);
         grad.addColorStop(0, c1); grad.addColorStop(1, c2);
         ctx.fillStyle = grad;
-        this.drawRoundRect(ctx, bx, by, w, h, h/2);
-        ctx.fill();
+        this.drawRoundRect(ctx, bx, by, w, h, h/2); ctx.fill();
         this.drawText(ctx, text, cx, cy+1, {
-            size: 13, weight: 'bold', color: '#FFFFFF',
-            align: 'center', baseline: 'middle', family: this.FONT_TITLE
+            size: 13, weight: 'bold', color: '#FFF',
+            align: 'center', baseline: 'middle', family: this.FONT_UI
         });
     }
 
-    drawRoundRectRaw(ctx, x, y, w, h, r) {
-        ctx.beginPath();
-        ctx.moveTo(x+r, y);
-        ctx.arcTo(x+w, y, x+w, y+h, r);
-        ctx.arcTo(x+w, y+h, x, y+h, r);
-        ctx.arcTo(x, y+h, x, y, r);
-        ctx.arcTo(x, y, x+w, y, r);
-        ctx.closePath();
-    }
-
     easeOutBack(t) {
-        const c1 = 1.70158, c3 = c1+1;
-        return 1 + c3*Math.pow(t-1,3) + c1*Math.pow(t-1,2);
+        const c1=1.70158, c3=c1+1;
+        return 1+c3*Math.pow(t-1,3)+c1*Math.pow(t-1,2);
     }
 
     drawDailyRewardScreen(ctx, W, H) {
@@ -1920,30 +1717,19 @@ class BubbleShooter {
         ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
         if (a < 0.3) return;
 
-        const cw = Math.min(280, W-36), ch = 250;
+        const cw = Math.min(270, W-36), ch = 240;
         const cx = (W-cw)/2, cy = (H-ch)/2;
         this.drawCardBG(ctx, cx, cy, cw, ch, '#FFD700');
 
-        this.drawText(ctx, 'Daily Reward!', W/2, cy+38, {
-            size: 20, weight: 'bold', color: '#FFD700',
-            align: 'center', family: this.FONT_TITLE,
-            glow: true, glowColor: '#FFD700', glowBlur: 8
-        });
-
         const streak = this.playerData.dailyStreak;
-        const coins  = Math.floor(50 * Math.min(1 + streak*0.25, 3));
-        const dias   = Math.floor(2 * Math.max(1, Math.floor(streak/3)));
+        const coins  = Math.floor(50*Math.min(1+streak*0.25,3));
+        const dias   = Math.floor(2*Math.max(1,Math.floor(streak/3)));
 
-        this.drawText(ctx, `Day ${streak+1} Streak`, W/2, cy+60, {
-            size: 12, color: '#00D4FF', align: 'center', family: this.FONT_MONO
-        });
-        this.drawText(ctx, `${coins} Coins`, W/2, cy+100, {
-            size: 24, weight: 'bold', color: '#FFD700', align: 'center', family: this.FONT_TITLE
-        });
-        this.drawText(ctx, `${dias} Gems`, W/2, cy+132, {
-            size: 20, weight: 'bold', color: '#00D4FF', align: 'center', family: this.FONT_TITLE
-        });
-        this.drawBtn(ctx, W/2, cy+ch-42, 150, 36, 'CLAIM!', '#B94FE3', '#FF1A6D');
+        this.drawText(ctx, 'Daily Reward!', W/2, cy+36, { size:20, weight:'bold', color:'#FFD700', align:'center', family:this.FONT_UI });
+        this.drawText(ctx, `Day ${streak+1} Streak`, W/2, cy+58, { size:11, color:'#00D4FF', align:'center', family:this.FONT_MONO });
+        this.drawText(ctx, `${coins} Coins`, W/2, cy+95, { size:22, weight:'bold', color:'#FFD700', align:'center', family:this.FONT_UI });
+        this.drawText(ctx, `${dias} Gems`, W/2, cy+124, { size:18, weight:'bold', color:'#00D4FF', align:'center', family:this.FONT_UI });
+        this.drawBtn(ctx, W/2, cy+ch-38, 145, 34, 'CLAIM!', '#B94FE3', '#FF1A6D');
     }
 
     drawLevelCompleteScreen(ctx, W, H) {
@@ -1952,9 +1738,9 @@ class BubbleShooter {
 
         ctx.fillStyle = `rgba(0,0,0,${0.8*prog})`;
         ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-        if (prog < 0.25) return;
+        if (prog < 0.2) return;
 
-        const cw = Math.min(300, W-30), ch = 320;
+        const cw = Math.min(295, W-30), ch = 310;
         const cx = (W-cw)/2, cy = (H-ch)/2;
 
         ctx.save();
@@ -1963,65 +1749,40 @@ class BubbleShooter {
         ctx.translate(-this.dX(W/2), -this.dY(H/2));
 
         this.drawCardBG(ctx, cx, cy, cw, ch, '#00FF88');
-
-        this.drawText(ctx, 'LEVEL COMPLETE!', W/2, cy+36, {
-            size: 20, weight: 'bold', color: '#00FF88',
-            align: 'center', family: this.FONT_TITLE,
-            glow: true, glowColor: '#00FF88', glowBlur: 8
-        });
+        this.drawText(ctx, 'LEVEL COMPLETE!', W/2, cy+34, { size:19, weight:'bold', color:'#00FF88', align:'center', family:this.FONT_UI });
 
         for (let i=0;i<3;i++) {
-            const sx = W/2 + (i-1)*40;
-            const starProg = Math.max(0, prog - 0.4 - i*0.1)*5;
-            const sc = Math.min(1, starProg);
-            this.drawText(ctx, i < this.starRating ? '*' : 'o', sx, cy+72, {
-                size: 28*sc, color: i < this.starRating ? '#FFD700' : 'rgba(255,255,255,0.2)',
-                align: 'center', baseline: 'middle', family: this.FONT_TITLE,
-                opacity: i < this.starRating ? 1 : 0.25,
-                glow: i < this.starRating, glowColor: '#FFD700', glowBlur: 6
+            const sx = W/2+(i-1)*38;
+            this.drawText(ctx, i<this.starRating ? '*' : 'o', sx, cy+68, {
+                size: 26, color: i<this.starRating ? '#FFD700' : 'rgba(255,255,255,0.2)',
+                align:'center', baseline:'middle', family:this.FONT_UI, opacity: i<this.starRating ? 1 : 0.2
             });
         }
 
-        const stats = [
-            `Score: ${this.fmtNum(this.score)}`,
-            `Popped: ${this.bubblesPopped}`,
-            `Combo: x${this.maxCombo}`,
-            `Shots: ${this.shotsUsed}`
-        ];
-        stats.forEach((s, i) => {
-            this.drawText(ctx, s, W/2, cy+112+i*22, {
-                size: 11, color: 'rgba(255,255,255,0.65)', align: 'center', family: this.FONT_MONO
-            });
+        const stats = [`Score: ${this.fmtNum(this.score)}`, `Popped: ${this.bubblesPopped}`, `Combo: x${this.maxCombo}`, `Shots: ${this.shotsUsed}`];
+        stats.forEach((s,i) => {
+            this.drawText(ctx, s, W/2, cy+108+i*22, { size:11, color:'rgba(255,255,255,0.6)', align:'center', family:this.FONT_MONO });
         });
+        this.drawText(ctx, `Coins +${this.levelCoins}`, W/2, cy+210, { size:14, weight:'bold', color:'#FFD700', align:'center', family:this.FONT_UI });
+        if (this.levelDiamonds>0)
+            this.drawText(ctx, `Gems +${this.levelDiamonds}`, W/2, cy+233, { size:13, weight:'bold', color:'#00D4FF', align:'center', family:this.FONT_UI });
 
-        this.drawText(ctx, `Coins +${this.levelCoins}`, W/2, cy+215, {
-            size: 14, weight: 'bold', color: '#FFD700', align: 'center',
-            family: this.FONT_TITLE, glow: true, glowColor: '#FFD700', glowBlur: 4
-        });
-        if (this.levelDiamonds > 0) {
-            this.drawText(ctx, `Gems +${this.levelDiamonds}`, W/2, cy+238, {
-                size: 13, weight: 'bold', color: '#00D4FF', align: 'center',
-                family: this.FONT_TITLE, glow: true, glowColor: '#00D4FF', glowBlur: 4
-            });
-        }
-
-        if (this.levelCompleteTimer > 35)
-            this.drawBtn(ctx, W/2, cy+ch-42, 160, 36, 'NEXT LEVEL', '#00D4FF', '#00FF88');
-
+        if (this.levelCompleteTimer>30)
+            this.drawBtn(ctx, W/2, cy+ch-38, 155, 34, 'NEXT LEVEL', '#00D4FF', '#00FF88');
         ctx.restore();
     }
 
     drawTransition(ctx, W, H) {
-        const prog  = 1 - (this.levelTransitionTimer/50);
-        const alpha = prog < 0.5 ? prog*2 : 2-prog*2;
+        const prog  = 1-(this.levelTransitionTimer/40);
+        const alpha = prog<0.5 ? prog*2 : 2-prog*2;
         ctx.fillStyle = `rgba(3,2,10,${alpha})`;
         ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-        if (prog > 0.3 && prog < 0.7) {
+        if (prog>0.3 && prog<0.7) {
             this.drawText(ctx, `Level ${this.level}`, W/2, H/2, {
-                size: 22, weight: 'bold', color: '#B94FE3',
-                align: 'center', baseline: 'middle', family: this.FONT_TITLE,
-                glow: true, glowColor: '#B94FE3', glowBlur: 10,
-                opacity: 1 - Math.abs(prog - 0.5)*4
+                size:22, weight:'bold', color:'#B94FE3',
+                align:'center', baseline:'middle', family:this.FONT_UI,
+                glow:!this.isMobile, glowColor:'#B94FE3', glowBlur:8,
+                opacity: 1-Math.abs(prog-0.5)*5
             });
         }
     }
@@ -2029,40 +1790,44 @@ class BubbleShooter {
     drawGameOverScreen(ctx, W, H) {
         ctx.fillStyle = 'rgba(0,0,0,0.82)';
         ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-
-        const pulse = 1 + Math.sin(this.time/250)*0.03;
-        this.drawText(ctx, 'GAME OVER', W/2, H/2-50, {
-            size: 28*pulse, weight: 'bold', color: '#FF1A6D',
-            align: 'center', baseline: 'middle', family: this.FONT_TITLE,
-            glow: true, glowColor: '#FF1A6D', glowBlur: 15
+        this.drawText(ctx, 'GAME OVER', W/2, H/2-48, {
+            size:26, weight:'bold', color:'#FF1A6D',
+            align:'center', baseline:'middle', family:this.FONT_UI,
+            glow:!this.isMobile, glowColor:'#FF1A6D', glowBlur:12
         });
-        this.drawText(ctx, `Score: ${this.fmtNum(this.score)}`, W/2, H/2-5, {
-            size: 14, color: 'rgba(255,255,255,0.7)', align: 'center', baseline: 'middle', family: this.FONT_MONO
-        });
-        this.drawText(ctx, `Level ${this.level}  |  Combo x${this.maxCombo}`, W/2, H/2+22, {
-            size: 11, color: 'rgba(255,255,255,0.5)', align: 'center', baseline: 'middle', family: this.FONT_MONO
-        });
-        this.drawText(ctx, `+${this.levelCoins} Coins`, W/2, H/2+60, {
-            size: 13, weight: 'bold', color: '#FFD700', align: 'center', baseline: 'middle', family: this.FONT_TITLE
-        });
-        this.drawText(ctx, `+${this.levelDiamonds} Gems`, W/2, H/2+85, {
-            size: 13, weight: 'bold', color: '#00D4FF', align: 'center', baseline: 'middle', family: this.FONT_TITLE
-        });
-
-        const blink = 0.4 + Math.sin(this.time/400)*0.45;
-        this.drawText(ctx, 'Tap restart to play again', W/2, H/2+120, {
-            size: 11, color: 'rgba(200,200,220,1)', align: 'center', baseline: 'middle',
-            family: this.FONT_MONO, opacity: blink
-        });
+        this.drawText(ctx, `Score: ${this.fmtNum(this.score)}`, W/2, H/2-4, { size:13, color:'rgba(255,255,255,0.7)', align:'center', baseline:'middle', family:this.FONT_MONO });
+        this.drawText(ctx, `Level ${this.level} | Combo x${this.maxCombo}`, W/2, H/2+22, { size:10, color:'rgba(255,255,255,0.45)', align:'center', baseline:'middle', family:this.FONT_MONO });
+        this.drawText(ctx, `+${this.levelCoins} Coins`, W/2, H/2+58, { size:12, weight:'bold', color:'#FFD700', align:'center', baseline:'middle', family:this.FONT_UI });
+        this.drawText(ctx, `+${this.levelDiamonds} Gems`, W/2, H/2+80, { size:12, weight:'bold', color:'#00D4FF', align:'center', baseline:'middle', family:this.FONT_UI });
+        const blink = 0.45+Math.sin(this.time/420)*0.4;
+        this.drawText(ctx, 'Tap restart to play again', W/2, H/2+115, { size:10, color:'rgba(200,200,220,1)', align:'center', baseline:'middle', family:this.FONT_MONO, opacity:blink });
     }
 
     // ============================================================
-    // GAME LOOP
+    // GAME LOOP — ✅ Adaptive FPS on weak devices
     // ============================================================
     loop(timestamp) {
         if (this.destroyed) return;
         const dt = Math.min(timestamp - (this.lastTime || timestamp), 50);
         this.lastTime = timestamp;
+
+        // ✅ MOBILE FIX: Adaptive frame skip detection
+        if (this.isMobile) {
+            this.fpsHistory.push(dt);
+            if (this.fpsHistory.length > 30) this.fpsHistory.shift();
+            if (this.fpsHistory.length === 30) {
+                const avg = this.fpsHistory.reduce((a,b)=>a+b,0)/30;
+                this.adaptiveMode = avg > 22; // below ~45fps = adaptive mode
+            }
+
+            if (this.adaptiveMode && this.frame % 2 === 1) {
+                // Skip draw, still update
+                if (!this.paused) this.update(dt);
+                this.animId = requestAnimationFrame(t => this.loop(t));
+                return;
+            }
+        }
+
         if (!this.paused) this.update(dt);
         this.draw();
         this.animId = requestAnimationFrame(t => this.loop(t));
@@ -2075,6 +1840,8 @@ class BubbleShooter {
     }
 
     resize() {
+        // ✅ Recalc DPR on resize too
+        this.dpr = this.isMobile ? Math.min(window.devicePixelRatio||1, 1.5) : Math.min(window.devicePixelRatio||1, 2);
         this.setupHDCanvas();
         this.W = this.canvas.width  / this.dpr;
         this.H = this.canvas.height / this.dpr;
@@ -2085,7 +1852,8 @@ class BubbleShooter {
         this.recalcGrid();
         this.shooterX = this.W / 2;
         this.shooterY = this.H - (this.isMobile ? 58 : 65);
-        this.stars    = this.makeStars(this.isMobile ? 40 : 70);
+        this.stars    = this.makeStars(this.isMobile ? 25 : 60);
+        this.bgGrad   = null; // force recreate
         this.preRenderAll();
     }
 
@@ -2094,9 +1862,8 @@ class BubbleShooter {
         cancelAnimationFrame(this.animId);
         document.removeEventListener('fullscreenchange',       this.boundFSChange);
         document.removeEventListener('webkitfullscreenchange', this.boundFSChange);
-        document.removeEventListener('mozfullscreenchange',    this.boundFSChange);
         this.cache.bubbles.clear();
         this.cache.glows.clear();
         this.savePlayerData();
     }
-} 
+}
