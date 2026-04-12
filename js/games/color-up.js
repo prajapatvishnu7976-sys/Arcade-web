@@ -5,8 +5,8 @@ class ColorUp {
         this.canvas  = canvas;
         this.onScore = onScore;
 
-        // ── HD / DPR ──
-        this.dpr = Math.min(window.devicePixelRatio || 1, 3);
+        // ── FIX 1: DPR max 2 instead of 3 — mobile lag fix ──
+        this.dpr = Math.min(window.devicePixelRatio || 1, 2);
         this.setupHDCanvas();
 
         this.ctx = canvas.getContext('2d', { alpha: false, desynchronized: true });
@@ -16,21 +16,18 @@ class ColorUp {
 
         this.isMobile = ('ontouchstart' in window) || window.innerWidth < 768;
 
-        // Fonts
         this.FONT_TITLE = '"Orbitron", "Segoe UI", monospace';
         this.FONT_UI    = '"Rajdhani", "Segoe UI", sans-serif';
         this.loadFonts();
 
-        // Score / state
         this.score      = 0;
         this.bestScore  = parseInt(localStorage.getItem('colorup_best') || '0');
         this.paused     = false;
         this.destroyed  = false;
-        this.gameState  = 'playing'; // 'playing' | 'dead'
+        this.gameState  = 'playing';
         this.combo      = 0;
         this.maxCombo   = 0;
 
-        // Colors
         this.PALETTE = [
             { fill: '#FF006E', light: '#FF77BB', dark: '#CC0055', name: 'PINK'   },
             { fill: '#00D4FF', light: '#77EEFF', dark: '#0099CC', name: 'CYAN'   },
@@ -39,7 +36,6 @@ class ColorUp {
             { fill: '#B947D9', light: '#D888F0', dark: '#8833AA', name: 'PURPLE' },
         ];
 
-        // Player
         this.playerColorIdx = 0;
         this.player = {
             x: this.W / 2,
@@ -49,35 +45,27 @@ class ColorUp {
             trail: []
         };
 
-        // Gates
         this.gates      = [];
         this.speed      = 2.2;
         this.gateTimer  = 0;
         this.gateSpacing = 130;
 
-        // FX
         this.particles    = [];
         this.floatTexts   = [];
         this.screenShake  = { x: 0, y: 0, timer: 0, force: 0 };
         this.flashAlpha   = 0;
         this.flashColor   = '#fff';
         this.bgTime       = 0;
-        this.stars        = this.makeStars(60);
+        this.stars        = this.makeStars(this.isMobile ? 35 : 60);
         this.rings        = [];
 
-        // Color switch animation
         this.colorSwitchAnim = { progress: 0, active: false, fromIdx: 0 };
-
-        // Death state
         this.deathTimer = 0;
-
-        // Touch / mouse
         this.playerTargetX = this.W / 2;
         this.lastMoveDir   = 0;
 
         this.spawnInitialGates();
 
-        // Events
         this.boundClick     = this.handleClick.bind(this);
         this.boundTouch     = this.handleTouch.bind(this);
         this.boundMouseMove = this.handleMouseMove.bind(this);
@@ -92,13 +80,20 @@ class ColorUp {
         this.animId   = requestAnimationFrame(t => this.loop(t));
     }
 
-    // ══════════════════════════════════════════
-    // HD CANVAS
-    // ══════════════════════════════════════════
+    // ── FIX 2: setupHDCanvas uses parent element for reliable mobile height ──
     setupHDCanvas() {
-        const rect = this.canvas.getBoundingClientRect();
-        const w = rect.width  || this.canvas.clientWidth  || 400;
-        const h = rect.height || this.canvas.clientHeight || 700;
+        const parent = this.canvas.parentElement;
+        let w, h;
+
+        if (parent && parent.clientWidth > 10 && parent.clientHeight > 10) {
+            w = parent.clientWidth;
+            h = parent.clientHeight;
+        } else {
+            const rect = this.canvas.getBoundingClientRect();
+            w = (rect.width  > 10 ? rect.width  : this.canvas.clientWidth)  || window.innerWidth;
+            h = (rect.height > 10 ? rect.height : this.canvas.clientHeight) || window.innerHeight;
+        }
+
         this.canvas.width  = Math.round(w * this.dpr);
         this.canvas.height = Math.round(h * this.dpr);
         this.canvas.style.width  = w + 'px';
@@ -114,15 +109,11 @@ class ColorUp {
         }
     }
 
-    // ── DPR helpers ──
     dX(x)  { return Math.round(x * this.dpr); }
     dY(y)  { return Math.round(y * this.dpr); }
     dS(s)  { return s * this.dpr; }
     dSr(s) { return Math.round(s * this.dpr); }
 
-    // ══════════════════════════════════════════
-    // CRISP TEXT  (zero-blur sharp pass)
-    // ══════════════════════════════════════════
     drawText(ctx, text, x, y, opts = {}) {
         const {
             size        = 14,
@@ -156,21 +147,17 @@ class ColorUp {
             ctx.strokeText(text, px, py);
         }
 
-        // Glow passes (blurred, low alpha — separate from crisp pass)
-        if (glow && glowBlur > 0) {
+        // Glow — skip on mobile for performance
+        if (glow && glowBlur > 0 && !this.isMobile) {
             ctx.save();
             ctx.shadowBlur  = glowBlur * this.dpr * 2;
             ctx.shadowColor = glowColor || color;
             ctx.fillStyle   = glowColor || color;
             ctx.globalAlpha = Math.min(1, opacity) * 0.5;
             ctx.fillText(text, px, py);
-            ctx.shadowBlur  = glowBlur * this.dpr * 0.8;
-            ctx.globalAlpha = Math.min(1, opacity) * 0.28;
-            ctx.fillText(text, px, py);
             ctx.restore();
         }
 
-        // Crisp sharp pass — ZERO blur
         ctx.shadowBlur  = 0;
         ctx.shadowColor = 'transparent';
         ctx.globalAlpha = Math.min(1, opacity);
@@ -216,9 +203,6 @@ class ColorUp {
         }));
     }
 
-    // ══════════════════════════════════════════
-    // SPAWN
-    // ══════════════════════════════════════════
     spawnInitialGates() {
         for (let i = 0; i < 5; i++)
             this.addGate(-i * this.gateSpacing - 40);
@@ -230,7 +214,6 @@ class ColorUp {
         do { rightColor = Math.floor(Math.random() * this.PALETTE.length); }
         while (rightColor === leftColor);
 
-        // Occasionally add a bonus gate (same color both sides = auto pass)
         const isBonus = Math.random() < 0.08;
 
         this.gates.push({
@@ -245,9 +228,6 @@ class ColorUp {
         });
     }
 
-    // ══════════════════════════════════════════
-    // INPUT
-    // ══════════════════════════════════════════
     handleClick(e) {
         if (this.gameState === 'dead') { this.restart(); return; }
         if (this.paused) return;
@@ -283,7 +263,6 @@ class ColorUp {
         this.playerColorIdx = (this.playerColorIdx + 1) % this.PALETTE.length;
         if (window.audioManager) audioManager.play('click');
 
-        // Color switch ring
         this.rings.push({
             x: this.player.x,
             y: this.player.y,
@@ -314,16 +293,12 @@ class ColorUp {
         this.spawnInitialGates();
     }
 
-    // ══════════════════════════════════════════
-    // UPDATE
-    // ══════════════════════════════════════════
     update(dt) {
         if (this.paused) return;
 
         this.bgTime += dt * 0.001;
         this.stars.forEach(s => s.phase += s.speed);
 
-        // Screen shake
         if (this.screenShake.timer > 0) {
             const f = this.screenShake.force * (this.screenShake.timer / 12);
             this.screenShake.x = (Math.random()-0.5)*f;
@@ -333,7 +308,6 @@ class ColorUp {
 
         if (this.flashAlpha > 0) this.flashAlpha = Math.max(0, this.flashAlpha - 0.025);
 
-        // Rings
         for (let i = this.rings.length-1; i >= 0; i--) {
             const rg = this.rings[i];
             rg.r      += 3.5;
@@ -341,7 +315,6 @@ class ColorUp {
             if (rg.opacity <= 0) this.rings.splice(i, 1);
         }
 
-        // Color switch anim
         if (this.colorSwitchAnim.active) {
             this.colorSwitchAnim.progress += dt / 160;
             if (this.colorSwitchAnim.progress >= 1) this.colorSwitchAnim.active = false;
@@ -354,25 +327,21 @@ class ColorUp {
             return;
         }
 
-        // Player smooth follow
         const px  = this.player.x;
         const tx  = Math.max(this.player.r + 5, Math.min(this.W - this.player.r - 5, this.playerTargetX));
         this.player.x += (tx - px) * 0.14;
 
-        // Player trail
         this.player.trail.unshift({ x: this.player.x, y: this.player.y });
         if (this.player.trail.length > 14) this.player.trail.pop();
 
         this.player.pulseT += dt * 0.005;
 
-        // Move gates
         for (let i = this.gates.length - 1; i >= 0; i--) {
             this.gates[i].y += this.speed * (dt / 16.67);
             if (this.gates[i].hitFlash > 0) this.gates[i].hitFlash--;
             if (this.gates[i].y > this.H + 50) this.gates.splice(i, 1);
         }
 
-        // Spawn
         this.gateTimer += dt;
         const spawnInterval = Math.max(55, 105 - this.speed * 8);
         if (this.gateTimer > spawnInterval) {
@@ -381,7 +350,6 @@ class ColorUp {
             if (topY > 60) this.addGate(-30);
         }
 
-        // Collisions
         for (let i = this.gates.length - 1; i >= 0; i--) {
             const g = this.gates[i];
             if (g.passed) continue;
@@ -397,7 +365,6 @@ class ColorUp {
                 const gateColor = isLeft ? g.leftColor : g.rightColor;
 
                 if (g.isBonus || gateColor === this.playerColorIdx) {
-                    // Hit!
                     this.combo++;
                     if (this.combo > this.maxCombo) this.maxCombo = this.combo;
 
@@ -429,7 +396,6 @@ class ColorUp {
 
                     if (window.audioManager) audioManager.play('score');
                 } else {
-                    // Miss
                     this.combo = 0;
                     this.spawnParticles(this.player.x, g.y, '#FF006E', 20);
                     this.flashAlpha = 0.38; this.flashColor = '#FF006E';
@@ -466,7 +432,9 @@ class ColorUp {
     }
 
     spawnParticles(x, y, color, count) {
-        for (let i = 0; i < count; i++) {
+        // Limit particles on mobile
+        const maxNew = this.isMobile ? Math.min(count, 8) : count;
+        for (let i = 0; i < maxNew; i++) {
             const a  = Math.random() * Math.PI * 2;
             const sp = Math.random() * 6 + 2;
             this.particles.push({
@@ -478,13 +446,9 @@ class ColorUp {
         }
     }
 
-    // ══════════════════════════════════════════
-    // DRAW
-    // ══════════════════════════════════════════
     draw(timestamp) {
         const ctx = this.ctx;
 
-        // Clear
         ctx.fillStyle = '#050510';
         ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
@@ -513,22 +477,29 @@ class ColorUp {
         ctx.restore();
     }
 
-    // ── Background ──
     drawBackground(ctx) {
         const W = this.W, H = this.H, t = this.bgTime;
 
-        const bg = ctx.createRadialGradient(
-            this.dX(W*(0.5+Math.sin(t*0.4)*0.08)), this.dY(H*0.38), 0,
-            this.dX(W/2), this.dY(H/2), this.dS(H)
-        );
-        bg.addColorStop(0,   '#0e0520');
-        bg.addColorStop(0.5, '#070415');
-        bg.addColorStop(1,   '#030210');
-        ctx.fillStyle = bg;
-        ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        if (this.isMobile) {
+            // Simplified BG for mobile
+            ctx.fillStyle = '#080518';
+            ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        } else {
+            const bg = ctx.createRadialGradient(
+                this.dX(W*(0.5+Math.sin(t*0.4)*0.08)), this.dY(H*0.38), 0,
+                this.dX(W/2), this.dY(H/2), this.dS(H)
+            );
+            bg.addColorStop(0,   '#0e0520');
+            bg.addColorStop(0.5, '#070415');
+            bg.addColorStop(1,   '#030210');
+            ctx.fillStyle = bg;
+            ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        }
 
-        // Stars
-        for (const s of this.stars) {
+        // Stars — skip every other on mobile
+        const step = this.isMobile ? 2 : 1;
+        for (let i = 0; i < this.stars.length; i += step) {
+            const s = this.stars[i];
             const alpha = 0.08 + ((Math.sin(s.phase)+1)/2)*0.55;
             ctx.globalAlpha = alpha;
             ctx.fillStyle   = s.color;
@@ -538,35 +509,19 @@ class ColorUp {
         }
         ctx.globalAlpha = 1;
 
-        // Vignette
-        const vg = ctx.createRadialGradient(
-            this.dX(W/2), this.dY(H/2), this.dS(H*0.1),
-            this.dX(W/2), this.dY(H/2), this.dS(H*0.95)
-        );
-        vg.addColorStop(0, 'rgba(0,0,0,0)');
-        vg.addColorStop(1, 'rgba(0,0,0,0.58)');
-        ctx.fillStyle = vg;
-        ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-
-        // Speed lines (when fast)
-        if (this.speed > 3.5 && this.gameState === 'playing') {
-            const intensity = (this.speed - 3.5) / 3;
-            ctx.save();
-            ctx.globalAlpha = intensity * 0.12;
-            for (let i = 0; i < 8; i++) {
-                const sx = Math.random() * W;
-                ctx.strokeStyle = this.PALETTE[this.playerColorIdx].fill;
-                ctx.lineWidth   = this.dS(0.8);
-                ctx.beginPath();
-                ctx.moveTo(this.dX(sx), 0);
-                ctx.lineTo(this.dX(sx), this.dY(H));
-                ctx.stroke();
-            }
-            ctx.restore();
+        // Vignette — skip on mobile
+        if (!this.isMobile) {
+            const vg = ctx.createRadialGradient(
+                this.dX(W/2), this.dY(H/2), this.dS(H*0.1),
+                this.dX(W/2), this.dY(H/2), this.dS(H*0.95)
+            );
+            vg.addColorStop(0, 'rgba(0,0,0,0)');
+            vg.addColorStop(1, 'rgba(0,0,0,0.58)');
+            ctx.fillStyle = vg;
+            ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
         }
     }
 
-    // ── Lane Divider ──
     drawLaneDivider(ctx) {
         const col = this.PALETTE[this.playerColorIdx].fill;
         ctx.save();
@@ -579,22 +534,16 @@ class ColorUp {
         ctx.lineTo(this.dX(this.W/2), this.dY(this.H));
         ctx.stroke();
         ctx.setLineDash([]);
-
-        // Left / Right labels (very subtle)
-        const t = this.bgTime;
-        ctx.globalAlpha = 0.12 + Math.sin(t)*0.04;
         ctx.restore();
     }
 
-    // ── Rings FX ──
     drawRingsFX(ctx) {
         for (const rg of this.rings) {
             ctx.save();
             ctx.globalAlpha = rg.opacity;
             ctx.strokeStyle = rg.color;
             ctx.lineWidth   = this.dS(2.5 * rg.opacity);
-            ctx.shadowBlur  = this.dS(12);
-            ctx.shadowColor = rg.color;
+            if (!this.isMobile) { ctx.shadowBlur = this.dS(12); ctx.shadowColor = rg.color; }
             ctx.beginPath();
             ctx.arc(this.dX(rg.x), this.dY(rg.y), this.dS(rg.r), 0, Math.PI*2);
             ctx.stroke();
@@ -603,19 +552,17 @@ class ColorUp {
         }
     }
 
-    // ── Gates ──
     drawGates(ctx) {
         const W = this.W;
 
         this.gates.forEach(g => {
             const leftCol  = this.PALETTE[g.leftColor];
             const rightCol = this.PALETTE[g.rightColor];
-            const gw = g.midX - 6;  // gate half-width
+            const gw = g.midX - 6;
             const gh = g.h;
             const flashBoost = g.hitFlash > 0 ? 0.35 : 0;
 
-            // ── LEFT gate ──
-            // Background fill
+            // LEFT gate
             ctx.save();
             const lgFill = ctx.createLinearGradient(0, this.dY(g.y - gh/2), 0, this.dY(g.y + gh/2));
             lgFill.addColorStop(0,   this.hexToRgba(leftCol.light, 0.28 + flashBoost));
@@ -625,10 +572,8 @@ class ColorUp {
             this.drawRoundRect(ctx, 2, g.y - gh/2, gw - 2, gh, 6);
             ctx.fill();
 
-            // Border glow
             ctx.save();
-            ctx.shadowBlur  = this.dS(g.hitFlash > 0 ? 18 : 8);
-            ctx.shadowColor = leftCol.fill;
+            if (!this.isMobile) { ctx.shadowBlur = this.dS(g.hitFlash > 0 ? 18 : 8); ctx.shadowColor = leftCol.fill; }
             ctx.strokeStyle = this.hexToRgba(leftCol.fill, 0.85);
             ctx.lineWidth   = this.dS(g.hitFlash > 0 ? 2.5 : 1.5);
             this.drawRoundRect(ctx, 2, g.y - gh/2, gw - 2, gh, 6);
@@ -636,40 +581,27 @@ class ColorUp {
             ctx.shadowBlur = 0;
             ctx.restore();
 
-            // Inner shine
-            ctx.fillStyle = 'rgba(255,255,255,0.1)';
-            this.drawRoundRect(ctx, 4, g.y - gh/2 + 2, (gw-4)*0.5, gh/2 - 2, 4);
-            ctx.fill();
-
-            // Color name
-            const isPlayerLeft   = this.player.x < g.midX;
-            const isMatchLeft    = g.leftColor === this.playerColorIdx;
-            const leftLabelAlpha = 0.65 + (isMatchLeft ? 0.3 : 0);
-
+            const isMatchLeft = g.leftColor === this.playerColorIdx;
             this.drawText(ctx, leftCol.name, gw/2, g.y, {
                 size: 9.5, weight: '800', color: leftCol.light,
                 align: 'center', baseline: 'middle',
-                opacity: leftLabelAlpha,
+                opacity: 0.65 + (isMatchLeft ? 0.3 : 0),
                 stroke: true, strokeColor: 'rgba(0,0,0,0.7)', strokeWidth: 2.5,
                 family: this.FONT_TITLE
             });
 
-            // Match indicator
             if (isMatchLeft) {
                 ctx.save();
                 ctx.globalAlpha = 0.7 + Math.sin(this.bgTime*4)*0.2;
                 ctx.fillStyle   = leftCol.light;
-                ctx.shadowBlur  = this.dS(8);
-                ctx.shadowColor = leftCol.fill;
                 ctx.beginPath();
                 ctx.arc(this.dX(gw/2), this.dY(g.y - gh/2 - 9), this.dS(4), 0, Math.PI*2);
                 ctx.fill();
-                ctx.shadowBlur = 0;
                 ctx.restore();
             }
             ctx.restore();
 
-            // ── RIGHT gate ──
+            // RIGHT gate
             ctx.save();
             const rgFill = ctx.createLinearGradient(0, this.dY(g.y - gh/2), 0, this.dY(g.y + gh/2));
             rgFill.addColorStop(0,   this.hexToRgba(rightCol.light, 0.28 + flashBoost));
@@ -680,8 +612,7 @@ class ColorUp {
             ctx.fill();
 
             ctx.save();
-            ctx.shadowBlur  = this.dS(g.hitFlash > 0 ? 18 : 8);
-            ctx.shadowColor = rightCol.fill;
+            if (!this.isMobile) { ctx.shadowBlur = this.dS(g.hitFlash > 0 ? 18 : 8); ctx.shadowColor = rightCol.fill; }
             ctx.strokeStyle = this.hexToRgba(rightCol.fill, 0.85);
             ctx.lineWidth   = this.dS(g.hitFlash > 0 ? 2.5 : 1.5);
             this.drawRoundRect(ctx, g.midX + 4, g.y - gh/2, W - g.midX - 6, gh, 6);
@@ -689,18 +620,12 @@ class ColorUp {
             ctx.shadowBlur = 0;
             ctx.restore();
 
-            ctx.fillStyle = 'rgba(255,255,255,0.1)';
-            this.drawRoundRect(ctx, g.midX + 6, g.y - gh/2 + 2, (W - g.midX - 8)*0.5, gh/2 - 2, 4);
-            ctx.fill();
-
-            const isMatchRight   = g.rightColor === this.playerColorIdx;
-            const rightLabelAlpha = 0.65 + (isMatchRight ? 0.3 : 0);
-            const rightCx        = g.midX + (W - g.midX) / 2;
-
+            const isMatchRight = g.rightColor === this.playerColorIdx;
+            const rightCx = g.midX + (W - g.midX) / 2;
             this.drawText(ctx, rightCol.name, rightCx, g.y, {
                 size: 9.5, weight: '800', color: rightCol.light,
                 align: 'center', baseline: 'middle',
-                opacity: rightLabelAlpha,
+                opacity: 0.65 + (isMatchRight ? 0.3 : 0),
                 stroke: true, strokeColor: 'rgba(0,0,0,0.7)', strokeWidth: 2.5,
                 family: this.FONT_TITLE
             });
@@ -709,21 +634,16 @@ class ColorUp {
                 ctx.save();
                 ctx.globalAlpha = 0.7 + Math.sin(this.bgTime*4)*0.2;
                 ctx.fillStyle   = rightCol.light;
-                ctx.shadowBlur  = this.dS(8);
-                ctx.shadowColor = rightCol.fill;
                 ctx.beginPath();
                 ctx.arc(this.dX(rightCx), this.dY(g.y - gh/2 - 9), this.dS(4), 0, Math.PI*2);
                 ctx.fill();
-                ctx.shadowBlur = 0;
                 ctx.restore();
             }
 
-            // Bonus badge
             if (g.isBonus) {
                 this.drawText(ctx, '★ BONUS', W/2, g.y - gh/2 - 14, {
                     size: 9, weight: '900', color: '#FFD700',
                     align: 'center', baseline: 'middle',
-                    glow: true, glowColor: '#FFD700', glowBlur: 6,
                     family: this.FONT_TITLE
                 });
             }
@@ -732,46 +652,45 @@ class ColorUp {
         });
     }
 
-    // ── Player Trail ──
     drawPlayerTrail(ctx) {
         const col = this.PALETTE[this.playerColorIdx].fill;
-        this.player.trail.forEach((pt, i) => {
+        // Reduce trail on mobile
+        const step = this.isMobile ? 2 : 1;
+        for (let i = 0; i < this.player.trail.length; i += step) {
+            const pt = this.player.trail[i];
             const alpha = (1 - i/this.player.trail.length) * 0.35;
             const r     = this.player.r * (1 - i/this.player.trail.length) * 0.7;
-            if (r < 0.5) return;
+            if (r < 0.5) continue;
             ctx.save();
             ctx.globalAlpha = alpha;
             ctx.fillStyle   = col;
-            ctx.shadowBlur  = this.dS(4);
-            ctx.shadowColor = col;
             ctx.beginPath();
             ctx.arc(this.dX(pt.x), this.dY(pt.y), Math.max(0.5, this.dS(r)), 0, Math.PI*2);
             ctx.fill();
-            ctx.shadowBlur = 0;
             ctx.restore();
-        });
+        }
     }
 
-    // ── Player ──
     drawPlayer(ctx, timestamp) {
         const pl  = this.player;
         const col = this.PALETTE[this.playerColorIdx];
         const pulse = 1 + Math.sin(pl.pulseT * 2.2) * 0.06;
         const r   = pl.r * pulse;
 
-        // Outer glow ring
-        ctx.save();
-        ctx.shadowBlur  = this.dS(22);
-        ctx.shadowColor = col.fill;
-        ctx.strokeStyle = this.hexToRgba(col.fill, 0.5);
-        ctx.lineWidth   = this.dS(2.5);
-        ctx.beginPath();
-        ctx.arc(this.dX(pl.x), this.dY(pl.y), this.dS(r + 6), 0, Math.PI*2);
-        ctx.stroke();
-        ctx.shadowBlur = 0;
-        ctx.restore();
+        // Outer glow ring — skip on mobile
+        if (!this.isMobile) {
+            ctx.save();
+            ctx.shadowBlur  = this.dS(22);
+            ctx.shadowColor = col.fill;
+            ctx.strokeStyle = this.hexToRgba(col.fill, 0.5);
+            ctx.lineWidth   = this.dS(2.5);
+            ctx.beginPath();
+            ctx.arc(this.dX(pl.x), this.dY(pl.y), this.dS(r + 6), 0, Math.PI*2);
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+            ctx.restore();
+        }
 
-        // Body gradient
         ctx.save();
         const grad = ctx.createRadialGradient(
             this.dX(pl.x - r*0.3), this.dY(pl.y - r*0.3), this.dS(r*0.1),
@@ -781,26 +700,22 @@ class ColorUp {
         grad.addColorStop(0.5, col.fill);
         grad.addColorStop(1,   col.dark);
         ctx.fillStyle = grad;
-        ctx.shadowBlur  = this.dS(16);
-        ctx.shadowColor = col.fill;
+        if (!this.isMobile) { ctx.shadowBlur = this.dS(16); ctx.shadowColor = col.fill; }
         ctx.beginPath();
         ctx.arc(this.dX(pl.x), this.dY(pl.y), this.dS(r), 0, Math.PI*2);
         ctx.fill();
         ctx.shadowBlur = 0;
 
-        // White rim
         ctx.strokeStyle = 'rgba(255,255,255,0.7)';
         ctx.lineWidth   = this.dS(1.8);
         ctx.stroke();
 
-        // Inner shine
         ctx.fillStyle = 'rgba(255,255,255,0.28)';
         ctx.beginPath();
         ctx.arc(this.dX(pl.x - r*0.25), this.dY(pl.y - r*0.25), this.dS(r*0.38), 0, Math.PI*2);
         ctx.fill();
         ctx.restore();
 
-        // Color switch swipe animation
         if (this.colorSwitchAnim.active) {
             const prog  = this.colorSwitchAnim.progress;
             const eased = 1 - Math.pow(1-prog, 2);
@@ -814,32 +729,25 @@ class ColorUp {
             ctx.restore();
         }
 
-        // Color name label above player
         this.drawText(ctx, col.name, pl.x, pl.y - r - 10, {
             size: 8.5, weight: '800', color: col.light,
             align: 'center', baseline: 'middle',
-            glow: true, glowColor: col.fill, glowBlur: 5,
             family: this.FONT_TITLE
         });
     }
 
-    // ── Particles ──
     drawParticles(ctx) {
         ctx.save();
         for (const p of this.particles) {
             ctx.globalAlpha = Math.min(1, p.life / 14);
-            ctx.shadowBlur  = this.dS(5);
-            ctx.shadowColor = p.color;
             ctx.fillStyle   = p.color;
             ctx.beginPath();
             ctx.arc(this.dX(p.x), this.dY(p.y), Math.max(0.4, this.dS(p.size)), 0, Math.PI*2);
             ctx.fill();
-            ctx.shadowBlur = 0;
         }
         ctx.restore();
     }
 
-    // ── Float texts ──
     drawFloatTexts(ctx) {
         for (const t of this.floatTexts) {
             const sc = Math.min(1, t.scale);
@@ -848,36 +756,30 @@ class ColorUp {
                 align: 'center', baseline: 'middle',
                 opacity: t.opacity,
                 stroke: true, strokeColor: 'rgba(0,0,0,0.7)', strokeWidth: 3,
-                glow: true, glowColor: t.color, glowBlur: 8,
                 family: this.FONT_TITLE
             });
         }
     }
 
-    // ── HUD ──
     drawHUD(ctx) {
         const W = this.W, H = this.H;
         const col = this.PALETTE[this.playerColorIdx];
 
-        // Top bar
         const topGrd = ctx.createLinearGradient(0, 0, 0, this.dY(52));
         topGrd.addColorStop(0, 'rgba(0,0,0,0.82)');
         topGrd.addColorStop(1, 'rgba(0,0,0,0.04)');
         ctx.fillStyle = topGrd;
         ctx.fillRect(0, 0, this.canvas.width, this.dY(52));
 
-        // Score
         this.drawText(ctx, this.fmtNum(this.score), W/2, 22, {
             size: 18, weight: '900', color: '#00D4FF',
-            align: 'center', family: this.FONT_TITLE,
-            glow: true, glowColor: '#00D4FF', glowBlur: 8
+            align: 'center', family: this.FONT_TITLE
         });
         this.drawText(ctx, `BEST: ${this.fmtNum(this.bestScore)}`, W/2, 38, {
             size: 8, color: 'rgba(255,215,0,0.4)',
             align: 'center', family: this.FONT_UI
         });
 
-        // Speed indicator (left)
         const speedPct = Math.min(1, (this.speed - 2.2) / 4.3);
         const speedCol = speedPct < 0.4 ? '#00FF88' : speedPct < 0.75 ? '#FFD700' : '#FF006E';
         this.drawText(ctx, `SPD`, 14, 18, {
@@ -886,16 +788,13 @@ class ColorUp {
         });
         this.drawText(ctx, `${this.speed.toFixed(1)}x`, 14, 34, {
             size: 11, weight: '800', color: speedCol,
-            family: this.FONT_TITLE,
-            glow: true, glowColor: speedCol, glowBlur: 4
+            family: this.FONT_TITLE
         });
 
-        // Combo (right)
         if (this.combo > 1) {
             this.drawText(ctx, `×${this.combo}`, W - 14, 18, {
                 size: 15, weight: '900', color: '#FFD700',
-                align: 'right', family: this.FONT_TITLE,
-                glow: true, glowColor: '#FFD700', glowBlur: 8
+                align: 'right', family: this.FONT_TITLE
             });
             this.drawText(ctx, 'COMBO', W - 14, 35, {
                 size: 7.5, weight: '700', color: 'rgba(255,215,0,0.55)',
@@ -903,10 +802,8 @@ class ColorUp {
             });
         }
 
-        // Color palette bar (bottom)
         this.drawColorBar(ctx);
 
-        // Instruction (fades after 3 sec of score > 0)
         if (this.score === 0) {
             this.drawText(ctx, 'MOVE  to aim  •  TAP  to switch color', W/2, H - 22, {
                 size: 9.5, weight: '600', color: 'rgba(180,180,220,0.55)',
@@ -928,16 +825,9 @@ class ColorUp {
             const isActive = i === this.playerColorIdx;
 
             ctx.save();
-            if (isActive) {
-                ctx.shadowBlur  = this.dS(10);
-                ctx.shadowColor = col.fill;
-            }
-            ctx.fillStyle = isActive
-                ? col.fill
-                : this.hexToRgba(col.fill, 0.25);
+            ctx.fillStyle = isActive ? col.fill : this.hexToRgba(col.fill, 0.25);
             this.drawRoundRect(ctx, bx, by - (isActive ? 4 : 0), bw, isActive ? bh+4 : bh, 3);
             ctx.fill();
-            ctx.shadowBlur = 0;
 
             if (isActive) {
                 ctx.strokeStyle = 'rgba(255,255,255,0.6)';
@@ -949,13 +839,11 @@ class ColorUp {
         });
     }
 
-    // ── Death Screen ──
     drawDeathScreen(ctx) {
         const W = this.W, H = this.H;
         const elapsed = this.deathTimer;
         const alpha   = Math.min(1, elapsed / 400);
 
-        // Dim overlay
         ctx.fillStyle = `rgba(0,0,0,${alpha * 0.72})`;
         ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
@@ -964,7 +852,6 @@ class ColorUp {
         const cardAlpha = (alpha - 0.3) / 0.7;
         const cx = W/2, cy = H/2;
 
-        // Card
         ctx.save();
         ctx.globalAlpha = cardAlpha * 0.95;
         ctx.fillStyle   = 'rgba(4,2,18,0.92)';
@@ -979,7 +866,6 @@ class ColorUp {
         this.drawText(ctx, 'GAME OVER', cx, cy - 62, {
             size: 24, weight: '900', color: '#FF006E',
             align: 'center', baseline: 'middle',
-            glow: true, glowColor: '#FF006E', glowBlur: 12,
             family: this.FONT_TITLE, opacity: cardAlpha
         });
 
@@ -999,18 +885,15 @@ class ColorUp {
             this.drawText(ctx, `MAX COMBO  ×${this.maxCombo}`, cx, cy + 26, {
                 size: 11, weight: '700', color: '#FFD700',
                 align: 'center', baseline: 'middle',
-                glow: true, glowColor: '#FFD700', glowBlur: 5,
                 family: this.FONT_TITLE, opacity: cardAlpha
             });
         }
 
-        // Tap to restart (blink)
         const blink = Math.sin(this.deathTimer / 320) > 0;
         if (blink) {
             this.drawText(ctx, '▶  TAP TO RESTART', cx, cy + 66, {
                 size: 13, weight: '800', color: '#00FF88',
                 align: 'center', baseline: 'middle',
-                glow: true, glowColor: '#00FF88', glowBlur: 8,
                 family: this.FONT_TITLE, opacity: cardAlpha * 0.9
             });
         }
@@ -1022,9 +905,6 @@ class ColorUp {
         return ''+n;
     }
 
-    // ══════════════════════════════════════════
-    // LOOP
-    // ══════════════════════════════════════════
     loop(timestamp) {
         if (this.destroyed) return;
         const dt = Math.min(timestamp - (this.lastTime || timestamp), 50);
@@ -1041,13 +921,24 @@ class ColorUp {
     }
 
     resize() {
-        this.setupHDCanvas();
+        // FIX: resize bhi parent-based use karo
+        const parent = this.canvas.parentElement;
+        if (parent && parent.clientWidth > 10 && parent.clientHeight > 10) {
+            const w = parent.clientWidth;
+            const h = parent.clientHeight;
+            this.canvas.width  = Math.round(w * this.dpr);
+            this.canvas.height = Math.round(h * this.dpr);
+            this.canvas.style.width  = w + 'px';
+            this.canvas.style.height = h + 'px';
+        } else {
+            this.setupHDCanvas();
+        }
         this.W = this.canvas.width  / this.dpr;
         this.H = this.canvas.height / this.dpr;
         this.player.x      = this.W / 2;
         this.player.y      = this.H - 80;
         this.playerTargetX = this.W / 2;
-        this.stars = this.makeStars(60);
+        this.stars = this.makeStars(this.isMobile ? 35 : 60);
         this.gates.forEach(g => g.midX = this.W / 2);
     }
 
@@ -1059,4 +950,4 @@ class ColorUp {
         this.canvas.removeEventListener('mousemove',  this.boundMouseMove);
         this.canvas.removeEventListener('touchmove',  this.boundTouchMove);
     }
-}  
+}

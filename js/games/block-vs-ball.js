@@ -1,7 +1,8 @@
 /* ============================================================
-   BLOCK VS BALL v2.0 — HD EDITION
+   BLOCK VS BALL v2.1 — MOBILE FIXED
    NeonArcade Compatible | DPR Scaled | Zero Blur
    Fullscreen | Mobile-First | Premium Quality
+   FIX: DPR 2.5→2 (lag fix) | setupHD parent-based (screen fit fix)
    ============================================================ */
 
 'use strict';
@@ -14,7 +15,8 @@ class BlockVsBall {
         this.paused = false;
         this.isPaused = false;
 
-        this.dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+        // ── FIX 1: DPR max 2 instead of 2.5 — big lag reduction on mobile ──
+        this.dpr = Math.min(window.devicePixelRatio || 1, 2);
         this._setupHD();
         this.ctx = this.canvas.getContext('2d', { alpha: false });
         this.W = this.canvas.width / this.dpr;
@@ -61,14 +63,14 @@ class BlockVsBall {
         this.parts = [];
         this.pops = [];
         this.rings = [];
-        this.MAX_PARTS = this.isMobile ? 50 : 100;
+        this.MAX_PARTS = this.isMobile ? 40 : 100;
         this.shakeX = 0; this.shakeY = 0; this.shakeT = 0;
         this.flashA = 0; this.flashC = '#fff';
         this.deathA = 0;
         this.time = 0;
 
         // BG
-        this.stars = this._mkStars(this.isMobile ? 25 : 45);
+        this.stars = this._mkStars(this.isMobile ? 20 : 45);
 
         // FS
         this.fsRect = { x:0, y:0, w:44, h:44 };
@@ -81,13 +83,25 @@ class BlockVsBall {
         this.animId = requestAnimationFrame(t => this._loop(t));
     }
 
+    // ── FIX 2: setupHD uses parent element dimensions for reliable mobile height ──
     _setupHD() {
-        const r = this.canvas.getBoundingClientRect();
-        const w = r.width || this.canvas.clientWidth || 400;
-        const h = r.height || this.canvas.clientHeight || 700;
-        this.canvas.width = Math.round(w * this.dpr);
+        // Try parent element first (game-wrapper — most reliable on mobile)
+        const parent = this.canvas.parentElement;
+        let w, h;
+
+        if (parent && parent.clientWidth > 10 && parent.clientHeight > 10) {
+            w = parent.clientWidth;
+            h = parent.clientHeight;
+        } else {
+            // Fallback: getBoundingClientRect
+            const r = this.canvas.getBoundingClientRect();
+            w = (r.width  > 10 ? r.width  : this.canvas.clientWidth)  || window.innerWidth;
+            h = (r.height > 10 ? r.height : this.canvas.clientHeight) || window.innerHeight;
+        }
+
+        this.canvas.width  = Math.round(w * this.dpr);
         this.canvas.height = Math.round(h * this.dpr);
-        this.canvas.style.width = w + 'px';
+        this.canvas.style.width  = w + 'px';
         this.canvas.style.height = h + 'px';
     }
 
@@ -147,7 +161,6 @@ class BlockVsBall {
 
         for (let r = 0; r < rows; r++) {
             for (let c = 0; c < cols; c++) {
-                // Random gaps
                 if (Math.random() < 0.08) continue;
                 const ci = (r * 3 + c * 2) % this.BCOLORS.length;
                 const hp = 1 + Math.floor(r / 3) + Math.floor(this.level / 3);
@@ -219,7 +232,6 @@ class BlockVsBall {
             this._restart();
             return;
         }
-        // Release attached balls
         this.balls.forEach(b => {
             if (b.attached) {
                 b.attached = false;
@@ -263,13 +275,11 @@ class BlockVsBall {
 
         if (this.flashA > 0) this.flashA = Math.max(0, this.flashA - 0.04);
 
-        // Animate blocks
         this.blocks.forEach(b => {
             b.scale = Math.min(1, b.scale + 0.06);
             b.hitAnim = Math.max(0, b.hitAnim - 0.06);
         });
 
-        // FX
         this.parts = this.parts.filter(p => {
             p.x += p.vx; p.y += p.vy; p.vy += p.g;
             p.vx *= 0.96; p.life -= p.dec; p.r *= 0.96;
@@ -280,22 +290,18 @@ class BlockVsBall {
 
         if (this.state === this.STATE.DEAD) { this.deathA = Math.min(1, this.deathA + 0.016); return; }
         if (this.state === this.STATE.WAIT) {
-            // Keep ball on paddle
             this.paddle.x += (this.paddle.targetX - this.paddle.x) * 0.15;
             this.paddle.x = Math.max(this.paddle.w / 2 + 5, Math.min(this.W - this.paddle.w / 2 - 5, this.paddle.x));
             this.balls.forEach(b => { if (b.attached) { b.x = this.paddle.x; b.y = this.paddle.y - b.r - 2; } });
             return;
         }
 
-        // Paddle
         this.paddle.x += (this.paddle.targetX - this.paddle.x) * 0.18;
         this.paddle.x = Math.max(this.paddle.w / 2 + 5, Math.min(this.W - this.paddle.w / 2 - 5, this.paddle.x));
 
-        // Paddle trail
         this.paddle.trail.push({ x: this.paddle.x, y: this.paddle.y });
         if (this.paddle.trail.length > 8) this.paddle.trail.shift();
 
-        // Update balls
         for (let i = this.balls.length - 1; i >= 0; i--) {
             const b = this.balls[i];
             if (b.attached) { b.x = this.paddle.x; b.y = this.paddle.y - b.r - 2; continue; }
@@ -306,12 +312,10 @@ class BlockVsBall {
             b.x += b.dx;
             b.y += b.dy;
 
-            // Walls
             if (b.x - b.r < 2) { b.x = b.r + 2; b.dx = Math.abs(b.dx); this._sfx('bounce'); }
             if (b.x + b.r > this.W - 2) { b.x = this.W - b.r - 2; b.dx = -Math.abs(b.dx); this._sfx('bounce'); }
             if (b.y - b.r < 2) { b.y = b.r + 2; b.dy = Math.abs(b.dy); this._sfx('bounce'); }
 
-            // Paddle collision
             const pw = this.paddle.w / 2 + 4;
             if (b.dy > 0 &&
                 b.y + b.r >= this.paddle.y - this.paddle.h / 2 &&
@@ -329,7 +333,6 @@ class BlockVsBall {
                 this.shakeT = 3;
             }
 
-            // Block collision
             for (let j = this.blocks.length - 1; j >= 0; j--) {
                 const bl = this.blocks[j];
                 if (bl.dead) continue;
@@ -337,7 +340,6 @@ class BlockVsBall {
                 if (b.x + b.r > bl.x && b.x - b.r < bl.x + bl.w &&
                     b.y + b.r > bl.y && b.y - b.r < bl.y + bl.h) {
 
-                    // Bounce direction
                     const oleft = (b.x + b.r) - bl.x;
                     const oright = (bl.x + bl.w) - (b.x - b.r);
                     const otop = (b.y + b.r) - bl.y;
@@ -387,13 +389,11 @@ class BlockVsBall {
                 }
             }
 
-            // Ball lost
             if (b.y > this.H + 20) {
                 this.balls.splice(i, 1);
             }
         }
 
-        // No balls left
         if (this.balls.length === 0) {
             this.lives--;
             this.combo = 0;
@@ -409,7 +409,6 @@ class BlockVsBall {
             }
         }
 
-        // Level clear
         if (this.blocks.every(b => b.dead)) {
             this.level++;
             this.score += 500 * this.level;
@@ -467,10 +466,12 @@ class BlockVsBall {
             ctx.fillRect(0, 0, this.canvas.width, this.canvas.height); ctx.globalAlpha = 1;
         }
 
-        // Vignette
-        const vg = ctx.createRadialGradient(this.X(this.W/2), this.X(this.H/2), this.S(this.H*0.25), this.X(this.W/2), this.X(this.H/2), this.S(this.H*0.82));
-        vg.addColorStop(0, 'transparent'); vg.addColorStop(1, 'rgba(0,0,5,0.5)');
-        ctx.fillStyle = vg; ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        // Vignette — skip on mobile for performance
+        if (!this.isMobile) {
+            const vg = ctx.createRadialGradient(this.X(this.W/2), this.X(this.H/2), this.S(this.H*0.25), this.X(this.W/2), this.X(this.H/2), this.S(this.H*0.82));
+            vg.addColorStop(0, 'transparent'); vg.addColorStop(1, 'rgba(0,0,5,0.5)');
+            ctx.fillStyle = vg; ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        }
 
         ctx.restore();
 
@@ -483,9 +484,15 @@ class BlockVsBall {
 
     _drawBG() {
         const ctx = this.ctx;
-        const g = ctx.createRadialGradient(this.X(this.W/2), this.X(this.H/2), 0, this.X(this.W/2), this.X(this.H/2), this.S(this.H));
-        g.addColorStop(0, '#0a0820'); g.addColorStop(0.6, '#060515'); g.addColorStop(1, '#030210');
-        ctx.fillStyle = g; ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        // Simplified BG on mobile
+        if (this.isMobile) {
+            ctx.fillStyle = '#080820';
+            ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        } else {
+            const g = ctx.createRadialGradient(this.X(this.W/2), this.X(this.H/2), 0, this.X(this.W/2), this.X(this.H/2), this.S(this.H));
+            g.addColorStop(0, '#0a0820'); g.addColorStop(0.6, '#060515'); g.addColorStop(1, '#030210');
+            ctx.fillStyle = g; ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        }
         this.stars.forEach(s => {
             ctx.globalAlpha = 0.1 + ((Math.sin(s.ph) + 1) / 2) * 0.45;
             ctx.fillStyle = '#dde8ff';
@@ -510,7 +517,6 @@ class BlockVsBall {
 
             if (bl.dead) { ctx.globalAlpha = bl.hitAnim; }
 
-            // Body
             const bg = ctx.createLinearGradient(this.S(-bl.w/2), this.S(-bl.h/2), this.S(bl.w/2), this.S(bl.h/2));
             bg.addColorStop(0, bl.hitAnim > 0.5 ? '#fff' : bc.lt);
             bg.addColorStop(0.5, bc.fill);
@@ -521,12 +527,10 @@ class BlockVsBall {
             ctx.roundRect(this.S(-bl.w/2), this.S(-bl.h/2), dw, dh, dr);
             ctx.fill();
 
-            // Outline
             ctx.strokeStyle = `rgba(255,255,255,${bl.hitAnim > 0 ? 0.5 : 0.12})`;
             ctx.lineWidth = this.S(0.8);
             ctx.stroke();
 
-            // HP text
             if (bl.hp > 1 && !bl.dead) {
                 ctx.shadowBlur = 0;
                 ctx.fillStyle = '#fff';
@@ -535,7 +539,6 @@ class BlockVsBall {
                 ctx.fillText(String(bl.hp), 0, this.S(1));
             }
 
-            // Top shine
             ctx.fillStyle = 'rgba(255,255,255,0.18)';
             ctx.fillRect(this.S(-bl.w/2 + 2), this.S(-bl.h/2 + 1.5), this.S(bl.w * 0.5), this.S(2.5));
 
@@ -547,7 +550,6 @@ class BlockVsBall {
         const ctx = this.ctx;
         const p = this.paddle;
 
-        // Trail
         p.trail.forEach((t, i) => {
             const ratio = i / p.trail.length;
             ctx.globalAlpha = ratio * 0.15;
@@ -557,23 +559,19 @@ class BlockVsBall {
         });
         ctx.globalAlpha = 1;
 
-        // Main paddle
         const pg = ctx.createLinearGradient(this.X(p.x - p.w/2), 0, this.X(p.x + p.w/2), 0);
         pg.addColorStop(0, '#00D4FF'); pg.addColorStop(0.5, '#0088FF'); pg.addColorStop(1, '#00D4FF');
         ctx.fillStyle = pg;
         this._rrect(p.x - p.w/2, p.y - p.h/2, p.w, p.h, 7);
         ctx.fill();
 
-        // Outline
         ctx.strokeStyle = 'rgba(255,255,255,0.25)'; ctx.lineWidth = this.S(1);
         this._rrect(p.x - p.w/2, p.y - p.h/2, p.w, p.h, 7);
         ctx.stroke();
 
-        // Shine
         ctx.fillStyle = 'rgba(255,255,255,0.3)';
         ctx.fillRect(this.X(p.x - p.w/2 + 4), this.X(p.y - p.h/2 + 2), this.S(p.w * 0.4), this.S(3));
 
-        // Lives indicator
         for (let i = 0; i < this.lives; i++) {
             ctx.fillStyle = i === 0 ? '#FF006E' : '#FF006E88';
             this._circle(p.x - 14 + i * 14, p.y + p.h / 2 + 10, 4);
@@ -584,7 +582,6 @@ class BlockVsBall {
     _drawBalls(ts) {
         const ctx = this.ctx;
         this.balls.forEach(b => {
-            // Trail
             b.trail.forEach((t, i) => {
                 const ratio = i / b.trail.length;
                 ctx.globalAlpha = ratio * 0.3;
@@ -594,13 +591,11 @@ class BlockVsBall {
             });
             ctx.globalAlpha = 1;
 
-            // Ball body
             const bg = ctx.createRadialGradient(this.X(b.x - b.r * 0.3), this.X(b.y - b.r * 0.3), 0, this.X(b.x), this.X(b.y), this.S(b.r));
             bg.addColorStop(0, '#fff'); bg.addColorStop(0.4, '#eef8ff'); bg.addColorStop(1, '#00D4FF');
             ctx.fillStyle = bg;
             this._circle(b.x, b.y, b.r); ctx.fill();
 
-            // Outline
             ctx.strokeStyle = 'rgba(255,255,255,0.3)'; ctx.lineWidth = this.S(1);
             this._circle(b.x, b.y, b.r); ctx.stroke();
         });
@@ -740,13 +735,24 @@ class BlockVsBall {
     }
 
     resize() {
-        this._setupHD();
+        // FIX: resize bhi parent-based use karo
+        const parent = this.canvas.parentElement;
+        if (parent && parent.clientWidth > 10 && parent.clientHeight > 10) {
+            const w = parent.clientWidth;
+            const h = parent.clientHeight;
+            this.canvas.width  = Math.round(w * this.dpr);
+            this.canvas.height = Math.round(h * this.dpr);
+            this.canvas.style.width  = w + 'px';
+            this.canvas.style.height = h + 'px';
+        } else {
+            this._setupHD();
+        }
         this.W = this.canvas.width / this.dpr;
         this.H = this.canvas.height / this.dpr;
         this.paddle.y = this.H - 42;
         this.paddle.w = Math.min(this.W * 0.28, 120);
         this.COLS = Math.min(8, Math.floor((this.W - 20) / 48));
-        this.stars = this._mkStars(this.isMobile ? 25 : 45);
+        this.stars = this._mkStars(this.isMobile ? 20 : 45);
     }
 
     destroy() {
