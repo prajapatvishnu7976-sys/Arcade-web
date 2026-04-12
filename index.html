@@ -17,6 +17,10 @@
     <link rel="stylesheet" href="css/animations.css">
     <link rel="stylesheet" href="css/games.css">
     <style>
+        /* ── Remove bottom nav completely ── */
+        .bottom-nav { display: none !important; }
+
+        /* ── Game cards ── */
         .game-thumb-canvas{width:100%;height:100%;display:block;border-radius:12px 12px 0 0}
         .game-card{position:relative;border-radius:14px;overflow:hidden;background:#12122a;border:1.5px solid rgba(179,71,217,.18);cursor:pointer;transition:transform .25s,box-shadow .25s,border-color .25s;-webkit-tap-highlight-color:transparent;box-shadow:0 4px 24px rgba(0,0,0,.45)}
         .game-card:active{transform:scale(.96)}
@@ -33,17 +37,25 @@
         .game-card-name{font-family:'Rajdhani',sans-serif;font-size:.95rem;font-weight:700;letter-spacing:.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#fff}
         .game-card-desc{font-size:.72rem;color:#8080a8;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
         .game-card-rating{display:flex;align-items:center;gap:4px;margin-top:5px;font-size:.7rem;color:#ffab00;font-weight:600}
+
+        /* ── Game header ── */
         .game-header{display:flex;align-items:center;gap:10px;padding:8px 12px;background:rgba(10,10,26,.97);border-bottom:1px solid rgba(179,71,217,.2);position:relative;z-index:10}
-        .back-btn{font-family:'Rajdhani',sans-serif;font-size:.85rem;font-weight:700;color:#b0b0d0;padding:7px 13px;border-radius:8px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);flex-shrink:0;transition:background .2s}
+        .back-btn{font-family:'Rajdhani',sans-serif;font-size:.85rem;font-weight:700;color:#b0b0d0;padding:7px 13px;border-radius:8px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);flex-shrink:0;transition:background .2s;cursor:pointer}
         .back-btn:active{background:rgba(255,255,255,.12)}
         .game-info{flex:1;min-width:0;text-align:center}
         .game-title{font-family:'Rajdhani',sans-serif;font-size:.9rem;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#fff;letter-spacing:.5px}
         .game-score-pill{flex-shrink:0;padding:5px 10px;background:rgba(179,71,217,.12);border:1px solid rgba(179,71,217,.25);border-radius:20px;font-family:'Orbitron',sans-serif;font-size:.75rem;font-weight:700;color:#d470ff;white-space:nowrap}
+
+        /* ── Game wrapper ── */
         .game-wrapper{position:relative;width:100%;background:#000;overflow:hidden;height:calc(100dvh - 48px)}
         #game-canvas{width:100%;height:100%;display:block;touch-action:none;-webkit-user-select:none;user-select:none}
+
+        /* ── Fullscreen btn ── */
         #fullscreen-btn{position:absolute;bottom:14px;right:14px;width:42px;height:42px;background:rgba(0,0,0,.55);backdrop-filter:blur(8px);border:1.5px solid rgba(255,255,255,.18);border-radius:10px;display:flex;align-items:center;justify-content:center;z-index:50;cursor:pointer;transition:background .2s,transform .15s;-webkit-tap-highlight-color:transparent}
         #fullscreen-btn:active{transform:scale(.9);background:rgba(0,0,0,.75)}
         #fullscreen-btn svg{width:20px;height:20px;fill:none;stroke:#fff;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+
+        /* ── Overlay ── */
         .game-overlay{position:absolute;inset:0;background:rgba(10,10,26,.88);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;z-index:40}
         .game-overlay.hidden{display:none}
         .overlay-content{text-align:center;padding:28px 24px}
@@ -51,19 +63,33 @@
         .overlay-score{font-family:'Rajdhani',sans-serif;font-size:1.1rem;color:#b0b0d0;margin-bottom:22px}
         .overlay-buttons{display:flex;flex-direction:column;gap:10px;align-items:center}
         .game-instructions{display:none}
+
+        /* ── Toast ── */
         #instruction-toast{position:absolute;bottom:70px;left:50%;transform:translateX(-50%);padding:8px 18px;background:rgba(0,0,0,.68);backdrop-filter:blur(6px);border:1px solid rgba(255,255,255,.12);border-radius:20px;font-family:'Rajdhani',sans-serif;font-size:.8rem;color:rgba(255,255,255,.75);white-space:nowrap;z-index:45;pointer-events:none;opacity:1;transition:opacity .6s}
         #instruction-toast.hide{opacity:0}
+
         .no-results{text-align:center;padding:50px 20px;color:#6a6a9a;font-family:'Rajdhani',sans-serif;font-size:1rem}
+
+        /* ── Fullscreen fixes ── */
         body.fs-active{overflow:hidden}
-        :fullscreen .navbar,:fullscreen .bottom-nav,:-webkit-full-screen .navbar,:-webkit-full-screen .bottom-nav{display:none!important}
+        :fullscreen .navbar,:-webkit-full-screen .navbar{display:none!important}
         :fullscreen .game-wrapper,:-webkit-full-screen .game-wrapper{height:100dvh!important}
+
+        /* ── No bottom nav = more space ── */
+        .main-content { padding-bottom: 0 !important; }
+        .footer { margin-bottom: 0 !important; }
     </style>
 </head>
 <body>
 
+<!-- LOADING SCREEN -->
 <div id="loading-screen" class="loading-screen">
     <div class="loader-container">
-        <div class="neon-loader"><div class="loader-ring"></div><div class="loader-ring"></div><div class="loader-ring"></div></div>
+        <div class="neon-loader">
+            <div class="loader-ring"></div>
+            <div class="loader-ring"></div>
+            <div class="loader-ring"></div>
+        </div>
         <h1 class="loader-title">NEON<span class="glow-text">ARCADE</span></h1>
         <div class="loader-bar"><div class="loading-bar-fill" id="loading-bar-fill"></div></div>
         <p class="loading-text" id="loading-text">Loading Premium Experience...</p>
@@ -73,6 +99,8 @@
 <canvas id="particles-canvas"></canvas>
 
 <div id="app" class="app hidden">
+
+    <!-- NAVBAR -->
     <nav class="navbar" id="navbar">
         <div class="nav-container">
             <a href="#" class="logo" data-page="home">
@@ -87,13 +115,17 @@
             </ul>
             <div class="nav-actions">
                 <button class="sound-toggle" id="sound-toggle" title="Toggle Sound">
-                    <span class="sound-on">🔊</span><span class="sound-off hidden">🔇</span>
+                    <span class="sound-on">🔊</span>
+                    <span class="sound-off hidden">🔇</span>
                 </button>
-                <button class="hamburger" id="hamburger" aria-label="Menu"><span></span><span></span><span></span></button>
+                <button class="hamburger" id="hamburger" aria-label="Menu">
+                    <span></span><span></span><span></span>
+                </button>
             </div>
         </div>
     </nav>
 
+    <!-- MOBILE MENU -->
     <div class="mobile-menu" id="mobile-menu">
         <ul class="mobile-nav-links">
             <li><a href="#" class="mobile-nav-link" data-page="home"><span class="nav-icon">🏠</span> Home</a></li>
@@ -104,7 +136,8 @@
     </div>
 
     <main class="main-content">
-        <!-- HOME -->
+
+        <!-- HOME PAGE -->
         <section id="home-page" class="page active">
             <div class="hero-section">
                 <div class="hero-content">
@@ -125,7 +158,7 @@
             </div>
         </section>
 
-        <!-- GAMES -->
+        <!-- GAMES PAGE -->
         <section id="games-page" class="page">
             <div class="page-header">
                 <h1 class="page-title">Game Library</h1>
@@ -147,7 +180,7 @@
             <div class="games-grid" id="games-grid"></div>
         </section>
 
-        <!-- LEADERBOARD -->
+        <!-- LEADERBOARD PAGE -->
         <section id="leaderboard-page" class="page">
             <div class="page-header">
                 <h1 class="page-title">🏆 Leaderboard</h1>
@@ -161,7 +194,7 @@
             </div>
         </section>
 
-        <!-- ABOUT -->
+        <!-- ABOUT PAGE -->
         <section id="about-page" class="page">
             <div class="about-container">
                 <div class="about-header">
@@ -189,19 +222,31 @@
             </div>
         </section>
 
-        <!-- GAME PLAYER -->
+        <!-- GAME PLAYER PAGE -->
         <section id="game-page" class="page">
             <div class="game-container">
                 <div class="game-header" id="game-header">
                     <button class="back-btn" id="back-to-games">← Back</button>
-                    <div class="game-info"><h2 class="game-title" id="current-game-title">Game</h2></div>
+                    <div class="game-info">
+                        <h2 class="game-title" id="current-game-title">Game</h2>
+                    </div>
                     <div class="game-score-pill"><span id="game-score">0</span></div>
                 </div>
                 <div class="game-wrapper" id="game-wrapper">
                     <canvas id="game-canvas"></canvas>
                     <button id="fullscreen-btn" title="Fullscreen" aria-label="Toggle Fullscreen">
-                        <svg id="fs-expand-icon" viewBox="0 0 24 24"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
-                        <svg id="fs-compress-icon" viewBox="0 0 24 24" style="display:none;"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="10" y1="14" x2="3" y2="21"/><line x1="21" y1="3" x2="14" y2="10"/></svg>
+                        <svg id="fs-expand-icon" viewBox="0 0 24 24">
+                            <polyline points="15 3 21 3 21 9"/>
+                            <polyline points="9 21 3 21 3 15"/>
+                            <line x1="21" y1="3" x2="14" y2="10"/>
+                            <line x1="3" y1="21" x2="10" y2="14"/>
+                        </svg>
+                        <svg id="fs-compress-icon" viewBox="0 0 24 24" style="display:none;">
+                            <polyline points="4 14 10 14 10 20"/>
+                            <polyline points="20 10 14 10 14 4"/>
+                            <line x1="10" y1="14" x2="3" y2="21"/>
+                            <line x1="21" y1="3" x2="14" y2="10"/>
+                        </svg>
                     </button>
                     <div id="instruction-toast"></div>
                     <div class="game-overlay hidden" id="game-overlay">
@@ -218,28 +263,37 @@
                 <div class="game-instructions" id="game-instructions"></div>
             </div>
         </section>
+
     </main>
 
-    <nav class="bottom-nav" id="bottom-nav">
-        <a href="#" class="bottom-nav-item active" data-page="home"><span class="bottom-nav-icon">🏠</span><span class="bottom-nav-label">Home</span></a>
-        <a href="#" class="bottom-nav-item" data-page="games"><span class="bottom-nav-icon">🎮</span><span class="bottom-nav-label">Games</span></a>
-        <a href="#" class="bottom-nav-item" data-page="leaderboard"><span class="bottom-nav-icon">🏆</span><span class="bottom-nav-label">Ranks</span></a>
-        <a href="#" class="bottom-nav-item" data-page="about"><span class="bottom-nav-icon">ℹ️</span><span class="bottom-nav-label">About</span></a>
-    </nav>
-
+    <!-- FOOTER (no bottom nav above it now) -->
     <footer class="footer">
         <div class="footer-content">
-            <div class="footer-brand"><span class="logo-text">NEON<span class="accent">ARCADE</span></span><p>Premium Gaming Experience</p></div>
-            <div class="footer-links"><a href="#" data-page="home">Home</a><a href="#" data-page="games">Games</a><a href="#" data-page="leaderboard">Leaderboard</a><a href="#" data-page="about">About</a></div>
+            <div class="footer-brand">
+                <span class="logo-text">NEON<span class="accent">ARCADE</span></span>
+                <p>Premium Gaming Experience</p>
+            </div>
+            <div class="footer-links">
+                <a href="#" data-page="home">Home</a>
+                <a href="#" data-page="games">Games</a>
+                <a href="#" data-page="leaderboard">Leaderboard</a>
+                <a href="#" data-page="about">About</a>
+            </div>
             <div class="footer-social"><span>Made with 💜 for gamers</span></div>
         </div>
         <div class="footer-bottom"><p>&copy; 2024 NeonArcade. All rights reserved.</p></div>
     </footer>
-</div>
 
-<!-- SCRIPTS -->
+</div><!-- /#app -->
+
+<!-- ═══════════════════════════════════════════
+     SCRIPTS — Order matters!
+     particles → audio → games → thumbnails → main
+     ═══════════════════════════════════════════ -->
 <script src="js/particles.js"></script>
 <script src="js/audio.js"></script>
+
+<!-- Games — each file must expose its own init, NOT auto-init -->
 <script src="js/games/bubble-shooter.js"></script>
 <script src="js/games/liquid-sort.js"></script>
 <script src="js/games/knife-hit.js"></script>
@@ -251,53 +305,266 @@
 <script src="js/games/jewel-legend.js"></script>
 <script src="js/games/block-vs-ball.js"></script>
 
-<!-- THUMBNAIL GENERATOR -->
+<!-- ── THUMBNAIL GENERATOR ── -->
 <script>
-const GameThumbnails=(()=>{
-const cache={};
-const PI=Math.PI,TAU=PI*2;
+const GameThumbnails = (() => {
+    const cache = {};
+    const PI = Math.PI, TAU = PI * 2;
 
-function bg(c,w,h,c1,c2,a=160){const r=(a*PI)/180;const g=c.createLinearGradient(w/2-Math.cos(r)*w,h/2-Math.sin(r)*h,w/2+Math.cos(r)*w,h/2+Math.sin(r)*h);g.addColorStop(0,c1);g.addColorStop(1,c2);c.fillStyle=g;c.fillRect(0,0,w,h)}
-function circ(c,x,y,r,col,gl=0){c.save();if(gl){c.shadowColor=col;c.shadowBlur=gl}c.beginPath();c.arc(x,y,r,0,TAU);c.fillStyle=col;c.fill();c.restore()}
-function rr(c,x,y,w,h,r,f,gl=0){c.save();if(gl){c.shadowColor=f;c.shadowBlur=gl}c.beginPath();c.moveTo(x+r,y);c.arcTo(x+w,y,x+w,y+h,r);c.arcTo(x+w,y+h,x,y+h,r);c.arcTo(x,y+h,x,y,r);c.arcTo(x,y,x+w,y,r);c.closePath();c.fillStyle=f;c.fill();c.restore()}
-function shine(c,x,y,r){const g=c.createRadialGradient(x-r*.3,y-r*.3,0,x,y,r);g.addColorStop(0,'rgba(255,255,255,.45)');g.addColorStop(.5,'rgba(255,255,255,.08)');g.addColorStop(1,'rgba(255,255,255,0)');c.save();c.beginPath();c.arc(x,y,r,0,TAU);c.fillStyle=g;c.fill();c.restore()}
+    function bg(c, w, h, c1, c2, a = 160) {
+        const r = (a * PI) / 180;
+        const g = c.createLinearGradient(w/2 - Math.cos(r)*w, h/2 - Math.sin(r)*h, w/2 + Math.cos(r)*w, h/2 + Math.sin(r)*h);
+        g.addColorStop(0, c1); g.addColorStop(1, c2);
+        c.fillStyle = g; c.fillRect(0, 0, w, h);
+    }
+    function circ(c, x, y, r, col, gl = 0) {
+        c.save(); if (gl) { c.shadowColor = col; c.shadowBlur = gl; }
+        c.beginPath(); c.arc(x, y, r, 0, TAU); c.fillStyle = col; c.fill(); c.restore();
+    }
+    function rr(c, x, y, w, h, r, f, gl = 0) {
+        c.save(); if (gl) { c.shadowColor = f; c.shadowBlur = gl; }
+        c.beginPath(); c.moveTo(x+r,y); c.arcTo(x+w,y,x+w,y+h,r); c.arcTo(x+w,y+h,x,y+h,r);
+        c.arcTo(x,y+h,x,y,r); c.arcTo(x,y,x+w,y,r); c.closePath();
+        c.fillStyle = f; c.fill(); c.restore();
+    }
+    function shine(c, x, y, r) {
+        const g = c.createRadialGradient(x-r*.3, y-r*.3, 0, x, y, r);
+        g.addColorStop(0,'rgba(255,255,255,.45)'); g.addColorStop(.5,'rgba(255,255,255,.08)'); g.addColorStop(1,'rgba(255,255,255,0)');
+        c.save(); c.beginPath(); c.arc(x,y,r,0,TAU); c.fillStyle=g; c.fill(); c.restore();
+    }
 
-function bubbleShooter(c,w,h){bg(c,w,h,'#0d1b3e','#1a0d3e');const cols=['#ff4d8d','#00ddff','#7cff5b','#ffcc00','#cc44ff','#ff7043'];const R=Math.min(w,h)*.075;const nc=Math.floor(w/(R*2+4));for(let row=0;row<5;row++){const off=row%2===0?0:R+2;const n=row%2===0?nc:nc-1;for(let i=0;i<n;i++){const x=R+off+i*(R*2+4),y=R+row*(R*1.78+2);circ(c,x,y,R,cols[(row*3+i)%cols.length],14);shine(c,x,y,R)}}circ(c,w/2,h-20,R*1.1,cols[2],20);shine(c,w/2,h-20,R*1.1)}
+    function bubbleShooter(c,w,h){bg(c,w,h,'#0d1b3e','#1a0d3e');const cols=['#ff4d8d','#00ddff','#7cff5b','#ffcc00','#cc44ff','#ff7043'];const R=Math.min(w,h)*.075;const nc=Math.floor(w/(R*2+4));for(let row=0;row<5;row++){const off=row%2===0?0:R+2;const n=row%2===0?nc:nc-1;for(let i=0;i<n;i++){const x=R+off+i*(R*2+4),y=R+row*(R*1.78+2);circ(c,x,y,R,cols[(row*3+i)%cols.length],14);shine(c,x,y,R)}}circ(c,w/2,h-20,R*1.1,cols[2],20);shine(c,w/2,h-20,R*1.1)}
+    function liquidSort(c,w,h){bg(c,w,h,'#07071a','#12083a');const tubes=[['#ff4d8d','#ff4d8d','#00ddff','#7cff5b'],['#00ddff','#7cff5b','#ff4d8d','#ffcc00'],['#7cff5b','#ffcc00','#ffcc00','#00ddff'],['#ffcc00','#cc44ff','#ff4d8d','#cc44ff'],[],[]];const n=tubes.length,TW=Math.min(w*.11,42),TH=h*.52,gap=(w-n*TW)/(n+1),ty=(h-TH)/2-4;tubes.forEach((t,i)=>{const tx=gap+i*(TW+gap);c.strokeStyle='rgba(255,255,255,0.18)';c.lineWidth=1.5;c.beginPath();c.moveTo(tx,ty);c.lineTo(tx,ty+TH);c.lineTo(tx+TW,ty+TH);c.lineTo(tx+TW,ty);c.stroke();const LH=(TH-4)/4;t.forEach((col,j)=>{const ly=ty+TH-(j+1)*LH;c.save();c.shadowColor=col;c.shadowBlur=8;rr(c,tx+2,ly,TW-4,LH-1,2,col+'cc');c.restore()})})}
+    function knifeHit(c,w,h){bg(c,w,h,'#1a0505','#2d1010');const cx=w/2,cy=h*.42,R=Math.min(w,h)*.22;c.save();c.shadowColor='#ff5500';c.shadowBlur=30;circ(c,cx,cy,R,'#5a3820');c.restore();[.75,.5,.28].forEach(f=>{c.strokeStyle='rgba(255,255,255,0.07)';c.lineWidth=1;c.beginPath();c.arc(cx,cy,R*f,0,TAU);c.stroke()});[0.4,1.3,2.2,3.5,4.6,5.5].forEach(a=>{c.save();c.translate(cx,cy);c.rotate(a);c.fillStyle='#c8c8c8';c.fillRect(R-4,-2,28,4);c.fillStyle='#7a4010';c.fillRect(R+24,-5,14,10);c.restore()});c.save();c.shadowColor='#fff';c.shadowBlur=14;c.fillStyle='#d8d8d8';c.fillRect(cx-2,h-80,4,34);c.fillStyle='#7a4010';c.fillRect(cx-6,h-46,12,18);c.restore()}
+    function colorBump(c,w,h){bg(c,w,h,'#050510','#10102a');c.fillStyle='rgba(255,255,255,0.03)';c.fillRect(w*.3,0,w*.4,h);const obs=[{x:w*.45,y:h*.12,r:18,s:false},{x:w*.6,y:h*.25,r:14,s:true,c:'#ff4d8d'},{x:w*.38,y:h*.38,r:20,s:false},{x:w*.55,y:h*.52,r:16,s:true,c:'#ff4d8d'},{x:w*.42,y:h*.65,r:18,s:false}];obs.forEach(o=>{if(o.s){circ(c,o.x,o.y,o.r,o.c,12);shine(c,o.x,o.y,o.r)}else{c.strokeStyle='rgba(255,255,255,0.22)';c.lineWidth=2;c.beginPath();c.arc(o.x,o.y,o.r,0,TAU);c.stroke()}});circ(c,w*.48,h*.8,16,'#ff4d8d',22);shine(c,w*.48,h*.8,16)}
+    function bottleShooting(c,w,h){bg(c,w,h,'#050f1f','#0a1f35');rr(c,8,h*.42,w-16,6,3,'#4a3a22',6);const cols=['#00ddff','#ff4d8d','#7cff5b','#ffcc00','#cc44ff'];const bW=(w-40)/5;cols.forEach((cl,i)=>{const bx=20+i*bW+bW*.15,bw=bW*.55,by=h*.42-bw*2.4;c.save();c.shadowColor=cl;c.shadowBlur=12;rr(c,bx,by+bw*.28,bw,bw*1.85,5,cl+'88');c.fillStyle=cl+'66';c.fillRect(bx+bw*.3,by,bw*.4,bw*.32);rr(c,bx+bw*.25,by-4,bw*.5,7,2,cl);rr(c,bx+3,by+bw*.7,bw-6,bw*1.2,3,cl+'aa');c.restore()});const chx=w*.5,chy=h*.3;c.strokeStyle='rgba(255,60,60,0.7)';c.lineWidth=1.5;c.beginPath();c.arc(chx,chy,16,0,TAU);c.stroke();c.beginPath();c.moveTo(chx-23,chy);c.lineTo(chx+23,chy);c.moveTo(chx,chy-23);c.lineTo(chx,chy+23);c.stroke();circ(c,chx,chy,2.5,'#ff3c3c',8)}
+    function colorUp(c,w,h){bg(c,w,h,'#0a0022','#1a0844');const pal=['#ff4d8d','#00ddff','#7cff5b','#ffcc00','#cc44ff'];for(let i=0;i<8;i++){const pw=w*(.4+(i%3)*.08)+(i%2===0?20:-20),px=(i%2===0)?w*.08:w*.92-pw,py=h-40-i*(h*.1);c.save();c.shadowColor=pal[i%pal.length];c.shadowBlur=10;rr(c,px,py,pw,7,4,pal[i%pal.length]);c.restore()}circ(c,w*.48,h-62,13,'#fff',18);shine(c,w*.48,h-62,13)}
+    function flappyBird(c,w,h){const sg=c.createLinearGradient(0,0,0,h);sg.addColorStop(0,'#1a4a7a');sg.addColorStop(.75,'#2a7a4a');sg.addColorStop(1,'#0a3a1a');c.fillStyle=sg;c.fillRect(0,0,w,h);const PW=Math.min(w*.13,46),gap=h*.28;[{x:w*.3,t:h*.22},{x:w*.56,t:h*.35},{x:w*.78,t:h*.18}].forEach(p=>{const tg=c.createLinearGradient(p.x,0,p.x+PW,0);tg.addColorStop(0,'#3dc53d');tg.addColorStop(.5,'#55e055');tg.addColorStop(1,'#2a9e2a');c.fillStyle=tg;c.fillRect(p.x,0,PW,p.t);rr(c,p.x-4,p.t-14,PW+8,14,3,'#28922a');c.fillStyle=tg;c.fillRect(p.x,p.t+gap,PW,h-p.t-gap);rr(c,p.x-4,p.t+gap,PW+8,14,3,'#28922a')});const bx=w*.18,by=h*.46,br=Math.min(w,h)*.055;c.save();c.shadowColor='#ffcc00';c.shadowBlur=16;circ(c,bx,by,br,'#ffe040');c.restore();circ(c,bx+br*.4,by-br*.25,br*.22,'#fff');circ(c,bx+br*.48,by-br*.28,br*.11,'#111');c.fillStyle='#ff6d00';c.beginPath();c.moveTo(bx+br,by-1);c.lineTo(bx+br*1.7,by-1);c.lineTo(bx+br,by+br*.28);c.closePath();c.fill()}
+    function angryBirds(c,w,h){const sg=c.createLinearGradient(0,0,0,h);sg.addColorStop(0,'#1a3a5a');sg.addColorStop(.65,'#2a6a3a');sg.addColorStop(1,'#1a4a1a');c.fillStyle=sg;c.fillRect(0,0,w,h);c.fillStyle='#2a6a1a';c.fillRect(0,h*.78,w,h*.22);c.fillStyle='rgba(100,220,60,0.2)';c.fillRect(0,h*.78,w,3);const sx=w*.22,sy=h*.58;c.strokeStyle='#6B4A2A';c.lineWidth=6;c.lineCap='round';c.beginPath();c.moveTo(sx,sy);c.lineTo(sx-20,sy-h*.12);c.stroke();c.beginPath();c.moveTo(sx,sy);c.lineTo(sx+20,sy-h*.12);c.stroke();c.fillStyle='#5C3A1E';c.fillRect(sx-3,sy,6,h*.78-sy);const bx2=sx-10,by2=sy-15;circ(c,bx2,by2,14,'#FF2D4E',12);circ(c,bx2+4,by2-3,4,'#fff');circ(c,bx2+5,by2-2,2,'#111');c.fillStyle='#FF0000';c.beginPath();c.moveTo(bx2-2,by2-14);c.lineTo(bx2+5,by2-22);c.lineTo(bx2+8,by2-13);c.closePath();c.fill();c.fillStyle='#FF8C00';c.beginPath();c.moveTo(bx2+12,by2);c.lineTo(bx2+22,by2-2);c.lineTo(bx2+12,by2+4);c.closePath();c.fill();const strX=w*.6;[{x:strX,y:h*.78-90,w:30,h:90},{x:strX+35,y:h*.78-60,w:30,h:60},{x:strX-5,y:h*.78-60,w:70,h:8}].forEach(b=>{const bg2=c.createLinearGradient(b.x,b.y,b.x+b.w,b.y+b.h);bg2.addColorStop(0,'#C8A456');bg2.addColorStop(1,'#886622');c.fillStyle=bg2;c.fillRect(b.x,b.y,b.w,b.h);c.strokeStyle='rgba(255,255,255,0.12)';c.lineWidth=1;c.strokeRect(b.x,b.y,b.w,b.h)});const px2=strX+17,py2=h*.78-65-15;circ(c,px2,py2,15,'#44CC22',8);circ(c,px2-4,py2-3,4,'#fff');circ(c,px2-3,py2-2,2,'#111');circ(c,px2+4,py2-3,4,'#fff');circ(c,px2+5,py2-2,2,'#111');c.fillStyle='#228800';c.beginPath();c.ellipse(px2,py2+3,5,3.5,0,0,TAU);c.fill()}
+    function jewelLegend(c,w,h){bg(c,w,h,'#120828','#080518');const cols2=7,rows=6,CS=Math.min((w-20)/cols2,(h-60)/rows);const ox=(w-cols2*CS)/2,oy=35;c.fillStyle='rgba(5,2,20,0.5)';c.fillRect(ox-2,oy-2,cols2*CS+4,rows*CS+4);c.strokeStyle='rgba(185,79,227,0.25)';c.lineWidth=1.5;c.strokeRect(ox-2,oy-2,cols2*CS+4,rows*CS+4);const gems=[{col:'#FF2D6F',shape:'diamond'},{col:'#00D4FF',shape:'circle'},{col:'#00FF88',shape:'hex'},{col:'#FFD700',shape:'star'},{col:'#B94FE3',shape:'diamond'},{col:'#FF8C00',shape:'circle'}];for(let r=0;r<rows;r++){for(let cl=0;cl<cols2;cl++){const g2=gems[(r*7+cl*3)%gems.length];const gcx=ox+cl*CS+CS/2,gcy=oy+r*CS+CS/2,gr=CS*.35;const gd=c.createRadialGradient(gcx-gr*.3,gcy-gr*.3,0,gcx,gcy,gr);gd.addColorStop(0,'#fff');gd.addColorStop(.4,g2.col);gd.addColorStop(1,g2.col+'88');c.fillStyle=gd;if(g2.shape==='diamond'){c.beginPath();c.moveTo(gcx,gcy-gr);c.lineTo(gcx+gr*.7,gcy);c.lineTo(gcx,gcy+gr);c.lineTo(gcx-gr*.7,gcy);c.closePath();c.fill()}else if(g2.shape==='circle'){circ(c,gcx,gcy,gr,g2.col,6);shine(c,gcx,gcy,gr)}else if(g2.shape==='hex'){c.beginPath();for(let i=0;i<6;i++){const a=PI/3*i-PI/6;i===0?c.moveTo(gcx+gr*Math.cos(a),gcy+gr*Math.sin(a)):c.lineTo(gcx+gr*Math.cos(a),gcy+gr*Math.sin(a))}c.closePath();c.fillStyle=gd;c.fill()}else{c.beginPath();for(let i=0;i<10;i++){const a=PI/5*i-PI/2;const rr2=i%2===0?gr:gr*.45;c.lineTo(gcx+rr2*Math.cos(a),gcy+rr2*Math.sin(a))}c.closePath();c.fillStyle=gd;c.fill()}c.strokeStyle='rgba(255,255,255,0.12)';c.lineWidth=.8;c.stroke()}}}
+    function blockVsBall(c,w,h){bg(c,w,h,'#050515','#0a0a2a');for(let r=0;r<5;r++){for(let cl=0;cl<7;cl++){const bx=15+cl*((w-30)/7),by=30+r*25,bw=(w-30)/7-4,bh=20;const hp=Math.floor(Math.random()*50)+10;const ratio=hp/60;const col=`hsl(${200+ratio*160},80%,${50+ratio*15}%)`;c.fillStyle=col;c.beginPath();if(c.roundRect)c.roundRect(bx,by,bw,bh,4);else c.rect(bx,by,bw,bh);c.fill();c.strokeStyle='rgba(255,255,255,0.1)';c.lineWidth=.8;c.stroke();c.fillStyle='rgba(255,255,255,0.7)';c.font='bold 10px sans-serif';c.textAlign='center';c.textBaseline='middle';c.fillText(hp,bx+bw/2,by+bh/2)}}circ(c,w/2,h*.75,8,'#fff',14);c.fillStyle='rgba(255,255,255,0.12)';c.fillRect(w*.3,h*.88,w*.4,10);rr(c,w/2-30,h*.88,60,10,5,'#00D4FF',8)}
 
-function liquidSort(c,w,h){bg(c,w,h,'#07071a','#12083a');const tubes=[['#ff4d8d','#ff4d8d','#00ddff','#7cff5b'],['#00ddff','#7cff5b','#ff4d8d','#ffcc00'],['#7cff5b','#ffcc00','#ffcc00','#00ddff'],['#ffcc00','#cc44ff','#ff4d8d','#cc44ff'],[],[]];const n=tubes.length,TW=Math.min(w*.11,42),TH=h*.52,gap=(w-n*TW)/(n+1),ty=(h-TH)/2-4;tubes.forEach((t,i)=>{const tx=gap+i*(TW+gap);c.strokeStyle='rgba(255,255,255,0.18)';c.lineWidth=1.5;c.beginPath();c.moveTo(tx,ty);c.lineTo(tx,ty+TH);c.lineTo(tx+TW,ty+TH);c.lineTo(tx+TW,ty);c.stroke();const LH=(TH-4)/4;t.forEach((col,j)=>{const ly=ty+TH-(j+1)*LH;c.save();c.shadowColor=col;c.shadowBlur=8;rr(c,tx+2,ly,TW-4,LH-1,2,col+'cc');c.restore()})})}
+    const DRAWERS = {
+        'bubble-shooter': bubbleShooter,
+        'liquid-sort':    liquidSort,
+        'knife-hit':      knifeHit,
+        'color-bump':     colorBump,
+        'bottle-shooting':bottleShooting,
+        'color-up':       colorUp,
+        'flappy-bird':    flappyBird,
+        'angry-birds':    angryBirds,
+        'jewel-legend':   jewelLegend,
+        'block-vs-ball':  blockVsBall
+    };
 
-function knifeHit(c,w,h){bg(c,w,h,'#1a0505','#2d1010');const cx=w/2,cy=h*.42,R=Math.min(w,h)*.22;c.save();c.shadowColor='#ff5500';c.shadowBlur=30;circ(c,cx,cy,R,'#5a3820');c.restore();[.75,.5,.28].forEach(f=>{c.strokeStyle='rgba(255,255,255,0.07)';c.lineWidth=1;c.beginPath();c.arc(cx,cy,R*f,0,TAU);c.stroke()});[0.4,1.3,2.2,3.5,4.6,5.5].forEach(a=>{c.save();c.translate(cx,cy);c.rotate(a);c.fillStyle='#c8c8c8';c.fillRect(R-4,-2,28,4);c.fillStyle='#7a4010';c.fillRect(R+24,-5,14,10);c.restore()});c.save();c.shadowColor='#fff';c.shadowBlur=14;c.fillStyle='#d8d8d8';c.fillRect(cx-2,h-80,4,34);c.fillStyle='#7a4010';c.fillRect(cx-6,h-46,12,18);c.restore()}
+    return {
+        generate(id, w = 480, h = 300) {
+            if (cache[id]) return cache[id];
+            const cv = document.createElement('canvas');
+            cv.width = w; cv.height = h;
+            const cx = cv.getContext('2d');
+            const fn = DRAWERS[id];
+            if (fn) {
+                fn(cx, w, h);
+            } else {
+                const gg = cx.createLinearGradient(0, 0, w, h);
+                gg.addColorStop(0, '#1a0038'); gg.addColorStop(1, '#003838');
+                cx.fillStyle = gg; cx.fillRect(0, 0, w, h);
+                cx.font = `bold ${w * .07}px Orbitron,sans-serif`;
+                cx.fillStyle = '#fff'; cx.textAlign = 'center';
+                cx.fillText(id.replace(/-/g, ' ').toUpperCase(), w/2, h/2+10);
+            }
+            cache[id] = cv.toDataURL();
+            return cache[id];
+        }
+    };
+})();
+</script>
 
-function colorBump(c,w,h){bg(c,w,h,'#050510','#10102a');c.fillStyle='rgba(255,255,255,0.03)';c.fillRect(w*.3,0,w*.4,h);const obs=[{x:w*.45,y:h*.12,r:18,s:false},{x:w*.6,y:h*.25,r:14,s:true,c:'#ff4d8d'},{x:w*.38,y:h*.38,r:20,s:false},{x:w*.55,y:h*.52,r:16,s:true,c:'#ff4d8d'},{x:w*.42,y:h*.65,r:18,s:false}];obs.forEach(o=>{if(o.s){circ(c,o.x,o.y,o.r,o.c,12);shine(c,o.x,o.y,o.r)}else{c.strokeStyle='rgba(255,255,255,0.22)';c.lineWidth=2;c.beginPath();c.arc(o.x,o.y,o.r,0,TAU);c.stroke()}});circ(c,w*.48,h*.8,16,'#ff4d8d',22);shine(c,w*.48,h*.8,16)}
+<!-- ═══════════════════════════════════════════════════════
+     GAME ROUTER — Yahi fix hai!
+     Har game ka apna init function call hota hai.
+     liquid-sort sirf liquid-sort ke liye hi khulega.
+     ═══════════════════════════════════════════════════════ -->
+<script>
+(function() {
+    'use strict';
 
-function bottleShooting(c,w,h){bg(c,w,h,'#050f1f','#0a1f35');rr(c,8,h*.42,w-16,6,3,'#4a3a22',6);const cols=['#00ddff','#ff4d8d','#7cff5b','#ffcc00','#cc44ff'];const bW=(w-40)/5;cols.forEach((cl,i)=>{const bx=20+i*bW+bW*.15,bw=bW*.55,by=h*.42-bw*2.4;c.save();c.shadowColor=cl;c.shadowBlur=12;rr(c,bx,by+bw*.28,bw,bw*1.85,5,cl+'88');c.fillStyle=cl+'66';c.fillRect(bx+bw*.3,by,bw*.4,bw*.32);rr(c,bx+bw*.25,by-4,bw*.5,7,2,cl);rr(c,bx+3,by+bw*.7,bw-6,bw*1.2,3,cl+'aa');c.restore()});const chx=w*.5,chy=h*.3;c.strokeStyle='rgba(255,60,60,0.7)';c.lineWidth=1.5;c.beginPath();c.arc(chx,chy,16,0,TAU);c.stroke();c.beginPath();c.moveTo(chx-23,chy);c.lineTo(chx+23,chy);c.moveTo(chx,chy-23);c.lineTo(chx,chy+23);c.stroke();circ(c,chx,chy,2.5,'#ff3c3c',8)}
+    // ── Game registry — id must match JS file's init function ──
+    const GAME_REGISTRY = {
+        'bubble-shooter': {
+            init: function(canvas, onScore) {
+                if (window.BubbleShooter) return new window.BubbleShooter(canvas, onScore);
+                if (window.initBubbleShooter) return window.initBubbleShooter(canvas, onScore);
+                console.warn('BubbleShooter not found');
+                return null;
+            },
+            name: 'Bubble Shooter'
+        },
+        'liquid-sort': {
+            init: function(canvas, onScore) {
+                // liquid-sort uses a container div, not canvas directly
+                if (window.LiquidSort) {
+                    window.LiquidSort.restart && window.LiquidSort.restart();
+                    return window.LiquidSort;
+                }
+                // Re-init if needed
+                if (typeof initLiquidSort === 'function') return initLiquidSort(canvas, onScore);
+                console.warn('LiquidSort not found');
+                return null;
+            },
+            name: 'Liquid Sort'
+        },
+        'knife-hit': {
+            init: function(canvas, onScore) {
+                if (window.KnifeHit) return new window.KnifeHit(canvas, onScore);
+                if (window.initKnifeHit) return window.initKnifeHit(canvas, onScore);
+                console.warn('KnifeHit not found');
+                return null;
+            },
+            name: 'Knife Hit'
+        },
+        'color-bump': {
+            init: function(canvas, onScore) {
+                if (window.ColorBump) return new window.ColorBump(canvas, onScore);
+                if (window.initColorBump) return window.initColorBump(canvas, onScore);
+                console.warn('ColorBump not found');
+                return null;
+            },
+            name: 'Color Bump'
+        },
+        'bottle-shooting': {
+            init: function(canvas, onScore) {
+                if (window.BottleShooting) return new window.BottleShooting(canvas, onScore);
+                if (window.initBottleShooting) return window.initBottleShooting(canvas, onScore);
+                console.warn('BottleShooting not found');
+                return null;
+            },
+            name: 'Bottle Shooting'
+        },
+        'color-up': {
+            init: function(canvas, onScore) {
+                if (window.ColorUp) return new window.ColorUp(canvas, onScore);
+                if (window.initColorUp) return window.initColorUp(canvas, onScore);
+                console.warn('ColorUp not found');
+                return null;
+            },
+            name: 'Color Up'
+        },
+        'flappy-bird': {
+            init: function(canvas, onScore) {
+                if (window.FlappyBird) return new window.FlappyBird(canvas, onScore);
+                if (window.initFlappyBird) return window.initFlappyBird(canvas, onScore);
+                console.warn('FlappyBird not found');
+                return null;
+            },
+            name: 'Flappy Bird'
+        },
+        'angry-birds': {
+            init: function(canvas, onScore) {
+                if (window.AngryBirds) return new window.AngryBirds(canvas, onScore);
+                if (window.initAngryBirds) return window.initAngryBirds(canvas, onScore);
+                console.warn('AngryBirds not found');
+                return null;
+            },
+            name: 'Angry Birds'
+        },
+        'jewel-legend': {
+            init: function(canvas, onScore) {
+                if (window.JewelLegend) return new window.JewelLegend(canvas, onScore);
+                if (window.initJewelLegend) return window.initJewelLegend(canvas, onScore);
+                console.warn('JewelLegend not found');
+                return null;
+            },
+            name: 'Jewel Legend'
+        },
+        'block-vs-ball': {
+            init: function(canvas, onScore) {
+                if (window.BlockVsBall) return new window.BlockVsBall(canvas, onScore);
+                if (window.initBlockVsBall) return window.initBlockVsBall(canvas, onScore);
+                console.warn('BlockVsBall not found');
+                return null;
+            },
+            name: 'Block vs Ball'
+        }
+    };
 
-function colorUp(c,w,h){bg(c,w,h,'#0a0022','#1a0844');const pal=['#ff4d8d','#00ddff','#7cff5b','#ffcc00','#cc44ff'];for(let i=0;i<8;i++){const pw=w*(.4+(i%3)*.08)+(i%2===0?20:-20),px=(i%2===0)?w*.08:w*.92-pw,py=h-40-i*(h*.1);c.save();c.shadowColor=pal[i%pal.length];c.shadowBlur=10;rr(c,px,py,pw,7,4,pal[i%pal.length]);c.restore()}circ(c,w*.48,h-62,13,'#fff',18);shine(c,w*.48,h-62,13)}
+    // ── Expose registry globally so main.js can use it ──
+    window.GAME_REGISTRY = GAME_REGISTRY;
 
-function flappyBird(c,w,h){const sg=c.createLinearGradient(0,0,0,h);sg.addColorStop(0,'#1a4a7a');sg.addColorStop(.75,'#2a7a4a');sg.addColorStop(1,'#0a3a1a');c.fillStyle=sg;c.fillRect(0,0,w,h);const PW=Math.min(w*.13,46),gap=h*.28;[{x:w*.3,t:h*.22},{x:w*.56,t:h*.35},{x:w*.78,t:h*.18}].forEach(p=>{const tg=c.createLinearGradient(p.x,0,p.x+PW,0);tg.addColorStop(0,'#3dc53d');tg.addColorStop(.5,'#55e055');tg.addColorStop(1,'#2a9e2a');c.fillStyle=tg;c.fillRect(p.x,0,PW,p.t);rr(c,p.x-4,p.t-14,PW+8,14,3,'#28922a');c.fillStyle=tg;c.fillRect(p.x,p.t+gap,PW,h-p.t-gap);rr(c,p.x-4,p.t+gap,PW+8,14,3,'#28922a')});const bx=w*.18,by=h*.46,br=Math.min(w,h)*.055;c.save();c.shadowColor='#ffcc00';c.shadowBlur=16;circ(c,bx,by,br,'#ffe040');c.restore();circ(c,bx+br*.4,by-br*.25,br*.22,'#fff');circ(c,bx+br*.48,by-br*.28,br*.11,'#111');c.fillStyle='#ff6d00';c.beginPath();c.moveTo(bx+br,by-1);c.lineTo(bx+br*1.7,by-1);c.lineTo(bx+br,by+br*.28);c.closePath();c.fill()}
+    // ── Active game instance ──
+    let activeGameId   = null;
+    let activeInstance = null;
 
-function angryBirds(c,w,h){const sg=c.createLinearGradient(0,0,0,h);sg.addColorStop(0,'#1a3a5a');sg.addColorStop(.65,'#2a6a3a');sg.addColorStop(1,'#1a4a1a');c.fillStyle=sg;c.fillRect(0,0,w,h);c.fillStyle='#2a6a1a';c.fillRect(0,h*.78,w,h*.22);c.fillStyle='rgba(100,220,60,0.2)';c.fillRect(0,h*.78,w,3);const sx=w*.22,sy=h*.58;c.strokeStyle='#6B4A2A';c.lineWidth=6;c.lineCap='round';c.beginPath();c.moveTo(sx,sy);c.lineTo(sx-20,sy-h*.12);c.stroke();c.beginPath();c.moveTo(sx,sy);c.lineTo(sx+20,sy-h*.12);c.stroke();c.fillStyle='#5C3A1E';c.fillRect(sx-3,sy,6,h*.78-sy);const bx2=sx-10,by2=sy-15;circ(c,bx2,by2,14,'#FF2D4E',12);circ(c,bx2+4,by2-3,4,'#fff');circ(c,bx2+5,by2-2,2,'#111');c.fillStyle='#FF0000';c.beginPath();c.moveTo(bx2-2,by2-14);c.lineTo(bx2+5,by2-22);c.lineTo(bx2+8,by2-13);c.closePath();c.fill();c.fillStyle='#FF8C00';c.beginPath();c.moveTo(bx2+12,by2);c.lineTo(bx2+22,by2-2);c.lineTo(bx2+12,by2+4);c.closePath();c.fill();const strX=w*.6;[{x:strX,y:h*.78-90,w:30,h:90},{x:strX+35,y:h*.78-60,w:30,h:60},{x:strX-5,y:h*.78-60,w:70,h:8}].forEach(b=>{const bg2=c.createLinearGradient(b.x,b.y,b.x+b.w,b.y+b.h);bg2.addColorStop(0,'#C8A456');bg2.addColorStop(1,'#886622');c.fillStyle=bg2;c.fillRect(b.x,b.y,b.w,b.h);c.strokeStyle='rgba(255,255,255,0.12)';c.lineWidth=1;c.strokeRect(b.x,b.y,b.w,b.h)});const px2=strX+17,py2=h*.78-65-15;circ(c,px2,py2,15,'#44CC22',8);circ(c,px2-4,py2-3,4,'#fff');circ(c,px2-3,py2-2,2,'#111');circ(c,px2+4,py2-3,4,'#fff');circ(c,px2+5,py2-2,2,'#111');c.fillStyle='#228800';c.beginPath();c.ellipse(px2,py2+3,5,3.5,0,0,TAU);c.fill()}
+    /**
+     * Launch a game by id.
+     * Called from main.js when user clicks a game card.
+     */
+    window.launchGame = function(gameId) {
+        const entry = GAME_REGISTRY[gameId];
+        if (!entry) {
+            console.error('Game not registered:', gameId);
+            return;
+        }
 
-function jewelLegend(c,w,h){bg(c,w,h,'#120828','#080518');const cols=7,rows=6,CS=Math.min((w-20)/cols,(h-60)/rows);const ox=(w-cols*CS)/2,oy=35;c.fillStyle='rgba(5,2,20,0.5)';c.fillRect(ox-2,oy-2,cols*CS+4,rows*CS+4);c.strokeStyle='rgba(185,79,227,0.25)';c.lineWidth=1.5;c.strokeRect(ox-2,oy-2,cols*CS+4,rows*CS+4);const gems=[{col:'#FF2D6F',shape:'diamond'},{col:'#00D4FF',shape:'circle'},{col:'#00FF88',shape:'hex'},{col:'#FFD700',shape:'star'},{col:'#B94FE3',shape:'diamond'},{col:'#FF8C00',shape:'circle'}];for(let r=0;r<rows;r++){for(let cl=0;cl<cols;cl++){const g=gems[(r*7+cl*3)%gems.length];const cx=ox+cl*CS+CS/2,cy=oy+r*CS+CS/2,gr=CS*.35;const gd=c.createRadialGradient(cx-gr*.3,cy-gr*.3,0,cx,cy,gr);gd.addColorStop(0,'#fff');gd.addColorStop(.4,g.col);gd.addColorStop(1,g.col+'88');c.fillStyle=gd;if(g.shape==='diamond'){c.beginPath();c.moveTo(cx,cy-gr);c.lineTo(cx+gr*.7,cy);c.lineTo(cx,cy+gr);c.lineTo(cx-gr*.7,cy);c.closePath();c.fill()}else if(g.shape==='circle'){circ(c,cx,cy,gr,g.col,6);shine(c,cx,cy,gr)}else if(g.shape==='hex'){c.beginPath();for(let i=0;i<6;i++){const a=PI/3*i-PI/6;i===0?c.moveTo(cx+gr*Math.cos(a),cy+gr*Math.sin(a)):c.lineTo(cx+gr*Math.cos(a),cy+gr*Math.sin(a))}c.closePath();c.fillStyle=gd;c.fill()}else{c.beginPath();for(let i=0;i<10;i++){const a=PI/5*i-PI/2;const rr2=i%2===0?gr:gr*.45;c.lineTo(cx+rr2*Math.cos(a),cy+rr2*Math.sin(a))}c.closePath();c.fillStyle=gd;c.fill()}c.strokeStyle='rgba(255,255,255,0.12)';c.lineWidth=.8;c.stroke()}}}
+        // Destroy previous game
+        if (activeInstance) {
+            try {
+                if (typeof activeInstance.destroy === 'function') activeInstance.destroy();
+                if (typeof activeInstance.pause  === 'function') activeInstance.pause();
+            } catch(e) {}
+            activeInstance = null;
+        }
+        activeGameId = gameId;
 
-function blockVsBall(c,w,h){bg(c,w,h,'#050515','#0a0a2a');for(let r=0;r<5;r++){for(let cl=0;cl<7;cl++){const bx=15+cl*((w-30)/7),by=30+r*25,bw=(w-30)/7-4,bh=20;const hp=Math.floor(Math.random()*50)+10;const ratio=hp/60;const col=`hsl(${200+ratio*160},80%,${50+ratio*15}%)`;c.fillStyle=col;c.beginPath();c.roundRect(bx,by,bw,bh,4);c.fill();c.strokeStyle='rgba(255,255,255,0.1)';c.lineWidth=.8;c.stroke();c.fillStyle='rgba(255,255,255,0.7)';c.font='bold 10px sans-serif';c.textAlign='center';c.textBaseline='middle';c.fillText(hp,bx+bw/2,by+bh/2)}}circ(c,w/2,h*.75,8,'#fff',14);c.fillStyle='rgba(255,255,255,0.12)';c.fillRect(w*.3,h*.88,w*.4,10);const pdW=60;rr(c,w/2-pdW/2,h*.88,pdW,10,5,'#00D4FF',8)}
+        const canvas   = document.getElementById('game-canvas');
+        const scoreEl  = document.getElementById('game-score');
+        const titleEl  = document.getElementById('current-game-title');
 
-const DRAWERS={
-'bubble-shooter':bubbleShooter,'liquid-sort':liquidSort,'knife-hit':knifeHit,
-'color-bump':colorBump,'bottle-shooting':bottleShooting,'color-up':colorUp,
-'flappy-bird':flappyBird,'angry-birds':angryBirds,'jewel-legend':jewelLegend,
-'block-vs-ball':blockVsBall
-};
+        if (titleEl) titleEl.textContent = entry.name;
+        if (scoreEl) scoreEl.textContent = '0';
 
-return{generate(id,w=480,h=300){
-if(cache[id])return cache[id];
-const cv=document.createElement('canvas');cv.width=w;cv.height=h;
-const cx=cv.getContext('2d');
-const fn=DRAWERS[id];
-if(fn)fn(cx,w,h);
-else{const gg=cx.createLinearGradient(0,0,w,h);gg.addColorStop(0,'#1a0038');gg.addColorStop(1,'#003838');cx.fillStyle=gg;cx.fillRect(0,0,w,h);cx.font=`bold ${w*.07}px Orbitron,sans-serif`;cx.fillStyle='#fff';cx.textAlign='center';cx.fillText(id.replace(/-/g,' ').toUpperCase(),w/2,h/2+10)}
-cache[id]=cv.toDataURL();return cache[id];
-}};
+        // Score callback
+        const onScore = function(score, isEnd) {
+            if (scoreEl) scoreEl.textContent = typeof score === 'number' ? score.toLocaleString() : score;
+        };
+
+        // Small delay so page transition finishes first
+        setTimeout(function() {
+            try {
+                activeInstance = entry.init(canvas, onScore);
+            } catch(e) {
+                console.error('Error launching game:', gameId, e);
+            }
+        }, 80);
+    };
+
+    // ── Expose for back-button cleanup ──
+    window.destroyActiveGame = function() {
+        if (activeInstance) {
+            try {
+                if (typeof activeInstance.destroy       === 'function') activeInstance.destroy();
+                if (typeof activeInstance.togglePause   === 'function') activeInstance.togglePause();
+            } catch(e) {}
+            activeInstance = null;
+        }
+        activeGameId = null;
+    };
+
+    window.pauseActiveGame = function() {
+        if (activeInstance && typeof activeInstance.togglePause === 'function') {
+            activeInstance.togglePause();
+        }
+    };
+
+    window.resizeActiveGame = function() {
+        if (activeInstance && typeof activeInstance.resize === 'function') {
+            activeInstance.resize();
+        }
+    };
+
+    window.getActiveGameId = function() { return activeGameId; };
+
 })();
 </script>
 
