@@ -1631,4 +1631,4 @@ class AngryBirds {
         this.canvas.removeEventListener('mousemove',  this._onMM);
         this.canvas.removeEventListener('mouseup',    this._onMU);
     }
-}
+} 
