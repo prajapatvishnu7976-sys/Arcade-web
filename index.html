@@ -69,76 +69,114 @@
         :fullscreen .game-wrapper,:-webkit-full-screen .game-wrapper{height:100dvh!important}
 
         /* ════════════════════════════════════
-           HERO SECTION — FILLED SPACE
+           HERO STATS — 2x2 GRID (SQUARE)
         ════════════════════════════════════ */
-
-        /* Stats strip */
         .hero-stats {
-            display: flex;
-            justify-content: center;
-            gap: 12px;
-            margin: 28px auto 0;
-            max-width: 700px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin: 24px auto 0;
+            max-width: 380px;
             padding: 0 16px;
-            flex-wrap: wrap;
+            width: 100%;
+            box-sizing: border-box;
         }
+
         .hero-stat {
-            flex: 1;
-            min-width: 100px;
-            max-width: 160px;
             background: rgba(255,255,255,0.04);
             border: 1px solid rgba(179,71,217,0.22);
             border-radius: 14px;
-            padding: 14px 10px 12px;
+            padding: 18px 12px 16px;
             text-align: center;
             position: relative;
             overflow: hidden;
             backdrop-filter: blur(6px);
+            aspect-ratio: 1 / 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
         }
         .hero-stat::before {
-            content:'';
-            position:absolute;
-            top:0;left:0;right:0;
-            height:2px;
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 2px;
             background: var(--stat-color, #b347d9);
-            opacity:.7;
+            opacity: .75;
         }
-        .hero-stat-num {
-            font-family:'Orbitron',sans-serif;
-            font-size:1.35rem;
-            font-weight:800;
-            color: var(--stat-color, #b347d9);
-            text-shadow: 0 0 16px var(--stat-color, #b347d9);
-            line-height:1;
-            display:block;
-        }
-        .hero-stat-label {
-            font-family:'Rajdhani',sans-serif;
-            font-size:.68rem;
-            font-weight:600;
-            color:#8080a8;
-            letter-spacing:1.2px;
-            text-transform:uppercase;
-            margin-top:5px;
-            display:block;
+        /* Subtle inner glow */
+        .hero-stat::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: 14px;
+            background: radial-gradient(ellipse at 50% 0%, var(--stat-color, #b347d9) 0%, transparent 70%);
+            opacity: .07;
+            pointer-events: none;
         }
 
-        /* Marquee ticker */
+        .hero-stat-icon {
+            font-size: 1.5rem;
+            line-height: 1;
+            filter: drop-shadow(0 0 8px var(--stat-color, #b347d9));
+        }
+        .hero-stat-num {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 1.45rem;
+            font-weight: 900;
+            color: var(--stat-color, #b347d9);
+            line-height: 1;
+            display: block;
+            animation: statPulse 3s ease-in-out infinite;
+        }
+        .hero-stat:nth-child(2) .hero-stat-num { animation-delay: .8s; }
+        .hero-stat:nth-child(3) .hero-stat-num { animation-delay: 1.6s; }
+        .hero-stat:nth-child(4) .hero-stat-num { animation-delay: 2.4s; }
+
+        .hero-stat-label {
+            font-family: 'Rajdhani', sans-serif;
+            font-size: .72rem;
+            font-weight: 600;
+            color: #8080a8;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            display: block;
+        }
+
+        @keyframes statPulse {
+            0%,100% { text-shadow: 0 0 12px var(--stat-color, #b347d9); }
+            50%      { text-shadow: 0 0 28px var(--stat-color, #b347d9), 0 0 48px var(--stat-color, #b347d9); }
+        }
+
+        /* Desktop — keep 4 in a row */
+        @media(min-width: 640px) {
+            .hero-stats {
+                grid-template-columns: repeat(4, 1fr);
+                max-width: 600px;
+                gap: 14px;
+            }
+            .hero-stat { aspect-ratio: unset; padding: 20px 12px 18px; }
+        }
+
+        /* ════════════════════════════════════
+           SCROLLING TICKER
+        ════════════════════════════════════ */
         .hero-ticker-wrap {
-            width:100%;
-            overflow:hidden;
-            margin: 26px 0 0;
+            width: 100%;
+            overflow: hidden;
+            margin: 22px 0 0;
             padding: 10px 0;
             border-top: 1px solid rgba(179,71,217,.1);
             border-bottom: 1px solid rgba(179,71,217,.1);
             background: rgba(179,71,217,.04);
         }
         .hero-ticker {
-            display:flex;
-            gap:0;
-            white-space:nowrap;
-            animation: tickerScroll 22s linear infinite;
-            width:max-content;
+            display: flex;
+            white-space: nowrap;
+            width: max-content;
+            animation: tickerScroll 24s linear infinite;
         }
         .hero-ticker:hover { animation-play-state: paused; }
         @keyframes tickerScroll {
@@ -146,161 +184,123 @@
             100% { transform: translateX(-50%); }
         }
         .ticker-item {
-            display:inline-flex;
-            align-items:center;
-            gap:8px;
-            padding: 0 28px;
-            font-family:'Rajdhani',sans-serif;
-            font-size:.82rem;
-            font-weight:600;
-            color:#9090c0;
-            letter-spacing:.5px;
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            padding: 0 22px;
+            font-family: 'Rajdhani', sans-serif;
+            font-size: .82rem;
+            font-weight: 600;
+            color: #9090c0;
+            letter-spacing: .4px;
         }
-        .ticker-item .t-icon { font-size:1rem; }
+        .ticker-item .t-icon { font-size: 1rem; }
         .ticker-item .t-hot {
             background: rgba(255,64,129,.2);
-            color:#ff4081;
-            border:1px solid rgba(255,64,129,.35);
-            border-radius:8px;
-            padding:1px 6px;
-            font-size:.6rem;
-            font-weight:700;
-            letter-spacing:1px;
+            color: #ff4081;
+            border: 1px solid rgba(255,64,129,.35);
+            border-radius: 8px;
+            padding: 1px 6px;
+            font-size: .6rem;
+            font-weight: 700;
+            letter-spacing: 1px;
         }
         .ticker-dot {
             color: rgba(179,71,217,.4);
-            font-size:1.2rem;
-            padding: 0 8px;
+            font-size: 1rem;
+            padding: 0 6px;
         }
 
-        /* Feature pills */
-        .hero-pills {
-            display:flex;
-            justify-content:center;
-            gap:10px;
-            flex-wrap:wrap;
-            margin: 24px auto 0;
-            padding: 0 16px;
-            max-width:600px;
-        }
-        .hero-pill {
-            display:inline-flex;
-            align-items:center;
-            gap:7px;
-            padding: 7px 16px;
-            border-radius:30px;
-            border: 1px solid rgba(255,255,255,.1);
-            background: rgba(255,255,255,.04);
-            font-family:'Rajdhani',sans-serif;
-            font-size:.78rem;
-            font-weight:600;
-            color:#a0a0c8;
-            backdrop-filter:blur(4px);
-            transition: border-color .2s, color .2s;
-        }
-        .hero-pill:hover {
-            border-color: rgba(179,71,217,.5);
-            color:#d470ff;
-        }
-        .hero-pill span:first-child { font-size:.9rem; }
-
-        /* Mini game preview carousel */
+        /* ════════════════════════════════════
+           MINI GAME PREVIEW STRIP
+        ════════════════════════════════════ */
         .hero-preview {
-            margin: 28px auto 0;
+            margin: 24px auto 0;
             max-width: 700px;
             padding: 0 16px;
+            width: 100%;
+            box-sizing: border-box;
         }
         .hero-preview-label {
-            font-family:'Rajdhani',sans-serif;
-            font-size:.72rem;
-            font-weight:700;
-            color:#6060a0;
-            letter-spacing:2px;
-            text-transform:uppercase;
-            text-align:center;
-            margin-bottom:12px;
+            font-family: 'Rajdhani', sans-serif;
+            font-size: .72rem;
+            font-weight: 700;
+            color: #6060a0;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            text-align: center;
+            margin-bottom: 12px;
         }
         .hero-preview-row {
-            display:flex;
-            gap:10px;
-            overflow-x:auto;
-            scrollbar-width:none;
-            -ms-overflow-style:none;
-            padding-bottom:4px;
-            justify-content:center;
+            display: flex;
+            gap: 10px;
+            overflow-x: auto;
+            scrollbar-width: none;
+            -ms-overflow-style: none;
+            padding-bottom: 4px;
+            /* Start from left on mobile */
+            justify-content: flex-start;
         }
-        .hero-preview-row::-webkit-scrollbar { display:none; }
+        .hero-preview-row::-webkit-scrollbar { display: none; }
+
+        /* Center on desktop when enough space */
+        @media(min-width: 640px) {
+            .hero-preview-row { justify-content: center; }
+        }
+
         .hero-mini-card {
-            flex:0 0 auto;
-            width:110px;
-            border-radius:12px;
-            overflow:hidden;
-            border:1.5px solid rgba(179,71,217,.18);
-            background:#0e0e24;
-            cursor:pointer;
-            transition:transform .2s,border-color .2s,box-shadow .2s;
-            -webkit-tap-highlight-color:transparent;
+            flex: 0 0 auto;
+            width: 100px;
+            border-radius: 12px;
+            overflow: hidden;
+            border: 1.5px solid rgba(179,71,217,.18);
+            background: #0e0e24;
+            cursor: pointer;
+            transition: transform .2s, border-color .2s, box-shadow .2s;
+            -webkit-tap-highlight-color: transparent;
         }
         .hero-mini-card:hover {
-            transform:translateY(-4px) scale(1.04);
-            border-color:rgba(179,71,217,.55);
-            box-shadow:0 8px 24px rgba(179,71,217,.2);
+            transform: translateY(-4px) scale(1.04);
+            border-color: rgba(179,71,217,.55);
+            box-shadow: 0 8px 24px rgba(179,71,217,.2);
         }
-        .hero-mini-card:active { transform:scale(.96); }
+        .hero-mini-card:active { transform: scale(.95); }
         .hero-mini-thumb {
-            width:100%;
-            aspect-ratio:16/10;
-            display:block;
-            border-radius:10px 10px 0 0;
+            width: 100%;
+            aspect-ratio: 16/10;
+            display: block;
+            border-radius: 10px 10px 0 0;
+            object-fit: cover;
         }
         .hero-mini-name {
-            font-family:'Rajdhani',sans-serif;
-            font-size:.68rem;
-            font-weight:700;
-            color:#c0c0e0;
-            text-align:center;
-            padding:5px 6px 6px;
-            white-space:nowrap;
-            overflow:hidden;
-            text-overflow:ellipsis;
+            font-family: 'Rajdhani', sans-serif;
+            font-size: .65rem;
+            font-weight: 700;
+            color: #c0c0e0;
+            text-align: center;
+            padding: 5px 4px 6px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
-        /* Neon divider before featured section */
+        /* ── Neon Divider ── */
         .hero-divider {
-            display:flex;
-            align-items:center;
-            gap:14px;
-            margin:32px auto 0;
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            margin: 28px auto 0;
             padding: 0 20px;
-            max-width:500px;
+            max-width: 400px;
         }
         .hero-divider-line {
-            flex:1;
-            height:1px;
-            background:linear-gradient(to right,transparent,rgba(179,71,217,.4),transparent);
+            flex: 1;
+            height: 1px;
+            background: linear-gradient(to right, transparent, rgba(179,71,217,.4), transparent);
         }
         .hero-divider-icon {
-            font-size:1.1rem;
-            filter:drop-shadow(0 0 8px #b347d9);
-        }
-
-        /* Animate stat counters */
-        @keyframes statPulse {
-            0%,100%{text-shadow:0 0 16px var(--stat-color,.5)}
-            50%{text-shadow:0 0 28px var(--stat-color,1),0 0 40px var(--stat-color,.3)}
-        }
-        .hero-stat-num { animation: statPulse 3s ease-in-out infinite; }
-        .hero-stat:nth-child(2) .hero-stat-num { animation-delay:.8s; }
-        .hero-stat:nth-child(3) .hero-stat-num { animation-delay:1.6s; }
-        .hero-stat:nth-child(4) .hero-stat-num { animation-delay:2.4s; }
-
-        /* Responsive */
-        @media(max-width:480px){
-            .hero-stats { gap:8px; }
-            .hero-stat { min-width:80px; padding:11px 8px 10px; }
-            .hero-stat-num { font-size:1.1rem; }
-            .hero-mini-card { width:95px; }
-            .hero-pill { font-size:.72rem; padding:6px 12px; }
+            font-size: 1rem;
+            filter: drop-shadow(0 0 8px #b347d9);
         }
     </style>
 </head>
@@ -309,7 +309,11 @@
 <!-- LOADING -->
 <div id="loading-screen" class="loading-screen">
     <div class="loader-container">
-        <div class="neon-loader"><div class="loader-ring"></div><div class="loader-ring"></div><div class="loader-ring"></div></div>
+        <div class="neon-loader">
+            <div class="loader-ring"></div>
+            <div class="loader-ring"></div>
+            <div class="loader-ring"></div>
+        </div>
         <h1 class="loader-title">NEON<span class="glow-text">ARCADE</span></h1>
         <div class="loader-bar"><div class="loading-bar-fill" id="loading-bar-fill"></div></div>
         <p class="loading-text" id="loading-text">Loading Premium Experience...</p>
@@ -335,9 +339,12 @@
             </ul>
             <div class="nav-actions">
                 <button class="sound-toggle" id="sound-toggle" title="Toggle Sound">
-                    <span class="sound-on">🔊</span><span class="sound-off hidden">🔇</span>
+                    <span class="sound-on">🔊</span>
+                    <span class="sound-off hidden">🔇</span>
                 </button>
-                <button class="hamburger" id="hamburger" aria-label="Menu"><span></span><span></span><span></span></button>
+                <button class="hamburger" id="hamburger" aria-label="Menu">
+                    <span></span><span></span><span></span>
+                </button>
             </div>
         </div>
     </nav>
@@ -358,59 +365,51 @@
         <section id="home-page" class="page active">
             <div class="hero-section">
                 <div class="hero-content">
+
                     <h1 class="hero-title">
                         <span class="line1">WELCOME TO</span>
                         <span class="line2 glitch" data-text="NEONARCADE">NEONARCADE</span>
                     </h1>
                     <p class="hero-subtitle">Experience the future of arcade gaming with stunning neon visuals and addictive gameplay</p>
+
                     <div class="hero-buttons">
                         <button class="btn btn-primary" data-page="games"><span>🚀</span><span>PLAY NOW</span></button>
                         <button class="btn btn-secondary" data-page="about"><span>LEARN MORE</span></button>
                     </div>
 
-                    <!-- ── STATS STRIP ── -->
+                    <!-- ── 2×2 STATS GRID ── -->
                     <div class="hero-stats">
                         <div class="hero-stat" style="--stat-color:#00e5ff">
+                            <span class="hero-stat-icon">🎮</span>
                             <span class="hero-stat-num" id="stat-games">10+</span>
                             <span class="hero-stat-label">Games</span>
                         </div>
                         <div class="hero-stat" style="--stat-color:#b347d9">
+                            <span class="hero-stat-icon">👥</span>
                             <span class="hero-stat-num" id="stat-players">50K+</span>
                             <span class="hero-stat-label">Players</span>
                         </div>
                         <div class="hero-stat" style="--stat-color:#76ff03">
-                            <span class="hero-stat-num" id="stat-score">FREE</span>
+                            <span class="hero-stat-icon">✅</span>
+                            <span class="hero-stat-num">FREE</span>
                             <span class="hero-stat-label">To Play</span>
                         </div>
                         <div class="hero-stat" style="--stat-color:#ffab00">
+                            <span class="hero-stat-icon">⚡</span>
                             <span class="hero-stat-num">4K</span>
                             <span class="hero-stat-label">Quality</span>
                         </div>
                     </div>
 
-                    <!-- ── FEATURE PILLS ── -->
-                    <div class="hero-pills">
-                        <span class="hero-pill"><span>📱</span> Mobile Ready</span>
-                        <span class="hero-pill"><span>⚡</span> Instant Play</span>
-                        <span class="hero-pill"><span>🏆</span> Leaderboards</span>
-                        <span class="hero-pill"><span>🔊</span> Sound FX</span>
-                        <span class="hero-pill"><span>🎨</span> Neon Visuals</span>
-                        <span class="hero-pill"><span>💾</span> Auto Save</span>
-                    </div>
-
                     <!-- ── SCROLLING TICKER ── -->
                     <div class="hero-ticker-wrap">
-                        <div class="hero-ticker" id="hero-ticker">
-                            <!-- JS fills this twice for seamless loop -->
-                        </div>
+                        <div class="hero-ticker" id="hero-ticker"></div>
                     </div>
 
                     <!-- ── MINI GAME PREVIEW ── -->
                     <div class="hero-preview">
                         <p class="hero-preview-label">⚡ Quick Play</p>
-                        <div class="hero-preview-row" id="hero-preview-row">
-                            <!-- JS fills thumbnails -->
-                        </div>
+                        <div class="hero-preview-row" id="hero-preview-row"></div>
                     </div>
 
                     <!-- ── DIVIDER ── -->
@@ -499,14 +498,26 @@
             <div class="game-container">
                 <div class="game-header" id="game-header">
                     <button class="back-btn" id="back-to-games">← Back</button>
-                    <div class="game-info"><h2 class="game-title" id="current-game-title">Game</h2></div>
+                    <div class="game-info">
+                        <h2 class="game-title" id="current-game-title">Game</h2>
+                    </div>
                     <div class="game-score-pill"><span id="game-score">0</span></div>
                 </div>
                 <div class="game-wrapper" id="game-wrapper">
                     <canvas id="game-canvas"></canvas>
                     <button id="fullscreen-btn" title="Fullscreen" aria-label="Toggle Fullscreen">
-                        <svg id="fs-expand-icon" viewBox="0 0 24 24"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
-                        <svg id="fs-compress-icon" viewBox="0 0 24 24" style="display:none;"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="10" y1="14" x2="3" y2="21"/><line x1="21" y1="3" x2="14" y2="10"/></svg>
+                        <svg id="fs-expand-icon" viewBox="0 0 24 24">
+                            <polyline points="15 3 21 3 21 9"/>
+                            <polyline points="9 21 3 21 3 15"/>
+                            <line x1="21" y1="3" x2="14" y2="10"/>
+                            <line x1="3" y1="21" x2="10" y2="14"/>
+                        </svg>
+                        <svg id="fs-compress-icon" viewBox="0 0 24 24" style="display:none;">
+                            <polyline points="4 14 10 14 10 20"/>
+                            <polyline points="20 10 14 10 14 4"/>
+                            <line x1="10" y1="14" x2="3" y2="21"/>
+                            <line x1="21" y1="3" x2="14" y2="10"/>
+                        </svg>
                     </button>
                     <div id="instruction-toast"></div>
                     <div class="game-overlay hidden" id="game-overlay">
@@ -528,7 +539,10 @@
 
     <footer class="footer">
         <div class="footer-content">
-            <div class="footer-brand"><span class="logo-text">NEON<span class="accent">ARCADE</span></span><p>Premium Gaming Experience</p></div>
+            <div class="footer-brand">
+                <span class="logo-text">NEON<span class="accent">ARCADE</span></span>
+                <p>Premium Gaming Experience</p>
+            </div>
             <div class="footer-links">
                 <a href="#" data-page="home">Home</a>
                 <a href="#" data-page="games">Games</a>
@@ -540,7 +554,7 @@
         <div class="footer-bottom"><p>&copy; 2024 NeonArcade. All rights reserved.</p></div>
     </footer>
 
-</div>
+</div><!-- /#app -->
 
 <!-- SCRIPTS -->
 <script src="js/particles.js"></script>
@@ -561,10 +575,12 @@
 const GameThumbnails = (() => {
     const cache = {};
     const PI = Math.PI, TAU = PI * 2;
+
     function bg(c,w,h,c1,c2,a=160){const r=(a*PI)/180;const g=c.createLinearGradient(w/2-Math.cos(r)*w,h/2-Math.sin(r)*h,w/2+Math.cos(r)*w,h/2+Math.sin(r)*h);g.addColorStop(0,c1);g.addColorStop(1,c2);c.fillStyle=g;c.fillRect(0,0,w,h)}
     function circ(c,x,y,r,col,gl=0){c.save();if(gl){c.shadowColor=col;c.shadowBlur=gl}c.beginPath();c.arc(x,y,r,0,TAU);c.fillStyle=col;c.fill();c.restore()}
     function rr(c,x,y,w,h,r,f,gl=0){c.save();if(gl){c.shadowColor=f;c.shadowBlur=gl}c.beginPath();c.moveTo(x+r,y);c.arcTo(x+w,y,x+w,y+h,r);c.arcTo(x+w,y+h,x,y+h,r);c.arcTo(x,y+h,x,y,r);c.arcTo(x,y,x+w,y,r);c.closePath();c.fillStyle=f;c.fill();c.restore()}
     function shine(c,x,y,r){const g=c.createRadialGradient(x-r*.3,y-r*.3,0,x,y,r);g.addColorStop(0,'rgba(255,255,255,.45)');g.addColorStop(.5,'rgba(255,255,255,.08)');g.addColorStop(1,'rgba(255,255,255,0)');c.save();c.beginPath();c.arc(x,y,r,0,TAU);c.fillStyle=g;c.fill();c.restore()}
+
     function bubbleShooter(c,w,h){bg(c,w,h,'#0d1b3e','#1a0d3e');const cols=['#ff4d8d','#00ddff','#7cff5b','#ffcc00','#cc44ff','#ff7043'];const R=Math.min(w,h)*.075;const nc=Math.floor(w/(R*2+4));for(let row=0;row<5;row++){const off=row%2===0?0:R+2;const n=row%2===0?nc:nc-1;for(let i=0;i<n;i++){const x=R+off+i*(R*2+4),y=R+row*(R*1.78+2);circ(c,x,y,R,cols[(row*3+i)%cols.length],14);shine(c,x,y,R)}}circ(c,w/2,h-20,R*1.1,cols[2],20);shine(c,w/2,h-20,R*1.1)}
     function liquidSort(c,w,h){bg(c,w,h,'#07071a','#12083a');const tubes=[['#ff4d8d','#ff4d8d','#00ddff','#7cff5b'],['#00ddff','#7cff5b','#ff4d8d','#ffcc00'],['#7cff5b','#ffcc00','#ffcc00','#00ddff'],['#ffcc00','#cc44ff','#ff4d8d','#cc44ff'],[],[]];const n=tubes.length,TW=Math.min(w*.11,42),TH=h*.52,gap=(w-n*TW)/(n+1),ty=(h-TH)/2-4;tubes.forEach((t,i)=>{const tx=gap+i*(TW+gap);c.strokeStyle='rgba(255,255,255,0.18)';c.lineWidth=1.5;c.beginPath();c.moveTo(tx,ty);c.lineTo(tx,ty+TH);c.lineTo(tx+TW,ty+TH);c.lineTo(tx+TW,ty);c.stroke();const LH=(TH-4)/4;t.forEach((col,j)=>{const ly=ty+TH-(j+1)*LH;c.save();c.shadowColor=col;c.shadowBlur=8;rr(c,tx+2,ly,TW-4,LH-1,2,col+'cc');c.restore()})})}
     function knifeHit(c,w,h){bg(c,w,h,'#1a0505','#2d1010');const cx=w/2,cy=h*.42,R=Math.min(w,h)*.22;c.save();c.shadowColor='#ff5500';c.shadowBlur=30;circ(c,cx,cy,R,'#5a3820');c.restore();[.75,.5,.28].forEach(f=>{c.strokeStyle='rgba(255,255,255,0.07)';c.lineWidth=1;c.beginPath();c.arc(cx,cy,R*f,0,TAU);c.stroke()});[0.4,1.3,2.2,3.5,4.6,5.5].forEach(a=>{c.save();c.translate(cx,cy);c.rotate(a);c.fillStyle='#c8c8c8';c.fillRect(R-4,-2,28,4);c.fillStyle='#7a4010';c.fillRect(R+24,-5,14,10);c.restore()});c.save();c.shadowColor='#fff';c.shadowBlur=14;c.fillStyle='#d8d8d8';c.fillRect(cx-2,h-80,4,34);c.fillStyle='#7a4010';c.fillRect(cx-6,h-46,12,18);c.restore()}
@@ -577,14 +593,15 @@ const GameThumbnails = (() => {
     function blockVsBall(c,w,h){bg(c,w,h,'#050515','#0a0a2a');for(let r3=0;r3<5;r3++){for(let cl=0;cl<7;cl++){const bx=15+cl*((w-30)/7),by=30+r3*25,bw=(w-30)/7-4,bh=20;const hp=Math.floor(Math.random()*50)+10;const ratio=hp/60;const col=`hsl(${200+ratio*160},80%,${50+ratio*15}%)`;c.fillStyle=col;c.beginPath();if(c.roundRect)c.roundRect(bx,by,bw,bh,4);else c.rect(bx,by,bw,bh);c.fill();c.strokeStyle='rgba(255,255,255,0.1)';c.lineWidth=.8;c.stroke();c.fillStyle='rgba(255,255,255,0.7)';c.font='bold 10px sans-serif';c.textAlign='center';c.textBaseline='middle';c.fillText(hp,bx+bw/2,by+bh/2)}}circ(c,w/2,h*.75,8,'#fff',14);c.fillStyle='rgba(255,255,255,0.12)';c.fillRect(w*.3,h*.88,w*.4,10);rr(c,w/2-30,h*.88,60,10,5,'#00D4FF',8)}
 
     const DRAWERS = {
-        'bubble-shooter':bubbleShooter,'liquid-sort':liquidSort,'knife-hit':knifeHit,
-        'color-bump':colorBump,'bottle-shooting':bottleShooting,'color-up':colorUp,
-        'flappy-bird':flappyBird,'angry-birds':angryBirds,'jewel-legend':jewelLegend,
-        'block-vs-ball':blockVsBall
+        'bubble-shooter': bubbleShooter, 'liquid-sort': liquidSort,
+        'knife-hit': knifeHit, 'color-bump': colorBump,
+        'bottle-shooting': bottleShooting, 'color-up': colorUp,
+        'flappy-bird': flappyBird, 'angry-birds': angryBirds,
+        'jewel-legend': jewelLegend, 'block-vs-ball': blockVsBall
     };
 
     return {
-        generate(id, w=480, h=300) {
+        generate(id, w = 480, h = 300) {
             if (cache[id]) return cache[id];
             const cv = document.createElement('canvas');
             cv.width = w; cv.height = h;
@@ -594,10 +611,10 @@ const GameThumbnails = (() => {
             else {
                 const gg = cx.createLinearGradient(0,0,w,h);
                 gg.addColorStop(0,'#1a0038'); gg.addColorStop(1,'#003838');
-                cx.fillStyle=gg; cx.fillRect(0,0,w,h);
-                cx.font=`bold ${w*.07}px Orbitron,sans-serif`;
-                cx.fillStyle='#fff'; cx.textAlign='center';
-                cx.fillText(id.replace(/-/g,' ').toUpperCase(),w/2,h/2+10);
+                cx.fillStyle = gg; cx.fillRect(0,0,w,h);
+                cx.font = `bold ${w*.07}px Orbitron,sans-serif`;
+                cx.fillStyle = '#fff'; cx.textAlign = 'center';
+                cx.fillText(id.replace(/-/g,' ').toUpperCase(), w/2, h/2+10);
             }
             cache[id] = cv.toDataURL();
             return cache[id];
@@ -608,33 +625,32 @@ const GameThumbnails = (() => {
 
 <!-- GAME ROUTER -->
 <script>
-(function() {
+(function () {
     'use strict';
 
     const GAME_REGISTRY = {
-        'bubble-shooter': { name:'Bubble Shooter',  init:(c,s)=>window.BubbleShooter  ? new window.BubbleShooter(c,s)  : null },
-        'liquid-sort':    { name:'Liquid Sort',     init:(c,s)=>window.LiquidSort     ? new window.LiquidSort(c,s)     : null },
-        'knife-hit':      { name:'Knife Hit',       init:(c,s)=>window.KnifeHit       ? new window.KnifeHit(c,s)       : null },
-        'color-bump':     { name:'Color Bump',      init:(c,s)=>window.ColorBump      ? new window.ColorBump(c,s)      : null },
-        'bottle-shooting':{ name:'Bottle Shooting', init:(c,s)=>window.BottleShooting ? new window.BottleShooting(c,s) : null },
-        'color-up':       { name:'Color Up',        init:(c,s)=>window.ColorUp        ? new window.ColorUp(c,s)        : null },
-        'flappy-bird':    { name:'Flappy Bird',     init:(c,s)=>window.FlappyBird     ? new window.FlappyBird(c,s)     : null },
-        'angry-birds':    { name:'Angry Birds',     init:(c,s)=>window.AngryBirds     ? new window.AngryBirds(c,s)     : null },
-        'jewel-legend':   { name:'Jewel Legend',    init:(c,s)=>window.JewelLegend    ? new window.JewelLegend(c,s)    : null },
-        'block-vs-ball':  { name:'Block vs Ball',   init:(c,s)=>window.BlockVsBall    ? new window.BlockVsBall(c,s)    : null },
+        'bubble-shooter':  { name: 'Bubble Shooter',  init: (c,s) => window.BubbleShooter  ? new window.BubbleShooter(c,s)  : null },
+        'liquid-sort':     { name: 'Liquid Sort',     init: (c,s) => window.LiquidSort     ? new window.LiquidSort(c,s)     : null },
+        'knife-hit':       { name: 'Knife Hit',       init: (c,s) => window.KnifeHit       ? new window.KnifeHit(c,s)       : null },
+        'color-bump':      { name: 'Color Bump',      init: (c,s) => window.ColorBump      ? new window.ColorBump(c,s)      : null },
+        'bottle-shooting': { name: 'Bottle Shooting', init: (c,s) => window.BottleShooting ? new window.BottleShooting(c,s) : null },
+        'color-up':        { name: 'Color Up',        init: (c,s) => window.ColorUp        ? new window.ColorUp(c,s)        : null },
+        'flappy-bird':     { name: 'Flappy Bird',     init: (c,s) => window.FlappyBird     ? new window.FlappyBird(c,s)     : null },
+        'angry-birds':     { name: 'Angry Birds',     init: (c,s) => window.AngryBirds     ? new window.AngryBirds(c,s)     : null },
+        'jewel-legend':    { name: 'Jewel Legend',    init: (c,s) => window.JewelLegend    ? new window.JewelLegend(c,s)    : null },
+        'block-vs-ball':   { name: 'Block vs Ball',   init: (c,s) => window.BlockVsBall    ? new window.BlockVsBall(c,s)    : null },
     };
 
     window.GAME_REGISTRY = GAME_REGISTRY;
     let activeId = null, activeInst = null;
 
-    window.launchGame = function(gameId) {
+    window.launchGame = function (gameId) {
         const entry = GAME_REGISTRY[gameId];
         if (!entry) { console.error('Game not found:', gameId); return; }
 
-        // Destroy old
         if (activeInst) {
-            try { if (activeInst.destroy)      activeInst.destroy(); } catch(e){}
-            try { if (activeInst.togglePause)  activeInst.togglePause(); } catch(e){}
+            try { if (activeInst.destroy)     activeInst.destroy(); }     catch (e) {}
+            try { if (activeInst.togglePause) activeInst.togglePause(); } catch (e) {}
             activeInst = null;
         }
         activeId = gameId;
@@ -645,77 +661,82 @@ const GameThumbnails = (() => {
         if (titleEl) titleEl.textContent = entry.name;
         if (scoreEl) scoreEl.textContent = '0';
 
-        const onScore = (score) => { if (scoreEl) scoreEl.textContent = typeof score==='number' ? score.toLocaleString() : score; };
+        const onScore = (score) => {
+            if (scoreEl) scoreEl.textContent = typeof score === 'number' ? score.toLocaleString() : score;
+        };
 
         setTimeout(() => {
             try { activeInst = entry.init(canvas, onScore); }
-            catch(e) { console.error('Error launching', gameId, e); }
+            catch (e) { console.error('Error launching', gameId, e); }
         }, 80);
     };
 
-    window.destroyActiveGame  = () => { if (activeInst) { try{activeInst.destroy&&activeInst.destroy();}catch(e){} activeInst=null; } activeId=null; };
-    window.pauseActiveGame    = () => { if (activeInst?.togglePause) activeInst.togglePause(); };
-    window.resizeActiveGame   = () => { if (activeInst?.resize) activeInst.resize(); };
-    window.getActiveGameId    = () => activeId;
+    window.destroyActiveGame = () => {
+        if (activeInst) { try { activeInst.destroy && activeInst.destroy(); } catch (e) {} activeInst = null; }
+        activeId = null;
+    };
+    window.pauseActiveGame  = () => { if (activeInst?.togglePause) activeInst.togglePause(); };
+    window.resizeActiveGame = () => { if (activeInst?.resize) activeInst.resize(); };
+    window.getActiveGameId  = () => activeId;
 })();
 </script>
 
-<!-- HERO FILLER INIT -->
+<!-- HERO INIT -->
 <script>
-(function() {
-    // Wait for GameThumbnails + GAME_REGISTRY to be ready
+(function () {
+
+    const GAMES = [
+        { id: 'bubble-shooter',  label: 'Bubble Shooter' },
+        { id: 'angry-birds',     label: 'Angry Birds' },
+        { id: 'flappy-bird',     label: 'Flappy Bird' },
+        { id: 'jewel-legend',    label: 'Jewel Legend' },
+        { id: 'liquid-sort',     label: 'Liquid Sort' },
+        { id: 'knife-hit',       label: 'Knife Hit' },
+        { id: 'block-vs-ball',   label: 'Block vs Ball' },
+        { id: 'color-bump',      label: 'Color Bump' },
+        { id: 'bottle-shooting', label: 'Bottle Shoot' },
+        { id: 'color-up',        label: 'Color Up' },
+    ];
+
+    const TICKER_ITEMS = [
+        { icon: '🔥', text: 'Angry Birds — Neon Edition',       hot: true  },
+        { icon: '💎', text: 'Jewel Legend — Match 3 Madness',   hot: false },
+        { icon: '🐥', text: 'Flappy Bird — Beat Your High Score',hot: false },
+        { icon: '🧪', text: 'Liquid Sort — Premium Puzzles',     hot: true  },
+        { icon: '🎯', text: 'Knife Hit — Spin & Slash',          hot: false },
+        { icon: '🫧', text: 'Bubble Shooter — Pop Combo x5',     hot: false },
+        { icon: '🧱', text: 'Block vs Ball — Smash 100 Blocks',  hot: false },
+        { icon: '🎨', text: 'Color Bump — Dodge & Survive',      hot: true  },
+        { icon: '🍾', text: 'Bottle Shooting — Perfect Aim',     hot: false },
+        { icon: '⬆️', text: 'Color Up — Stack & Match',          hot: false },
+    ];
+
     function initHero() {
-        const GAMES = [
-            { id:'bubble-shooter', label:'Bubble Shooter' },
-            { id:'angry-birds',    label:'Angry Birds' },
-            { id:'flappy-bird',    label:'Flappy Bird' },
-            { id:'jewel-legend',   label:'Jewel Legend' },
-            { id:'liquid-sort',    label:'Liquid Sort' },
-            { id:'knife-hit',      label:'Knife Hit' },
-            { id:'block-vs-ball',  label:'Block vs Ball' },
-            { id:'color-bump',     label:'Color Bump' },
-            { id:'bottle-shooting',label:'Bottle Shoot' },
-            { id:'color-up',       label:'Color Up' },
-        ];
 
-        // ── TICKER ──
-        const tickerItems = [
-            { icon:'🔥', text:'Angry Birds — Neon Edition', hot:true },
-            { icon:'💎', text:'Jewel Legend — Match 3 Madness' },
-            { icon:'🐥', text:'Flappy Bird — Beat Your High Score' },
-            { icon:'🧪', text:'Liquid Sort — Premium Puzzles', hot:true },
-            { icon:'🎯', text:'Knife Hit — Spin & Slash' },
-            { icon:'🫧', text:'Bubble Shooter — Pop Combo x5' },
-            { icon:'🧱', text:'Block vs Ball — Smash 100 Blocks' },
-            { icon:'🎨', text:'Color Bump — Dodge & Survive', hot:true },
-            { icon:'🍾', text:'Bottle Shooting — Perfect Aim' },
-            { icon:'⬆️', text:'Color Up — Stack & Match' },
-        ];
-
+        /* ── TICKER ── */
         const ticker = document.getElementById('hero-ticker');
         if (ticker) {
-            // Build twice for seamless loop
-            const buildTicker = () => tickerItems.map(t =>
+            const html = TICKER_ITEMS.map(t =>
                 `<span class="ticker-item">
                     <span class="t-icon">${t.icon}</span>
                     ${t.text}
                     ${t.hot ? '<span class="t-hot">HOT</span>' : ''}
                 </span><span class="ticker-dot">◆</span>`
             ).join('');
-            ticker.innerHTML = buildTicker() + buildTicker();
+            // Duplicate for seamless loop
+            ticker.innerHTML = html + html;
         }
 
-        // ── MINI GAME CARDS ──
+        /* ── MINI GAME CARDS ── */
         const row = document.getElementById('hero-preview-row');
         if (row && window.GameThumbnails) {
             GAMES.forEach(g => {
                 const card = document.createElement('div');
                 card.className = 'hero-mini-card';
-                card.setAttribute('data-game', g.id);
                 card.title = g.label;
 
                 const img = document.createElement('img');
-                img.src = GameThumbnails.generate(g.id, 220, 138);
+                img.src = GameThumbnails.generate(g.id, 200, 125);
                 img.className = 'hero-mini-thumb';
                 img.alt = g.label;
                 img.loading = 'lazy';
@@ -727,66 +748,58 @@ const GameThumbnails = (() => {
                 card.appendChild(img);
                 card.appendChild(name);
 
-                // Click → navigate to game
                 card.addEventListener('click', () => {
-                    // Trigger game launch same as game card click
+                    // Try navigateToGame first (set by main.js)
                     if (window.navigateToGame) {
                         window.navigateToGame(g.id);
-                    } else {
-                        // Fallback: try to find and click the game card
-                        const gameCard = document.querySelector(`.game-card[data-game="${g.id}"]`);
-                        if (gameCard) gameCard.click();
-                        else {
-                            // Navigate to games page
-                            const gamesLink = document.querySelector('[data-page="games"]');
-                            if (gamesLink) gamesLink.click();
-                        }
+                        return;
                     }
+                    // Fallback: click the matching game card
+                    const gc = document.querySelector(`.game-card[data-game="${g.id}"]`);
+                    if (gc) { gc.click(); return; }
+                    // Last resort: go to games page
+                    const gp = document.querySelector('[data-page="games"]');
+                    if (gp) gp.click();
                 });
 
                 row.appendChild(card);
             });
         }
 
-        // ── ANIMATED COUNTER (count up on view) ──
-        const statGames   = document.getElementById('stat-games');
-        const statPlayers = document.getElementById('stat-players');
-
-        function countUp(el, target, suffix, duration=1400) {
+        /* ── COUNT-UP ANIMATION ── */
+        function countUp(el, target, suffix, duration) {
             if (!el) return;
-            let start = 0, startTime = null;
+            let startTime = null;
             const step = (ts) => {
                 if (!startTime) startTime = ts;
-                const progress = Math.min((ts - startTime) / duration, 1);
-                const ease = 1 - Math.pow(1 - progress, 3);
+                const p = Math.min((ts - startTime) / duration, 1);
+                const ease = 1 - Math.pow(1 - p, 3);
                 el.textContent = Math.floor(ease * target) + suffix;
-                if (progress < 1) requestAnimationFrame(step);
+                if (p < 1) requestAnimationFrame(step);
             };
             requestAnimationFrame(step);
         }
 
-        // Trigger count-up when hero is visible
-        const heroObserver = new IntersectionObserver((entries) => {
-            entries.forEach(e => {
-                if (e.isIntersecting) {
-                    countUp(statGames,   10,  '+');
-                    countUp(statPlayers, 50,  'K+', 1800);
-                    heroObserver.disconnect();
+        const statsEl = document.querySelector('.hero-stats');
+        if (statsEl && window.IntersectionObserver) {
+            const obs = new IntersectionObserver((entries) => {
+                if (entries[0].isIntersecting) {
+                    countUp(document.getElementById('stat-games'),   10,  '+',    1200);
+                    countUp(document.getElementById('stat-players'), 50,  'K+',   1800);
+                    obs.disconnect();
                 }
-            });
-        }, { threshold: 0.3 });
-
-        const heroStats = document.querySelector('.hero-stats');
-        if (heroStats) heroObserver.observe(heroStats);
+            }, { threshold: 0.3 });
+            obs.observe(statsEl);
+        }
     }
 
-    // Run after DOM is fully ready
+    // Run after all scripts loaded
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', initHero);
+        document.addEventListener('DOMContentLoaded', () => setTimeout(initHero, 150));
     } else {
-        // Wait a tick for GameThumbnails to be defined
-        setTimeout(initHero, 120);
+        setTimeout(initHero, 150);
     }
+
 })();
 </script>
 
