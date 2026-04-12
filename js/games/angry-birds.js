@@ -84,7 +84,6 @@ class AngryBirds {
         this.time = 0; this.bgTime = 0; this.menuTime = 0;
         this.settleTimer = 0;
 
-        // Win delay timer — gives time for pig death effects before checking win
         this.winCheckDelay = 0;
         this.allPigsDead = false;
 
@@ -101,10 +100,35 @@ class AngryBirds {
         this.animId = requestAnimationFrame(t => this._loop(t));
     }
 
+    /* ══════════════════ UPDATED _setupHD ══════════════════ */
     _setupHD() {
+        const wrapper = this.canvas.parentElement;
+        let w, h;
+
         const r = this.canvas.getBoundingClientRect();
-        const w = r.width  || this.canvas.clientWidth  || 480;
-        const h = r.height || this.canvas.clientHeight || 700;
+        w = r.width;
+        h = r.height;
+
+        if (w < 10 || h < 10) {
+            if (wrapper) {
+                w = wrapper.clientWidth  || wrapper.offsetWidth;
+                h = wrapper.clientHeight || wrapper.offsetHeight;
+            }
+        }
+
+        if (w < 10 || h < 10) {
+            w = window.innerWidth;
+            h = window.innerHeight;
+        }
+
+        if (w < 10 || h < 10) {
+            w = parseInt(this.canvas.style.width)  || 480;
+            h = parseInt(this.canvas.style.height) || 700;
+        }
+
+        w = Math.max(w, 200);
+        h = Math.max(h, 200);
+
         this.canvas.width  = Math.round(w * this.dpr);
         this.canvas.height = Math.round(h * this.dpr);
         this.canvas.style.width  = w + 'px';
@@ -469,15 +493,12 @@ class AngryBirds {
         }
         if (this.state === this.STATE.FLYING)  { this._useSpecial(); return; }
 
-        // DEAD or WIN overlay — tap to proceed
         if (this.state === this.STATE.DEAD && this.overlayA > 0.7) {
-            // Retry same level
             this.score = 0; this.onScore(0);
             this._loadLevel();
             return;
         }
         if (this.state === this.STATE.WIN && this.overlayA > 0.7) {
-            // Next level!
             this.level++;
             this._loadLevel();
             return;
@@ -592,18 +613,13 @@ class AngryBirds {
         this._burstAt(b.x, b.y, '#22CC44', 12);
     }
 
-    /* ══════════════════ HELPER: Are all pigs dead? ══════════════════ */
-
     _allPigsAreDead() {
         return this.pigs.every(p => p.dead);
     }
 
-    /* ══════════════════ PHYSICS ══════════════════ */
-
     _updatePhysics(dt) {
         const spd = dt / 16.67;
 
-        // Main bird
         if (this.bird && this.bird.launched && !this.bird.dead) {
             this._stepBird(this.bird, spd);
             this.bird.trail.push({x:this.bird.x, y:this.bird.y, a:1});
@@ -626,7 +642,6 @@ class AngryBirds {
             }
         }
 
-        // Active split birds
         for (let i = this.activeBirds.length-1; i >= 0; i--) {
             const ab = this.activeBirds[i];
             if (!ab.launched || ab.settled) continue;
@@ -635,7 +650,6 @@ class AngryBirds {
             if (ab.y > this.GROUND+80 || ab.dead) ab.settled = true;
         }
 
-        // Blocks
         this.blocks.forEach(bl => {
             if (bl.dead) return;
             bl.vy  += this.GRAVITY*0.7*spd;
@@ -658,7 +672,6 @@ class AngryBirds {
             for (let j=i+1; j<this.blocks.length; j++)
                 this._blockBlockCollide(this.blocks[i], this.blocks[j]);
 
-        // Pigs
         this.pigs.forEach(pg => {
             if (pg.dead) return;
             pg.phase   += 0.035*spd;
@@ -673,7 +686,6 @@ class AngryBirds {
             }
         });
 
-        // Debris
         this.debris = this.debris.filter(d => {
             d.x+=d.vx*spd; d.y+=d.vy*spd;
             d.vy+=0.3*spd; d.angle+=d.av*spd;
@@ -795,7 +807,6 @@ class AngryBirds {
         this.flashA = 0.12; this.flashC = '#22CC44';
         this._sfx('success', 50);
 
-        // Mark that all pigs are dead — will be checked in settle phase
         if (this._allPigsAreDead()) {
             this.allPigsDead = true;
         }
@@ -827,19 +838,14 @@ class AngryBirds {
         });
     }
 
-    /* ══════════════════ BIRD DONE — ENTER SETTLE ══════════════════ */
-
     _onBirdDone() {
         if (this.state === this.STATE.SETTLE || this.state === this.STATE.WIN || this.state === this.STATE.DEAD) return;
         this.state = this.STATE.SETTLE;
-        this.settleTimer = 90; // ~1.5 seconds for things to settle
+        this.settleTimer = 90;
     }
-
-    /* ══════════════════ WIN ══════════════════ */
 
     _doWin() {
         if (this.state === this.STATE.WIN) return;
-
         this.state = this.STATE.WIN;
         const bonus = this.birdQueue.length * 1000;
         if (bonus > 0) { this.score += bonus; this.onScore(this.score); }
@@ -851,11 +857,8 @@ class AngryBirds {
         this._sfx('win', 100);
     }
 
-    /* ══════════════════ GAME OVER ══════════════════ */
-
     _doGameOver() {
         if (this.state === this.STATE.DEAD || this.state === this.STATE.WIN) return;
-
         this.state = this.STATE.DEAD;
         this.overlayA = 0;
         if (this.score > this.bestScore) {
@@ -880,15 +883,18 @@ class AngryBirds {
 
     _shake(t, f) { this.shakeT=t; this.shakeF=f; }
 
+    /* ══════════════════ UPDATED _toggleFS ══════════════════ */
     _toggleFS() {
-        const el = document.documentElement;
-        const isFS = !!(document.fullscreenElement||document.webkitFullscreenElement);
-        if (!isFS) { (el.requestFullscreen||el.webkitRequestFullscreen||function(){}).call(el); }
-        else       { (document.exitFullscreen||document.webkitExitFullscreen||function(){}).call(document); }
-        setTimeout(() => this.resize(), 200);
+        if (window.NeonFS) {
+            window.NeonFS.toggle();
+        } else {
+            const el = document.documentElement;
+            const isFS = !!(document.fullscreenElement||document.webkitFullscreenElement);
+            if (!isFS) { (el.requestFullscreen||el.webkitRequestFullscreen||function(){}).call(el); }
+            else       { (document.exitFullscreen||document.webkitExitFullscreen||function(){}).call(document); }
+        }
+        setTimeout(() => this.resize(), 300);
     }
-
-    /* ══════════════════ MAIN UPDATE ══════════════════ */
 
     update(ts, dt) {
         if (this.paused) return;
@@ -910,7 +916,6 @@ class AngryBirds {
 
         if (this.state === this.STATE.MENU) return;
 
-        // Overlay fade-in for end screens
         if (this.state === this.STATE.DEAD || this.state === this.STATE.WIN) {
             this.overlayA = Math.min(1, this.overlayA + 0.018);
             return;
@@ -929,27 +934,19 @@ class AngryBirds {
             this._updatePhysics(dt);
         }
 
-        // Camera follow
         if (this.bird && this.bird.launched && !this.bird.dead) {
             this.targetCamX = Math.max(0, Math.min(this.bird.x - this.W*0.3, this.worldW-this.W));
         }
         this.camX += (this.targetCamX - this.camX) * 0.065;
 
-        /* ═══════════════════════════════════════════════
-           SETTLE PHASE — THE CORE FIX
-           Check pigs FIRST before checking birds.
-           ═══════════════════════════════════════════════ */
         if (this.state === this.STATE.SETTLE) {
             this.settleTimer -= dt;
 
             if (this.settleTimer <= 0) {
-                // ──── CHECK 1: All pigs dead? → WIN! ────
                 if (this._allPigsAreDead()) {
                     this._doWin();
                     return;
                 }
-
-                // ──── CHECK 2: Birds remaining? → Load next bird ────
                 if (this.birdQueue.length > 0) {
                     this._nextBird();
                     this.state = this.STATE.WAITING;
@@ -957,20 +954,16 @@ class AngryBirds {
                     this._sfx('navigate', 200);
                     return;
                 }
-
-                // ──── CHECK 3: No birds AND pigs alive → GAME OVER ────
                 this._doGameOver();
                 return;
             }
 
-            // EARLY WIN CHECK — don't wait for timer if all pigs already dead
             if (this._allPigsAreDead() && this.settleTimer < 60) {
                 this._doWin();
                 return;
             }
         }
 
-        // FX update
         const spd = dt/16.67;
         this.parts = this.parts.filter(p => {
             p.x+=p.vx*spd; p.y+=p.vy*spd; p.vy+=p.g*spd;
@@ -980,8 +973,6 @@ class AngryBirds {
         this.rings = this.rings.filter(r => { r.r+=3.5*spd; r.a-=0.04*spd; return r.a>0; });
         this.pops  = this.pops.filter(p => { p.y-=1.1*spd; p.life-=dt; p.op=Math.min(1,p.life/500); return p.life>0; });
     }
-
-    /* ══════════════════ ENTER ANIMATION ══════════════════ */
 
     _updateEnterAnim(dt) {
         if (!this.bird || this.bird.launched || this.bird.enterAnim <= 0) return;
@@ -993,8 +984,6 @@ class AngryBirds {
         this.bird.y -= Math.abs(Math.sin(t * Math.PI * 3)) * 10 * (1-t);
         this.bird.phase += 0.08;
     }
-
-    /* ══════════════════ DRAW ══════════════════ */
 
     draw(ts) {
         const ctx = this.ctx;
@@ -1618,11 +1607,15 @@ class AngryBirds {
         return this.paused;
     }
 
+    /* ══════════════════ UPDATED resize ══════════════════ */
     resize() {
         this._setupHD();
-        this.W = this.canvas.width/this.dpr; this.H = this.canvas.height/this.dpr;
-        this.GROUND = this.H-52; this.worldW = this.W*2;
-        this.sling.x = this.W*0.18; this.sling.y = this.GROUND-55;
+        this.W = this.canvas.width / this.dpr;
+        this.H = this.canvas.height / this.dpr;
+        this.GROUND    = this.H - 52;
+        this.worldW    = this.W * 2;
+        this.sling.x   = this.W * 0.18;
+        this.sling.y   = this.GROUND - 55;
         this.clouds    = this._mkClouds(8);
         this.stars     = this._mkStars(50);
         this.mountains = this._mkMountains();

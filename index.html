@@ -17,25 +17,11 @@
     <link rel="stylesheet" href="css/animations.css">
     <link rel="stylesheet" href="css/games.css">
     <style>
-
-        /* ════════════════════════════════════
-           GLOBAL RESETS
-        ════════════════════════════════════ */
         *, *::before, *::after { box-sizing: border-box; }
-
-        html, body {
-            margin: 0; padding: 0;
-            width: 100%; height: 100%;
-            overflow-x: hidden;
-        }
-
-        /* Bottom nav completely removed */
+        html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow-x: hidden; }
         .bottom-nav { display: none !important; }
         .main-content { padding-bottom: 0 !important; }
 
-        /* ════════════════════════════════════
-           GAME CARDS
-        ════════════════════════════════════ */
         .game-thumb-canvas{width:100%;height:100%;display:block;border-radius:12px 12px 0 0}
         .game-card{position:relative;border-radius:14px;overflow:hidden;background:#12122a;border:1.5px solid rgba(179,71,217,.18);cursor:pointer;transition:transform .25s,box-shadow .25s,border-color .25s;-webkit-tap-highlight-color:transparent;box-shadow:0 4px 24px rgba(0,0,0,.45)}
         .game-card:active{transform:scale(.96)}
@@ -53,21 +39,16 @@
         .game-card-desc{font-size:.72rem;color:#8080a8;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
         .game-card-rating{display:flex;align-items:center;gap:4px;margin-top:5px;font-size:.7rem;color:#ffab00;font-weight:600}
 
-        /* ════════════════════════════════════
+        /* ═══════════════════════════════════
            GAME PAGE LAYOUT
-           Normal mode: header + wrapper fill screen
-           Fullscreen mode: ONLY canvas visible
-        ════════════════════════════════════ */
-
-        /* Game page section fills viewport */
+        ═══════════════════════════════════ */
         #game-page {
             display: flex;
             flex-direction: column;
             height: 100dvh;
-            height: 100vh; /* fallback */
+            height: 100vh;
         }
 
-        /* Game container = flex column */
         .game-container {
             display: flex;
             flex-direction: column;
@@ -76,7 +57,6 @@
             flex: 1;
         }
 
-        /* Header */
         .game-header {
             display: flex;
             align-items: center;
@@ -86,10 +66,9 @@
             border-bottom: 1px solid rgba(179,71,217,.2);
             position: relative;
             z-index: 10;
-            flex-shrink: 0; /* never compress */
+            flex-shrink: 0;
         }
 
-        /* Wrapper takes ALL remaining space */
         .game-wrapper {
             position: relative;
             flex: 1;
@@ -99,7 +78,6 @@
             width: 100%;
         }
 
-        /* Canvas fills wrapper completely */
         #game-canvas {
             position: absolute;
             top: 0; left: 0;
@@ -111,20 +89,14 @@
             user-select: none;
         }
 
-        /* ════════════════════════════════════
-           FULLSCREEN — THE KEY FIX
-
-           When body has .fs-active class
-           (added by JS), game-wrapper goes
-           fixed and covers 100% of screen.
-           No CSS :fullscreen needed.
-        ════════════════════════════════════ */
-
-        /* JS-controlled fullscreen class */
-        body.fs-active .game-header          { display: none !important; }
-        body.fs-active .navbar               { display: none !important; }
-        body.fs-active .footer               { display: none !important; }
-        body.fs-active .game-instructions    { display: none !important; }
+        /* ═══════════════════════════════════
+           UNIFIED FULLSCREEN
+        ═══════════════════════════════════ */
+        body.fs-active { overflow: hidden !important; }
+        body.fs-active .game-header { display: none !important; }
+        body.fs-active .navbar { display: none !important; }
+        body.fs-active .footer { display: none !important; }
+        body.fs-active .game-instructions { display: none !important; }
 
         body.fs-active .game-wrapper {
             position: fixed !important;
@@ -144,14 +116,14 @@
             height: 100% !important;
         }
 
-        /* Also handle real browser fullscreen */
-        :fullscreen              .game-header { display: none !important; }
-        :-webkit-full-screen     .game-header { display: none !important; }
-        :-moz-full-screen        .game-header { display: none !important; }
+        /* Browser native fullscreen */
+        :fullscreen .game-header,
+        :-webkit-full-screen .game-header,
+        :-moz-full-screen .game-header { display: none !important; }
 
-        :fullscreen              .game-wrapper,
-        :-webkit-full-screen     .game-wrapper,
-        :-moz-full-screen        .game-wrapper {
+        :fullscreen .game-wrapper,
+        :-webkit-full-screen .game-wrapper,
+        :-moz-full-screen .game-wrapper {
             position: fixed !important;
             top: 0 !important; left: 0 !important;
             width: 100vw !important;
@@ -159,16 +131,16 @@
             z-index: 999999 !important;
         }
 
-        :fullscreen              #game-canvas,
-        :-webkit-full-screen     #game-canvas,
-        :-moz-full-screen        #game-canvas {
+        :fullscreen #game-canvas,
+        :-webkit-full-screen #game-canvas,
+        :-moz-full-screen #game-canvas {
             width: 100% !important;
             height: 100% !important;
         }
 
-        /* ════════════════════════════════════
+        /* ═══════════════════════════════════
            FULLSCREEN BUTTON
-        ════════════════════════════════════ */
+        ═══════════════════════════════════ */
         #fullscreen-btn {
             position: absolute;
             bottom: 14px;
@@ -183,19 +155,17 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            z-index: 9999999; /* above everything in FS */
+            z-index: 9999999;
             cursor: pointer;
             transition: background .2s, transform .15s;
             -webkit-tap-highlight-color: transparent;
             touch-action: manipulation;
         }
-        #fullscreen-btn:active  { transform: scale(.88); background: rgba(0,0,0,.85); }
-        #fullscreen-btn:hover   { background: rgba(20,10,40,.9); }
-        #fullscreen-btn svg     { width:20px;height:20px;fill:none;stroke:#fff;stroke-width:2;stroke-linecap:round;stroke-linejoin:round; }
+        #fullscreen-btn:active { transform: scale(.88); background: rgba(0,0,0,.85); }
+        #fullscreen-btn:hover { background: rgba(20,10,40,.9); }
+        #fullscreen-btn svg { width:20px;height:20px;fill:none;stroke:#fff;stroke-width:2;stroke-linecap:round;stroke-linejoin:round; }
 
-        /* ════════════════════════════════════
-           OVERLAYS
-        ════════════════════════════════════ */
+        /* ═══════════════════════════════════ */
         .game-overlay{position:absolute;inset:0;background:rgba(10,10,26,.88);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;z-index:40}
         .game-overlay.hidden{display:none}
         .overlay-content{text-align:center;padding:28px 24px}
@@ -214,9 +184,7 @@
         .game-score-pill{flex-shrink:0;padding:5px 10px;background:rgba(179,71,217,.12);border:1px solid rgba(179,71,217,.25);border-radius:20px;font-family:'Orbitron',sans-serif;font-size:.75rem;font-weight:700;color:#d470ff;white-space:nowrap}
         .no-results{text-align:center;padding:50px 20px;color:#6a6a9a;font-family:'Rajdhani',sans-serif;font-size:1rem}
 
-        /* ════════════════════════════════════
-           HERO STATS — 2x2 grid
-        ════════════════════════════════════ */
+        /* Hero Stats */
         .hero-stats{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:24px auto 0;max-width:380px;padding:0 16px;width:100%}
         .hero-stat{background:rgba(255,255,255,.04);border:1px solid rgba(179,71,217,.22);border-radius:14px;padding:18px 12px 16px;text-align:center;position:relative;overflow:hidden;backdrop-filter:blur(6px);aspect-ratio:1/1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px}
         .hero-stat::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--stat-color,#b347d9);opacity:.75}
@@ -230,9 +198,7 @@
         @keyframes statPulse{0%,100%{text-shadow:0 0 12px var(--stat-color,#b347d9)}50%{text-shadow:0 0 28px var(--stat-color,#b347d9),0 0 48px var(--stat-color,#b347d9)}}
         @media(min-width:640px){.hero-stats{grid-template-columns:repeat(4,1fr);max-width:600px;gap:14px}.hero-stat{aspect-ratio:unset;padding:20px 12px 18px}}
 
-        /* ════════════════════════════════════
-           TICKER
-        ════════════════════════════════════ */
+        /* Ticker */
         .hero-ticker-wrap{width:100%;overflow:hidden;margin:22px 0 0;padding:10px 0;border-top:1px solid rgba(179,71,217,.1);border-bottom:1px solid rgba(179,71,217,.1);background:rgba(179,71,217,.04)}
         .hero-ticker{display:flex;white-space:nowrap;width:max-content;animation:tickerScroll 24s linear infinite}
         .hero-ticker:hover{animation-play-state:paused}
@@ -242,9 +208,7 @@
         .ticker-item .t-hot{background:rgba(255,64,129,.2);color:#ff4081;border:1px solid rgba(255,64,129,.35);border-radius:8px;padding:1px 6px;font-size:.6rem;font-weight:700;letter-spacing:1px}
         .ticker-dot{color:rgba(179,71,217,.4);font-size:1rem;padding:0 6px}
 
-        /* ════════════════════════════════════
-           MINI PREVIEW
-        ════════════════════════════════════ */
+        /* Mini Preview */
         .hero-preview{margin:24px auto 0;max-width:700px;padding:0 16px;width:100%}
         .hero-preview-label{font-family:'Rajdhani',sans-serif;font-size:.72rem;font-weight:700;color:#6060a0;letter-spacing:2px;text-transform:uppercase;text-align:center;margin-bottom:12px}
         .hero-preview-row{display:flex;gap:10px;overflow-x:auto;scrollbar-width:none;-ms-overflow-style:none;padding-bottom:4px;justify-content:flex-start}
@@ -389,36 +353,30 @@
             </div>
         </section>
 
-        <!-- ═══════════════════════════════════
-             GAME PLAYER
-        ═══════════════════════════════════ -->
+        <!-- GAME PLAYER -->
         <section id="game-page" class="page">
             <div class="game-container">
-
-                <!-- Header hidden in fullscreen -->
                 <div class="game-header" id="game-header">
                     <button class="back-btn" id="back-to-games">← Back</button>
                     <div class="game-info"><h2 class="game-title" id="current-game-title">Game</h2></div>
                     <div class="game-score-pill"><span id="game-score">0</span></div>
                 </div>
 
-                <!-- Game area — fills all remaining space -->
                 <div class="game-wrapper" id="game-wrapper">
                     <canvas id="game-canvas"></canvas>
 
-                    <!-- FS Button — always on top -->
                     <button id="fullscreen-btn" aria-label="Toggle Fullscreen">
                         <svg id="fs-icon-expand" viewBox="0 0 24 24">
                             <polyline points="15 3 21 3 21 9"/>
                             <polyline points="9 21 3 21 3 15"/>
                             <line x1="21" y1="3" x2="14" y2="10"/>
-                            <line x1="3"  y1="21" x2="10" y2="14"/>
+                            <line x1="3" y1="21" x2="10" y2="14"/>
                         </svg>
                         <svg id="fs-icon-compress" viewBox="0 0 24 24" style="display:none">
                             <polyline points="4 14 10 14 10 20"/>
                             <polyline points="20 10 14 10 14 4"/>
-                            <line x1="10" y1="14" x2="3"  y2="21"/>
-                            <line x1="21" y1="3"  x2="14" y2="10"/>
+                            <line x1="10" y1="14" x2="3" y2="21"/>
+                            <line x1="21" y1="3" x2="14" y2="10"/>
                         </svg>
                     </button>
 
@@ -429,15 +387,15 @@
                             <h2 class="overlay-title" id="overlay-title">PAUSED</h2>
                             <div class="overlay-score" id="overlay-score"></div>
                             <div class="overlay-buttons">
-                                <button class="btn btn-primary"   id="resume-btn">▶ Resume</button>
+                                <button class="btn btn-primary" id="resume-btn">▶ Resume</button>
                                 <button class="btn btn-secondary" id="overlay-restart-btn">🔄 Restart</button>
                             </div>
                         </div>
                     </div>
-                </div><!-- /.game-wrapper -->
+                </div>
 
                 <div class="game-instructions" id="game-instructions"></div>
-            </div><!-- /.game-container -->
+            </div>
         </section>
 
     </main>
@@ -451,7 +409,7 @@
         <div class="footer-bottom"><p>&copy; 2024 NeonArcade. All rights reserved.</p></div>
     </footer>
 
-</div><!-- /#app -->
+</div>
 
 <!-- SCRIPTS -->
 <script src="js/particles.js"></script>
@@ -491,117 +449,119 @@ const GameThumbnails=(()=>{
 </script>
 
 <!-- ═══════════════════════════════════════════════
-     FULLSCREEN MANAGER
-     Works on ALL mobile browsers — no CSS :fullscreen
-     Adds body.fs-active class + forces canvas size
+     UNIFIED FULLSCREEN MANAGER
+     Single source of truth — no conflicts
 ═══════════════════════════════════════════════ -->
 <script>
 (function(){
     'use strict';
 
-    /* ── State ── */
     let _isFs = false;
 
-    const gameWrapper  = document.getElementById('game-wrapper');
-    const gameCanvas   = document.getElementById('game-canvas');
     const expandIcon   = document.getElementById('fs-icon-expand');
     const compressIcon = document.getElementById('fs-icon-compress');
     const fsBtn        = document.getElementById('fullscreen-btn');
 
-    /* ── Update icons ── */
     function updateIcons(fs) {
-        if (!expandIcon || !compressIcon) return;
-        expandIcon.style.display   = fs ? 'none' : '';
-        compressIcon.style.display = fs ? ''     : 'none';
+        if (expandIcon)   expandIcon.style.display   = fs ? 'none' : '';
+        if (compressIcon) compressIcon.style.display = fs ? ''     : 'none';
     }
 
-    /* ── Force canvas to fill wrapper ── */
-    function forceCanvasSize() {
-        if (!gameCanvas || !gameWrapper) return;
-        const w = gameWrapper.offsetWidth  || window.innerWidth;
-        const h = gameWrapper.offsetHeight || window.innerHeight;
-        gameCanvas.style.width  = w + 'px';
-        gameCanvas.style.height = h + 'px';
-        /* Tell active game to resize */
-        setTimeout(function(){
-            if (window.resizeActiveGame) window.resizeActiveGame();
-        }, 50);
+    /* Force canvas to match wrapper exactly */
+    function syncCanvasSize() {
+        var wrapper = document.getElementById('game-wrapper');
+        var canvas  = document.getElementById('game-canvas');
+        if (!wrapper || !canvas) return;
+
+        /* Use rAF to ensure layout is settled */
+        requestAnimationFrame(function() {
+            var w = wrapper.clientWidth  || wrapper.offsetWidth  || window.innerWidth;
+            var h = wrapper.clientHeight || wrapper.offsetHeight || window.innerHeight;
+
+            /* Only set CSS size — game's _setupHD handles canvas buffer */
+            canvas.style.width  = w + 'px';
+            canvas.style.height = h + 'px';
+
+            /* Tell active game to resize */
+            if (window._activeGameInstance && window._activeGameInstance.resize) {
+                try { window._activeGameInstance.resize(); } catch(e) {}
+            }
+        });
     }
 
-    /* ── Enter fullscreen ── */
     function enterFS() {
         _isFs = true;
         document.body.classList.add('fs-active');
         updateIcons(true);
 
-        /* Try native API on documentElement */
-        const el  = document.documentElement;
-        const req = el.requestFullscreen
+        var el  = document.documentElement;
+        var req = el.requestFullscreen
                  || el.webkitRequestFullscreen
                  || el.mozRequestFullScreen
                  || el.msRequestFullscreen;
-        if (req) {
-            req.call(el).catch(function(){});
-        }
+        if (req) req.call(el).catch(function(){});
 
-        /* Force size immediately and after paint */
-        forceCanvasSize();
-        requestAnimationFrame(forceCanvasSize);
-        setTimeout(forceCanvasSize, 100);
-        setTimeout(forceCanvasSize, 350);
+        /* Sync size multiple times to handle transition */
+        syncCanvasSize();
+        setTimeout(syncCanvasSize, 50);
+        setTimeout(syncCanvasSize, 150);
+        setTimeout(syncCanvasSize, 350);
+        setTimeout(syncCanvasSize, 600);
     }
 
-    /* ── Exit fullscreen ── */
     function exitFS() {
         _isFs = false;
         document.body.classList.remove('fs-active');
         updateIcons(false);
 
-        const exit = document.exitFullscreen
+        var exit = document.exitFullscreen
                   || document.webkitExitFullscreen
                   || document.mozCancelFullScreen
                   || document.msExitFullscreen;
-        if (exit) exit.call(document).catch(function(){});
+        if (exit) {
+            try { exit.call(document); } catch(e) {}
+        }
 
-        forceCanvasSize();
-        requestAnimationFrame(forceCanvasSize);
-        setTimeout(forceCanvasSize, 150);
+        syncCanvasSize();
+        setTimeout(syncCanvasSize, 100);
+        setTimeout(syncCanvasSize, 300);
     }
 
-    /* ── Toggle ── */
     function toggleFS() {
         if (_isFs) exitFS();
         else       enterFS();
     }
 
-    /* ── Button events ── */
     if (fsBtn) {
-        fsBtn.addEventListener('click',      toggleFS);
-        fsBtn.addEventListener('touchend', function(e){
+        fsBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            toggleFS();
+        });
+        fsBtn.addEventListener('touchend', function(e) {
             e.preventDefault();
+            e.stopPropagation();
             toggleFS();
         }, { passive: false });
     }
 
-    /* ── Native FS change events (browser-initiated) ── */
+    /* Native FS change events */
     function onNativeFsChange() {
-        const nativeFs = !!(document.fullscreenElement
-                          || document.webkitFullscreenElement
-                          || document.mozFullScreenElement
-                          || document.msFullscreenElement);
+        var nativeFs = !!(document.fullscreenElement
+                        || document.webkitFullscreenElement
+                        || document.mozFullScreenElement
+                        || document.msFullscreenElement);
 
         if (!nativeFs && _isFs) {
-            /* User pressed Esc — sync state */
             _isFs = false;
             document.body.classList.remove('fs-active');
             updateIcons(false);
-            forceCanvasSize();
+            syncCanvasSize();
         }
         if (nativeFs && !_isFs) {
             _isFs = true;
             document.body.classList.add('fs-active');
             updateIcons(true);
-            setTimeout(forceCanvasSize, 100);
+            setTimeout(syncCanvasSize, 100);
         }
     }
 
@@ -610,90 +570,24 @@ const GameThumbnails=(()=>{
     document.addEventListener('mozfullscreenchange',    onNativeFsChange);
     document.addEventListener('MSFullscreenChange',     onNativeFsChange);
 
-    /* ── Window resize — keep canvas sized ── */
-    window.addEventListener('resize', function(){
-        if (_isFs) {
-            forceCanvasSize();
-            setTimeout(forceCanvasSize, 100);
-        }
+    window.addEventListener('resize', function() {
+        syncCanvasSize();
+        setTimeout(syncCanvasSize, 100);
     });
 
-    /* ── orientation change ── */
-    window.addEventListener('orientationchange', function(){
-        setTimeout(forceCanvasSize, 200);
-        setTimeout(forceCanvasSize, 500);
+    window.addEventListener('orientationchange', function() {
+        setTimeout(syncCanvasSize, 200);
+        setTimeout(syncCanvasSize, 500);
     });
 
-    /* ── Expose for other scripts ── */
-    window.FSManager = { enter: enterFS, exit: exitFS, toggle: toggleFS, isActive: function(){ return _isFs; } };
-})();
-</script>
-
-<!-- GAME ROUTER -->
-<script>
-(function(){
-    'use strict';
-
-    const GAME_REGISTRY = {
-        'bubble-shooter':  { name:'Bubble Shooter',  init:(c,s)=>window.BubbleShooter  ? new window.BubbleShooter(c,s)  : null },
-        'liquid-sort':     { name:'Liquid Sort',     init:(c,s)=>window.LiquidSort     ? new window.LiquidSort(c,s)     : null },
-        'knife-hit':       { name:'Knife Hit',       init:(c,s)=>window.KnifeHit       ? new window.KnifeHit(c,s)       : null },
-        'color-bump':      { name:'Color Bump',      init:(c,s)=>window.ColorBump      ? new window.ColorBump(c,s)      : null },
-        'bottle-shooting': { name:'Bottle Shooting', init:(c,s)=>window.BottleShooting ? new window.BottleShooting(c,s) : null },
-        'color-up':        { name:'Color Up',        init:(c,s)=>window.ColorUp        ? new window.ColorUp(c,s)        : null },
-        'flappy-bird':     { name:'Flappy Bird',     init:(c,s)=>window.FlappyBird     ? new window.FlappyBird(c,s)     : null },
-        'angry-birds':     { name:'Angry Birds',     init:(c,s)=>window.AngryBirds     ? new window.AngryBirds(c,s)     : null },
-        'jewel-legend':    { name:'Jewel Legend',    init:(c,s)=>window.JewelLegend    ? new window.JewelLegend(c,s)    : null },
-        'block-vs-ball':   { name:'Block vs Ball',   init:(c,s)=>window.BlockVsBall    ? new window.BlockVsBall(c,s)    : null },
+    /* Expose globally */
+    window.NeonFS = {
+        enter: enterFS,
+        exit: exitFS,
+        toggle: toggleFS,
+        isActive: function(){ return _isFs; },
+        syncSize: syncCanvasSize
     };
-
-    window.GAME_REGISTRY = GAME_REGISTRY;
-    let activeId = null, activeInst = null;
-
-    window.launchGame = function(gameId) {
-        const entry = GAME_REGISTRY[gameId];
-        if (!entry) { console.error('Game not found:', gameId); return; }
-
-        /* Destroy previous */
-        if (activeInst) {
-            try { if (activeInst.destroy)     activeInst.destroy();     } catch(e){}
-            try { if (activeInst.togglePause) activeInst.togglePause(); } catch(e){}
-            activeInst = null;
-        }
-        activeId = gameId;
-
-        const canvas  = document.getElementById('game-canvas');
-        const scoreEl = document.getElementById('game-score');
-        const titleEl = document.getElementById('current-game-title');
-        if (titleEl) titleEl.textContent = entry.name;
-        if (scoreEl) scoreEl.textContent = '0';
-
-        const onScore = function(score) {
-            if (scoreEl) scoreEl.textContent = (typeof score === 'number') ? score.toLocaleString() : score;
-        };
-
-        /* Small delay so DOM settles */
-        setTimeout(function() {
-            try { activeInst = entry.init(canvas, onScore); } catch(e) { console.error('Error launching', gameId, e); }
-        }, 80);
-    };
-
-    window.destroyActiveGame = function() {
-        if (activeInst) { try { activeInst.destroy && activeInst.destroy(); } catch(e){} activeInst = null; }
-        activeId = null;
-        /* Exit FS when leaving game */
-        if (window.FSManager && window.FSManager.isActive()) window.FSManager.exit();
-    };
-
-    window.pauseActiveGame  = function() { if (activeInst && activeInst.togglePause) activeInst.togglePause(); };
-    window.resizeActiveGame = function() {
-        if (!activeInst || !activeInst.resize) return;
-        /* Give DOM a frame to settle before resize */
-        requestAnimationFrame(function() {
-            try { activeInst.resize(); } catch(e){}
-        });
-    };
-    window.getActiveGameId  = function() { return activeId; };
 })();
 </script>
 
@@ -721,7 +615,6 @@ const GameThumbnails=(()=>{
     ];
 
     function init(){
-        /* Ticker */
         var ticker=document.getElementById('hero-ticker');
         if(ticker){
             var html=TICKER.map(function(t){
@@ -730,7 +623,6 @@ const GameThumbnails=(()=>{
             ticker.innerHTML=html+html;
         }
 
-        /* Mini cards */
         var row=document.getElementById('hero-preview-row');
         if(row&&window.GameThumbnails){
             GAMES.forEach(function(g){
@@ -749,7 +641,6 @@ const GameThumbnails=(()=>{
             });
         }
 
-        /* Count-up */
         function countUp(el,target,suffix,dur){
             if(!el)return;var st=null;
             (function step(ts){if(!st)st=ts;var p=Math.min((ts-st)/dur,1),e=1-Math.pow(1-p,3);

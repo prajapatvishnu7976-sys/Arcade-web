@@ -1,11 +1,10 @@
 /* ============================================================
-   NEONARCADE - Game Specific Styles v4.0
-   FULLSCREEN FIXED — No max-height limits
+   NEONARCADE - Game Specific Styles v5.0
+   FULLSCREEN FIXED — Canvas fills properly
    ============================================================ */
 
-
 /* ============================================================
-   1. GAME CANVAS — NO HEIGHT LIMITS
+   1. GAME CANVAS
    ============================================================ */
 
 #game-canvas {
@@ -20,7 +19,6 @@
     -webkit-tap-highlight-color: transparent;
     user-select: none;
     -webkit-user-select: none;
-    /* NO max-height — canvas fills wrapper completely */
 }
 
 #game-canvas.cursor-aim      { cursor: crosshair; }
@@ -34,9 +32,8 @@
     box-shadow: inset 0 0 60px rgba(179,71,217,0.05);
 }
 
-
 /* ============================================================
-   2. GAME WRAPPER — NO BORDER RADIUS
+   2. GAME WRAPPER
    ============================================================ */
 
 .game-wrapper {
@@ -51,28 +48,10 @@
     min-height: 0;
 }
 
-.game-wrapper:hover {
-    border-color: transparent;
-}
-
-.game-wrapper.game-active {
-    animation: none;
-}
-
 .game-wrapper.game-over {
     border-color: rgba(255,0,85,0.3);
     box-shadow: inset 0 0 30px rgba(255,0,85,0.1);
 }
-
-.game-wrapper.level-flash {
-    animation: levelFlash 0.5s ease;
-}
-
-@keyframes levelFlash {
-    0%   { box-shadow: inset 0 0 40px rgba(0,255,136,0.3); }
-    100% { box-shadow: none; }
-}
-
 
 /* ============================================================
    3. GAME HUD
@@ -113,11 +92,6 @@
     pointer-events: none;
 }
 
-.hud-item.hud-highlight {
-    border-color: rgba(0,212,255,0.5);
-    box-shadow: 0 0 12px rgba(0,212,255,0.2);
-}
-
 .hud-item.hud-danger {
     border-color: rgba(255,0,85,0.5);
     box-shadow: 0 0 12px rgba(255,0,85,0.2);
@@ -126,7 +100,7 @@
 
 @keyframes hudDanger {
     0%, 100% { border-color: rgba(255,0,85,0.4); }
-    50%       { border-color: rgba(255,0,85,0.9); box-shadow: 0 0 20px rgba(255,0,85,0.4); }
+    50%      { border-color: rgba(255,0,85,0.9); box-shadow: 0 0 20px rgba(255,0,85,0.4); }
 }
 
 .hud-label {
@@ -150,102 +124,9 @@
     line-height: 1.2;
 }
 
-.hud-value.hud-value-danger {
-    color: var(--neon-red, #ff0055);
-    text-shadow: 0 0 8px rgba(255,0,85,0.5);
-    animation: hudValueFlash 0.4s ease-in-out infinite;
-}
-
-.hud-value.hud-value-good {
-    color: var(--neon-green, #00ff88);
-    text-shadow: 0 0 8px rgba(0,255,136,0.5);
-}
-
-@keyframes hudValueFlash {
-    0%, 100% { opacity: 1; }
-    50%       { opacity: 0.4; }
-}
-
-.hud-score .hud-value { font-size: 1.3rem; }
-
-.hud-score.score-updated .hud-value {
-    animation: scoreTickUp 0.2s ease;
-}
-
-@keyframes scoreTickUp {
-    0%   { transform: scale(1); }
-    50%  { transform: scale(1.3); color: var(--neon-green, #00ff88); }
-    100% { transform: scale(1); }
-}
-
-.hud-lives .hud-value {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    font-size: 1rem;
-}
-
-.life-icon {
-    display: inline-block;
-    font-size: 0.9rem;
-}
-
-.life-icon.lost {
-    opacity: 0.2;
-    filter: grayscale(1);
-    animation: lifeLostAnim 0.3s ease;
-}
-
-@keyframes lifeLostAnim {
-    0%   { transform: scale(1.5); opacity: 1; }
-    100% { transform: scale(0.8); opacity: 0.2; }
-}
-
-.hud-multiplier {
-    background: linear-gradient(135deg, rgba(255,247,0,0.15), rgba(255,140,0,0.15));
-    border-color: rgba(255,247,0,0.4);
-}
-
-.hud-multiplier .hud-value {
-    color: var(--neon-yellow, #fff700);
-    text-shadow: 0 0 8px rgba(255,247,0,0.5);
-}
-
-.hud-multiplier.active {
-    animation: multiplierGlow 0.8s ease-in-out infinite;
-}
-
-@keyframes multiplierGlow {
-    0%, 100% { box-shadow: 0 0 8px rgba(255,247,0,0.2); }
-    50%       { box-shadow: 0 0 20px rgba(255,247,0,0.5); }
-}
-
-
 /* ============================================================
    4. HEALTH & ENERGY BARS
    ============================================================ */
-
-.health-bar-container { width: 100%; max-width: 200px; }
-
-.health-bar-label {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 4px;
-}
-
-.health-bar-label span {
-    font-size: 0.65rem;
-    color: var(--text-muted, #6a6a8a);
-    text-transform: uppercase;
-    letter-spacing: 1px;
-}
-
-.health-bar-label .health-value-text {
-    color: var(--neon-green, #00ff88);
-    font-family: var(--font-display, 'Orbitron', sans-serif);
-    font-size: 0.75rem;
-}
 
 .health-bar {
     width: 100%; height: 10px;
@@ -254,13 +135,6 @@
     overflow: hidden;
     border: 1px solid rgba(255,255,255,0.12);
     position: relative;
-}
-
-.health-bar::before {
-    content: '';
-    position: absolute; inset: 0;
-    background: repeating-linear-gradient(90deg, transparent, transparent 9px, rgba(0,0,0,0.3) 9px, rgba(0,0,0,0.3) 10px);
-    z-index: 2; pointer-events: none;
 }
 
 .health-fill {
@@ -272,118 +146,18 @@
     box-shadow: 0 0 8px rgba(0,255,136,0.5);
 }
 
-.health-fill::after {
-    content: '';
-    position: absolute; top: 0; left: 0; right: 0;
-    height: 40%;
-    background: rgba(255,255,255,0.2);
-    border-radius: 99px;
+.health-fill.health-low {
+    background: linear-gradient(90deg, #ff0055, #ff3388);
+    animation: healthLowPulse 0.5s ease-in-out infinite;
 }
-
-.health-fill.health-high   { background: linear-gradient(90deg, #00ff88, #00fff5); box-shadow: 0 0 10px rgba(0,255,136,0.5); }
-.health-fill.health-medium { background: linear-gradient(90deg, #fff700, #ff8c00); box-shadow: 0 0 10px rgba(255,247,0,0.5); }
-.health-fill.health-low    { background: linear-gradient(90deg, #ff0055, #ff3388); box-shadow: 0 0 10px rgba(255,0,85,0.6); animation: healthLowPulse 0.5s ease-in-out infinite; }
-.health-fill.health-critical { background: var(--neon-red, #ff0055); box-shadow: 0 0 15px rgba(255,0,85,0.8); animation: healthCritical 0.3s ease-in-out infinite; }
 
 @keyframes healthLowPulse {
-    0%, 100% { box-shadow: 0 0 8px rgba(255,0,85,0.5); filter: brightness(1); }
-    50%       { box-shadow: 0 0 20px rgba(255,0,85,0.8); filter: brightness(1.3); }
+    0%, 100% { box-shadow: 0 0 8px rgba(255,0,85,0.5); }
+    50%      { box-shadow: 0 0 20px rgba(255,0,85,0.8); }
 }
-
-@keyframes healthCritical {
-    0%, 100% { opacity: 1; }
-    50%       { opacity: 0.5; }
-}
-
-.energy-bar {
-    width: 100%; height: 6px;
-    background: rgba(255,255,255,0.06);
-    border-radius: 99px; overflow: hidden;
-    border: 1px solid rgba(179,71,217,0.2);
-    margin-top: 4px;
-}
-
-.energy-fill {
-    height: 100%;
-    background: linear-gradient(90deg, var(--neon-purple, #b347d9), var(--neon-pink, #ff006e));
-    border-radius: 99px;
-    transition: width 0.3s ease;
-    box-shadow: 0 0 8px rgba(179,71,217,0.5);
-}
-
-.xp-bar {
-    width: 100%; height: 4px;
-    background: rgba(255,255,255,0.05);
-    border-radius: 99px; overflow: hidden;
-    margin-top: 6px;
-}
-
-.xp-fill {
-    height: 100%;
-    background: linear-gradient(90deg, #00d4ff, #00fff5);
-    border-radius: 99px;
-    transition: width 0.5s ease;
-    box-shadow: 0 0 6px rgba(0,212,255,0.5);
-}
-
 
 /* ============================================================
-   5. POWER-UPS
-   ============================================================ */
-
-.powerup {
-    position: absolute;
-    padding: 5px 12px;
-    background: var(--gradient-accent, linear-gradient(135deg, #ff006e, #ff8c00));
-    border-radius: 8px;
-    font-size: 0.75rem; font-weight: 700;
-    font-family: var(--font-heading, 'Rajdhani', sans-serif);
-    letter-spacing: 1px; text-transform: uppercase;
-    color: #fff;
-    animation: powerupFloat 2s ease-in-out infinite;
-    pointer-events: none; z-index: 15;
-    box-shadow: 0 0 15px rgba(255,0,110,0.5);
-    border: 1px solid rgba(255,255,255,0.2);
-    white-space: nowrap;
-}
-
-.powerup.powerup-speed  { background: linear-gradient(135deg, #00d4ff, #00ff88); box-shadow: 0 0 15px rgba(0,212,255,0.5); }
-.powerup.powerup-shield { background: linear-gradient(135deg, #b347d9, #00d4ff); box-shadow: 0 0 15px rgba(179,71,217,0.5); }
-.powerup.powerup-score  { background: linear-gradient(135deg, #fff700, #ff8c00); box-shadow: 0 0 15px rgba(255,247,0,0.5); color: #050508; }
-.powerup.powerup-life   { background: linear-gradient(135deg, #ff006e, #ff3388); box-shadow: 0 0 15px rgba(255,0,110,0.5); }
-
-@keyframes powerupFloat {
-    0%, 100% { transform: translateY(0) scale(1); }
-    50%       { transform: translateY(-12px) scale(1.05); }
-}
-
-.powerup-active-bar {
-    display: flex; gap: 6px; align-items: center;
-    padding: 6px 12px;
-    background: rgba(5,5,8,0.8);
-    border-radius: 10px;
-    border: 1px solid rgba(255,247,0,0.4);
-    backdrop-filter: blur(10px);
-    pointer-events: none;
-}
-
-.powerup-icon  { font-size: 1rem; }
-.powerup-timer { width: 60px; height: 4px; background: rgba(255,255,255,0.1); border-radius: 99px; overflow: hidden; }
-.powerup-timer-fill { height: 100%; background: linear-gradient(90deg, #fff700, #ff8c00); border-radius: 99px; transition: width 0.1s linear; }
-
-.collectible {
-    position: absolute; z-index: 10; pointer-events: none;
-    animation: collectibleBob 1.5s ease-in-out infinite;
-}
-
-@keyframes collectibleBob {
-    0%, 100% { transform: translateY(0); }
-    50%       { transform: translateY(-8px); }
-}
-
-
-/* ============================================================
-   6. TOUCH CONTROLS
+   5. TOUCH CONTROLS
    ============================================================ */
 
 .touch-controls {
@@ -413,7 +187,6 @@
     user-select: none;
     backdrop-filter: blur(10px);
     transition: background 0.1s ease, transform 0.1s ease;
-    box-shadow: 0 0 15px rgba(179,71,217,0.2);
 }
 
 .touch-btn:active {
@@ -421,19 +194,8 @@
     transform: scale(0.9);
 }
 
-.touch-btn-action {
-    width: 72px; height: 72px;
-    background: rgba(255,0,110,0.2);
-    border-color: rgba(255,0,110,0.5);
-}
-
-.touch-btn-action:active {
-    background: rgba(255,0,110,0.5);
-}
-
-
 /* ============================================================
-   7. GAME OVERLAY & MODALS
+   6. GAME OVERLAY & MODALS
    ============================================================ */
 
 .game-overlay {
@@ -446,15 +208,6 @@
 }
 
 .game-overlay.hidden { display: none; }
-
-.game-overlay.overlay-animate .overlay-content {
-    animation: overlayContentIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-}
-
-@keyframes overlayContentIn {
-    from { opacity: 0; transform: scale(0.8) translateY(20px); }
-    to   { opacity: 1; transform: scale(1) translateY(0); }
-}
 
 .overlay-content {
     text-align: center;
@@ -475,31 +228,8 @@
     background: linear-gradient(90deg, transparent, rgba(179,71,217,0.8), transparent);
 }
 
-.countdown-overlay {
-    position: absolute; inset: 0;
-    background: rgba(5,5,8,0.7);
-    display: flex; align-items: center; justify-content: center;
-    z-index: 25; backdrop-filter: blur(4px);
-}
-
-.countdown-display {
-    font-family: var(--font-display, 'Orbitron', sans-serif);
-    font-size: 8rem; font-weight: 900;
-    color: var(--neon-cyan, #00fff5);
-    text-shadow: 0 0 30px rgba(0,255,245,0.8), 0 0 60px rgba(0,255,245,0.4);
-    animation: countdownNum 1s ease-out;
-}
-
-@keyframes countdownNum {
-    0%   { transform: scale(2); opacity: 0; }
-    30%  { transform: scale(1.1); opacity: 1; }
-    80%  { transform: scale(1); opacity: 1; }
-    100% { transform: scale(0.7); opacity: 0; }
-}
-
-
 /* ============================================================
-   8. SCORE POPUP & FLOATING TEXT
+   7. SCORE POPUP
    ============================================================ */
 
 .score-popup {
@@ -513,10 +243,6 @@
     animation: scorePopupAnim 1.2s ease-out forwards;
 }
 
-.score-popup.bonus { color: var(--neon-yellow, #fff700); font-size: 1.5rem; }
-.score-popup.combo { color: var(--neon-pink, #ff006e); font-size: 1.8rem; }
-.score-popup.miss  { color: var(--neon-red, #ff0055); font-size: 1rem; opacity: 0.7; }
-
 @keyframes scorePopupAnim {
     0%   { transform: translateY(0) scale(0.5); opacity: 0; }
     20%  { transform: translateY(-10px) scale(1.2); opacity: 1; }
@@ -524,59 +250,8 @@
     100% { transform: translateY(-70px) scale(0.8); opacity: 0; }
 }
 
-.combo-display {
-    position: absolute; top: 50%; left: 50%;
-    transform: translate(-50%, -50%);
-    text-align: center; pointer-events: none; z-index: 35;
-    animation: comboAppear 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-}
-
-.combo-number {
-    font-family: var(--font-display, 'Orbitron', sans-serif);
-    font-size: 4rem; font-weight: 900;
-    background: linear-gradient(135deg, #ff006e, #ff8c00, #fff700);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-    filter: drop-shadow(0 0 20px rgba(255,0,110,0.6));
-}
-
-.combo-label {
-    font-family: var(--font-heading, 'Rajdhani', sans-serif);
-    font-size: 1rem; color: var(--neon-yellow, #fff700);
-    text-transform: uppercase; letter-spacing: 4px;
-}
-
-@keyframes comboAppear {
-    from { transform: translate(-50%, -50%) scale(0.3); }
-    to   { transform: translate(-50%, -50%) scale(1); }
-}
-
-.level-up-banner {
-    position: absolute; top: 50%; left: 0; right: 0;
-    transform: translateY(-50%);
-    text-align: center; pointer-events: none; z-index: 35;
-    animation: levelUpBanner 2s ease forwards;
-}
-
-.level-up-title {
-    font-family: var(--font-display, 'Orbitron', sans-serif);
-    font-size: 2.5rem; font-weight: 900;
-    color: var(--neon-green, #00ff88);
-    text-shadow: 0 0 20px rgba(0,255,136,0.8), 0 0 40px rgba(0,255,136,0.4);
-    letter-spacing: 4px;
-}
-
-@keyframes levelUpBanner {
-    0%   { opacity: 0; transform: translateY(-30%) scale(0.8); }
-    15%  { opacity: 1; transform: translateY(-50%) scale(1.05); }
-    70%  { opacity: 1; transform: translateY(-50%) scale(1); }
-    100% { opacity: 0; transform: translateY(-70%) scale(0.95); }
-}
-
-
 /* ============================================================
-   9. SCREEN EFFECTS
+   8. SCREEN EFFECTS
    ============================================================ */
 
 .screen-flash {
@@ -587,58 +262,14 @@
 
 .screen-flash.flash-red   { background: rgba(255,0,85,0.3);   animation: screenFlash 0.3s ease; }
 .screen-flash.flash-green { background: rgba(0,255,136,0.25); animation: screenFlash 0.3s ease; }
-.screen-flash.flash-white { background: rgba(255,255,255,0.2);animation: screenFlash 0.2s ease; }
-.screen-flash.flash-blue  { background: rgba(0,212,255,0.25); animation: screenFlash 0.3s ease; }
 
 @keyframes screenFlash {
     0%   { opacity: 1; }
     100% { opacity: 0; }
 }
 
-.game-wrapper.shake-light { animation: shakeLight 0.3s ease; }
-.game-wrapper.shake-hard  { animation: shakeHard 0.4s ease; }
-
-@keyframes shakeLight {
-    0%, 100% { transform: translate(0, 0); }
-    20%       { transform: translate(-4px, 2px); }
-    40%       { transform: translate(4px, -2px); }
-    60%       { transform: translate(-3px, -1px); }
-    80%       { transform: translate(3px, 1px); }
-}
-
-@keyframes shakeHard {
-    0%, 100% { transform: translate(0, 0); }
-    15%       { transform: translate(-8px, 4px); }
-    30%       { transform: translate(8px, -4px); }
-    45%       { transform: translate(-6px, 2px); }
-    60%       { transform: translate(6px, -2px); }
-}
-
-.game-vignette {
-    position: absolute; inset: 0;
-    background: radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,0.7) 100%);
-    pointer-events: none; z-index: 5;
-}
-
-.game-vignette.vignette-danger {
-    background: radial-gradient(ellipse at center, transparent 40%, rgba(255,0,85,0.3) 100%);
-    animation: vignettePulse 0.5s ease-in-out infinite;
-}
-
-@keyframes vignettePulse {
-    0%, 100% { opacity: 0.6; }
-    50%       { opacity: 1; }
-}
-
-.game-scanlines {
-    position: absolute; inset: 0;
-    background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.08) 2px, rgba(0,0,0,0.08) 4px);
-    pointer-events: none; z-index: 6;
-}
-
-
 /* ============================================================
-   10. GAME NOTIFICATIONS
+   9. GAME NOTIFICATIONS
    ============================================================ */
 
 .game-notification {
@@ -653,26 +284,10 @@
     font-size: 0.9rem; color: var(--text-primary, #fff);
     pointer-events: none; z-index: 40;
     white-space: nowrap; backdrop-filter: blur(10px);
-    animation: notifIn 0.3s ease, notifOut 0.3s ease 2.7s forwards;
 }
-
-.game-notification.notif-success { border-color: rgba(0,255,136,0.5); color: var(--neon-green, #00ff88); }
-.game-notification.notif-danger  { border-color: rgba(255,0,85,0.5);  color: var(--neon-red, #ff0055); }
-.game-notification.notif-info    { border-color: rgba(0,212,255,0.5); color: var(--neon-cyan, #00fff5); }
-
-@keyframes notifIn {
-    from { opacity: 0; transform: translateX(-50%) translateY(-10px) scale(0.9); }
-    to   { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
-}
-
-@keyframes notifOut {
-    from { opacity: 1; transform: translateX(-50%) scale(1); }
-    to   { opacity: 0; transform: translateX(-50%) scale(0.8); }
-}
-
 
 /* ============================================================
-   11. PAUSE MENU
+   10. PAUSE MENU
    ============================================================ */
 
 .pause-menu {
@@ -688,7 +303,6 @@
     color: var(--text-secondary, #b0b0c0);
     font-family: var(--font-heading, 'Rajdhani', sans-serif);
     font-size: 1rem; font-weight: 600;
-    letter-spacing: 1px; text-transform: uppercase;
     cursor: pointer; transition: all 0.3s ease;
     display: flex; align-items: center; justify-content: center; gap: 10px;
 }
@@ -697,152 +311,33 @@
     background: rgba(179,71,217,0.2);
     color: var(--text-primary, #fff);
     border-color: rgba(179,71,217,0.5);
-    transform: translateX(4px);
 }
-
-.pause-menu-btn.btn-resume {
-    background: rgba(0,255,136,0.1);
-    border-color: rgba(0,255,136,0.3);
-    color: var(--neon-green, #00ff88);
-}
-
-.pause-menu-btn.btn-resume:hover {
-    background: rgba(0,255,136,0.2);
-    border-color: rgba(0,255,136,0.6);
-}
-
-.pause-menu-btn.btn-quit {
-    background: rgba(255,0,85,0.1);
-    border-color: rgba(255,0,85,0.25);
-    color: rgba(255,0,85,0.7);
-}
-
-.pause-menu-btn.btn-quit:hover {
-    background: rgba(255,0,85,0.2);
-    border-color: rgba(255,0,85,0.5);
-    color: var(--neon-red, #ff0055);
-}
-
 
 /* ============================================================
-   12. RESPONSIVE — NO MAX-HEIGHT ON CANVAS
+   11. RESPONSIVE
    ============================================================ */
 
-@media (max-width: 900px) {
-    .game-hud { top: 8px; left: 8px; right: 8px; gap: 6px; }
-    .hud-item { padding: 6px 10px; min-width: 55px; }
-    .hud-label { font-size: 0.55rem; }
-    .hud-value { font-size: 0.95rem; }
-    .health-bar-container { max-width: 150px; }
-}
-
 @media (max-width: 768px) {
-    /* NO max-height on canvas */
     #game-canvas { cursor: default; }
-
     .game-hud { flex-wrap: wrap; top: 6px; left: 6px; right: 6px; }
     .hud-item { padding: 5px 8px; min-width: 50px; }
     .hud-value { font-size: 0.85rem; }
     .health-bar { height: 8px; }
     .overlay-content { padding: 1.5rem; }
-    .countdown-display { font-size: 5rem; }
-    .level-up-title { font-size: 1.8rem; }
-    .combo-number { font-size: 3rem; }
-    .score-popup { font-size: 1rem; }
     .touch-controls { gap: 10px; bottom: 15px; }
     .touch-btn { width: 56px; height: 56px; font-size: 1.2rem; }
 }
 
 @media (max-width: 480px) {
-    /* NO max-height on canvas */
     .game-hud { top: 4px; left: 4px; right: 4px; gap: 4px; }
     .hud-item { padding: 4px 6px; min-width: 44px; border-radius: 6px; }
-    .hud-label { font-size: 0.5rem; letter-spacing: 0.5px; }
+    .hud-label { font-size: 0.5rem; }
     .hud-value { font-size: 0.8rem; }
-    .health-bar { height: 6px; }
-    .health-bar-container { max-width: 120px; }
     .overlay-content { padding: 1.2rem; border-radius: 14px; }
-    .countdown-display { font-size: 4rem; }
-    .level-up-title { font-size: 1.4rem; letter-spacing: 2px; }
-    .combo-number { font-size: 2.5rem; }
     .touch-btn { width: 50px; height: 50px; font-size: 1.1rem; }
-    .touch-btn-action { width: 60px; height: 60px; }
-    .powerup { font-size: 0.65rem; padding: 4px 8px; }
-    .game-notification { font-size: 0.8rem; padding: 8px 14px; }
 }
-
-@media (max-height: 500px) and (orientation: landscape) {
-    /* NO max-height on canvas */
-    .game-hud { top: 4px; }
-    .hud-item { padding: 3px 8px; }
-    .hud-label { display: none; }
-    .touch-controls { bottom: 5px; }
-    .touch-btn { width: 44px; height: 44px; font-size: 1rem; }
-    .game-notification { top: 50px; }
-}
-
 
 /* ============================================================
-   13. FULLSCREEN OVERRIDES — THE FIX
+   12. FULLSCREEN — HANDLED BY body.fs-active IN index.html
+   No duplicate rules needed here.
    ============================================================ */
-
-/* Browser fullscreen API */
-:fullscreen #game-canvas,
-:-webkit-full-screen #game-canvas,
-:-moz-full-screen #game-canvas {
-    width: 100% !important;
-    height: 100% !important;
-    max-height: none !important;
-    max-width: none !important;
-    border-radius: 0 !important;
-    position: absolute !important;
-    top: 0 !important;
-    left: 0 !important;
-}
-
-:fullscreen .game-wrapper,
-:-webkit-full-screen .game-wrapper,
-:-moz-full-screen .game-wrapper {
-    border-radius: 0 !important;
-    border: none !important;
-    box-shadow: none !important;
-    position: fixed !important;
-    top: 0 !important;
-    left: 0 !important;
-    width: 100vw !important;
-    height: 100vh !important;
-    z-index: 999999 !important;
-}
-
-/* JS-controlled fullscreen (body.fs-active) */
-body.fs-active #game-canvas {
-    width: 100% !important;
-    height: 100% !important;
-    max-height: none !important;
-    max-width: none !important;
-    border-radius: 0 !important;
-    position: absolute !important;
-    top: 0 !important;
-    left: 0 !important;
-}
-
-body.fs-active .game-wrapper {
-    border-radius: 0 !important;
-    border: none !important;
-    box-shadow: none !important;
-    position: fixed !important;
-    top: 0 !important;
-    left: 0 !important;
-    width: 100vw !important;
-    height: 100vh !important;
-    height: 100dvh !important;
-    z-index: 999999 !important;
-    background: #000 !important;
-}
-
-body.fs-active .game-header,
-body.fs-active .game-instructions,
-body.fs-active .navbar,
-body.fs-active .footer {
-    display: none !important;
-}

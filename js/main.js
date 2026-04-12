@@ -1,6 +1,6 @@
 // ============================================================
-// NEONARCADE - PREMIUM MAIN.JS v6.0
-// Fixes: Game routing | Leaderboard premium UI | Bottom nav removed
+// NEONARCADE - PREMIUM MAIN.JS v7.0
+// UNIFIED FULLSCREEN | PROPER RESIZE | MOBILE FIXED
 // ============================================================
 
 'use strict';
@@ -54,14 +54,13 @@ const state = {
     searchQuery:   '',
     favorites:     JSON.parse(localStorage.getItem('neonarcade_favorites') || '[]'),
     scores:        JSON.parse(localStorage.getItem('neonarcade_scores')    || '{}'),
-    gameStartTime: null,
-    isFullscreen:  false
+    gameStartTime: null
 };
 
 const elements = {};
 
 // ============================================================
-// 4. GAME CLASS MAP — Correct class name → game id mapping
+// 4. GAME CLASS MAP
 // ============================================================
 
 function getGameClass(gameId) {
@@ -91,12 +90,11 @@ document.addEventListener('DOMContentLoaded', () => {
     initMobileMenu();
     initSoundToggle();
     initGameControls();
-    initFullscreenBtn();
     initSearch();
     renderGames();
     renderLeaderboard();
     initScrollReveal();
-    console.log('%c🎮 NeonArcade v6.0 Loaded!', 'color:#b347d9;font-size:16px;font-weight:bold;');
+    console.log('%c🎮 NeonArcade v7.0 Loaded!', 'color:#b347d9;font-size:16px;font-weight:bold;');
 });
 
 // ============================================================
@@ -182,7 +180,8 @@ function initNavigation() {
     if (elements.backToGames) {
         elements.backToGames.addEventListener('click', () => {
             if (window.audioManager) audioManager.play('click');
-            exitFullscreen();
+            // Exit fullscreen first
+            if (window.NeonFS && window.NeonFS.isActive()) window.NeonFS.exit();
             destroyCurrentGame();
             navigateTo('games');
         });
@@ -193,22 +192,18 @@ function navigateTo(page) {
     const validPages = ['home', 'games', 'leaderboard', 'about', 'game'];
     if (!validPages.includes(page)) return;
 
-    // If leaving game page, clean up
     if (state.currentPage === 'game' && page !== 'game') {
-        exitFullscreen();
+        if (window.NeonFS && window.NeonFS.isActive()) window.NeonFS.exit();
         destroyCurrentGame();
     }
 
-    // Show/hide pages
     document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
     const target = document.getElementById(`${page}-page`);
     if (target) target.classList.add('active');
 
-    // Update nav active states
     document.querySelectorAll('.nav-link').forEach(l =>
         l.classList.toggle('active', l.dataset.page === page));
 
-    // Close mobile menu
     elements.mobileMenu?.classList.remove('active');
     elements.hamburger?.classList.remove('active');
     document.body.classList.remove('menu-open');
@@ -220,10 +215,13 @@ function navigateTo(page) {
 }
 
 // ============================================================
-// 9. DESTROY GAME
+// 9. DESTROY GAME — Clean up properly
 // ============================================================
 
 function destroyCurrentGame() {
+    // Clear global reference
+    window._activeGameInstance = null;
+
     if (state.gameInstance) {
         try {
             if (typeof state.gameInstance.destroy === 'function') state.gameInstance.destroy();
@@ -231,7 +229,6 @@ function destroyCurrentGame() {
         state.gameInstance = null;
     }
 
-    // Reset canvas — replace with fresh clone to kill all listeners
     const canvas = document.getElementById('game-canvas');
     if (canvas) {
         try {
@@ -240,7 +237,8 @@ function destroyCurrentGame() {
         } catch (e) {}
         const fresh = canvas.cloneNode(false);
         fresh.id = 'game-canvas';
-        fresh.style.cssText = canvas.style.cssText;
+        // Keep CSS sizing from wrapper
+        fresh.style.cssText = 'position:absolute;top:0;left:0;width:100%!important;height:100%!important;display:block;touch-action:none;-webkit-user-select:none;user-select:none;';
         canvas.parentNode?.replaceChild(fresh, canvas);
         elements.gameCanvas = fresh;
     }
@@ -257,65 +255,7 @@ function destroyCurrentGame() {
 }
 
 // ============================================================
-// 10. FULLSCREEN
-// ============================================================
-
-function initFullscreenBtn() {
-    const btn = document.getElementById('fullscreen-btn');
-    if (!btn) return;
-    btn.addEventListener('click', e => {
-        e.stopPropagation();
-        if (window.audioManager) audioManager.play('click');
-        toggleFullscreen();
-    });
-    document.addEventListener('fullscreenchange',       updateFullscreenUI);
-    document.addEventListener('webkitfullscreenchange', updateFullscreenUI);
-}
-
-function toggleFullscreen() {
-    const wrapper = document.getElementById('game-wrapper');
-    if (!wrapper) return;
-    const isFS = !!(document.fullscreenElement || document.webkitFullscreenElement);
-    if (!isFS) {
-        (wrapper.requestFullscreen || wrapper.webkitRequestFullscreen || function(){}).call(wrapper);
-        try { screen.orientation?.lock?.('portrait'); } catch (e) {}
-    } else {
-        exitFullscreen();
-    }
-}
-
-function exitFullscreen() {
-    try {
-        if (document.fullscreenElement)       document.exitFullscreen();
-        else if (document.webkitFullscreenElement) document.webkitExitFullscreen();
-    } catch (e) {}
-    state.isFullscreen = false;
-    document.body.classList.remove('fs-active');
-}
-
-function updateFullscreenUI() {
-    const isFS = !!(document.fullscreenElement || document.webkitFullscreenElement);
-    state.isFullscreen = isFS;
-
-    const ex = document.getElementById('fs-expand-icon');
-    const co = document.getElementById('fs-compress-icon');
-    if (ex) ex.style.display = isFS ? 'none' : '';
-    if (co) co.style.display = isFS ? '' : 'none';
-    document.body.classList.toggle('fs-active', isFS);
-
-    setTimeout(() => {
-        const canvas  = document.getElementById('game-canvas');
-        const wrapper = document.getElementById('game-wrapper');
-        if (canvas && wrapper) {
-            canvas.width  = wrapper.clientWidth;
-            canvas.height = wrapper.clientHeight;
-            if (state.gameInstance?.resize) state.gameInstance.resize();
-        }
-    }, 120);
-}
-
-// ============================================================
-// 11. MOBILE MENU
+// 10. MOBILE MENU
 // ============================================================
 
 function initMobileMenu() {
@@ -339,7 +279,7 @@ function initMobileMenu() {
 }
 
 // ============================================================
-// 12. SOUND TOGGLE
+// 11. SOUND TOGGLE
 // ============================================================
 
 function initSoundToggle() {
@@ -355,7 +295,7 @@ function initSoundToggle() {
 }
 
 // ============================================================
-// 13. SEARCH
+// 12. SEARCH
 // ============================================================
 
 function initSearch() {
@@ -378,7 +318,7 @@ function initSearch() {
 }
 
 // ============================================================
-// 14. GAME CONTROLS
+// 13. GAME CONTROLS
 // ============================================================
 
 function initGameControls() {
@@ -397,8 +337,9 @@ function initGameControls() {
     }
     document.addEventListener('keydown', e => {
         if (e.key === 'Escape' && state.currentPage === 'game') {
-            if (state.isFullscreen) exitFullscreen();
-            else if (state.gameInstance?.togglePause) {
+            if (window.NeonFS && window.NeonFS.isActive()) {
+                window.NeonFS.exit();
+            } else if (state.gameInstance?.togglePause) {
                 const paused = state.gameInstance.togglePause();
                 paused ? showOverlay('PAUSED') : hideOverlay();
             }
@@ -407,7 +348,7 @@ function initGameControls() {
 }
 
 // ============================================================
-// 15. OVERLAY
+// 14. OVERLAY
 // ============================================================
 
 function showOverlay(title, score = null, isHighScore = false) {
@@ -449,7 +390,7 @@ function hideOverlay() {
 }
 
 // ============================================================
-// 16. RESTART
+// 15. RESTART
 // ============================================================
 
 function restartGame() {
@@ -464,7 +405,7 @@ function restartGame() {
 }
 
 // ============================================================
-// 17. RENDER GAMES
+// 16. RENDER GAMES
 // ============================================================
 
 function renderGames() {
@@ -542,7 +483,7 @@ function attachCardEvents(container) {
 }
 
 // ============================================================
-// 18. FILTER
+// 17. FILTER
 // ============================================================
 
 function initFilterButtons() {
@@ -589,7 +530,7 @@ function filterAndRenderGames() {
 }
 
 // ============================================================
-// 19. FAVORITES
+// 18. FAVORITES
 // ============================================================
 
 function toggleFavorite(gameId) {
@@ -611,17 +552,14 @@ function toggleFavorite(gameId) {
 }
 
 // ============================================================
-// 20. OPEN GAME — Core fix for wrong game launching
+// 19. OPEN GAME
 // ============================================================
 
 function openGame(gameId) {
     const game = gamesData.find(g => g.id === gameId);
     if (!game) { console.error('Game not found:', gameId); return; }
 
-    // Destroy any previous game FIRST
     destroyCurrentGame();
-
-    // Set state BEFORE navigating
     state.currentGame = gameId;
 
     if (elements.currentGameTitle) elements.currentGameTitle.textContent = game.name;
@@ -632,18 +570,20 @@ function openGame(gameId) {
         setTimeout(() => audioManager.startMusic('game'), 200);
     }
 
-    // Navigate to game page
     navigateTo('game');
     showInstructionToast(game.instructions);
     state.gameStartTime = Date.now();
 
-    // Wait for DOM to paint before starting — double rAF guarantees layout
+    // Double rAF ensures DOM is painted and layout calculated
     requestAnimationFrame(() => {
         requestAnimationFrame(() => {
             startGame(gameId);
         });
     });
 }
+
+// Expose for hero mini-cards
+window.navigateToGame = openGame;
 
 function showInstructionToast(text) {
     const toast = document.getElementById('instruction-toast');
@@ -654,12 +594,11 @@ function showInstructionToast(text) {
 }
 
 // ============================================================
-// 21. START GAME — THE KEY FIX
-// Each game gets its OWN class, not a shared reference.
+// 20. START GAME — THE KEY FIX
+// Canvas gets sized from wrapper BEFORE game constructor runs
 // ============================================================
 
 function startGame(gameId) {
-    // Always get fresh canvas reference (might have been replaced by destroyCurrentGame)
     const canvas = document.getElementById('game-canvas');
     if (!canvas) { console.error('game-canvas not found'); return; }
     elements.gameCanvas = canvas;
@@ -667,24 +606,30 @@ function startGame(gameId) {
     const wrapper = document.getElementById('game-wrapper');
     if (!wrapper) return;
 
-    // Force accurate layout dimensions
-    const wrapW = wrapper.offsetWidth  || window.innerWidth;
-    const wrapH = wrapper.offsetHeight || (window.innerHeight - 48);
+    // Get REAL wrapper dimensions (after layout)
+    const wrapW = wrapper.clientWidth  || wrapper.offsetWidth  || window.innerWidth;
+    const wrapH = wrapper.clientHeight || wrapper.offsetHeight || (window.innerHeight - 48);
 
-    canvas.width        = wrapW;
-    canvas.height       = wrapH;
+    // Set CSS size — game's _setupHD will read this via getBoundingClientRect
     canvas.style.width  = wrapW + 'px';
     canvas.style.height = wrapH + 'px';
+
+    // Also set canvas buffer size as fallback
+    const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+    canvas.width  = Math.round(wrapW * dpr);
+    canvas.height = Math.round(wrapH * dpr);
 
     const ctx = canvas.getContext('2d');
     if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // ── THE FIX: resolve class at call-time, not from a stale map ──
+    // Get game class
     const GameClass = getGameClass(gameId);
 
     if (GameClass) {
         try {
             state.gameInstance = new GameClass(canvas, updateScore);
+            // Store globally for FSManager to call resize
+            window._activeGameInstance = state.gameInstance;
             console.log(`✅ ${gameId} started (${wrapW}×${wrapH})`);
         } catch (err) {
             console.error(`❌ Error starting ${gameId}:`, err);
@@ -730,7 +675,7 @@ function drawPlaceholderText(ctx, canvas, game) {
 }
 
 // ============================================================
-// 22. SCORE UPDATE
+// 21. SCORE UPDATE
 // ============================================================
 
 function updateScore(score, gameOver = false) {
@@ -767,7 +712,7 @@ function updateScore(score, gameOver = false) {
 }
 
 // ============================================================
-// 23. LEADERBOARD — Premium UI
+// 22. LEADERBOARD
 // ============================================================
 
 function renderLeaderboard() {
@@ -780,7 +725,6 @@ function updateLeaderboardWithScores() {
     const entries = leaderboardData.all.map(e => ({ ...e }));
     const pName   = localStorage.getItem('neonarcade_username') || 'You';
 
-    // Merge player scores
     Object.entries(state.scores).forEach(([gid, score]) => {
         if (!score || score <= 0) return;
         const game = gamesData.find(g => g.id === gid);
@@ -796,162 +740,60 @@ function updateLeaderboardWithScores() {
     entries.sort((a, b) => b.score - a.score);
     const top = entries.slice(0, 15);
 
-    // ── Premium leaderboard HTML ──
     const totalScore = top.reduce((s, e) => s + e.score, 0);
 
     elements.leaderboardContent.innerHTML = `
-        <!-- Stats row -->
-        <div style="
-            display:grid;
-            grid-template-columns:repeat(3,1fr);
-            gap:12px;
-            margin-bottom:24px;
-        ">
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:24px;">
             ${[
                 { label: 'Players',     val: top.length,              icon: '👥', col: '#00f5ff' },
                 { label: 'Total Score', val: fmtNum(totalScore),      icon: '⭐', col: '#FFD700' },
                 { label: 'Top Score',   val: fmtNum(top[0]?.score||0),icon: '🏆', col: '#b347d9' }
             ].map(s => `
-                <div style="
-                    background:rgba(255,255,255,0.04);
-                    border:1px solid rgba(${s.col === '#00f5ff' ? '0,245,255' : s.col === '#FFD700' ? '255,215,0' : '179,71,217'},.2);
-                    border-radius:12px;
-                    padding:14px 10px;
-                    text-align:center;
-                ">
+                <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(${s.col === '#00f5ff' ? '0,245,255' : s.col === '#FFD700' ? '255,215,0' : '179,71,217'},.2);border-radius:12px;padding:14px 10px;text-align:center;">
                     <div style="font-size:1.4rem;margin-bottom:4px">${s.icon}</div>
                     <div style="font-family:Orbitron,sans-serif;font-size:.95rem;font-weight:700;color:${s.col}">${s.val}</div>
                     <div style="font-size:.65rem;color:#6a6a9a;margin-top:2px;font-family:Rajdhani,sans-serif;letter-spacing:1px;text-transform:uppercase">${s.label}</div>
                 </div>
             `).join('')}
         </div>
-
-        <!-- Table header -->
-        <div style="
-            display:grid;
-            grid-template-columns:40px 36px 1fr auto auto;
-            gap:8px;
-            padding:8px 14px;
-            margin-bottom:6px;
-            border-radius:8px;
-            background:rgba(179,71,217,.08);
-            border:1px solid rgba(179,71,217,.15);
-        ">
+        <div style="display:grid;grid-template-columns:40px 36px 1fr auto auto;gap:8px;padding:8px 14px;margin-bottom:6px;border-radius:8px;background:rgba(179,71,217,.08);border:1px solid rgba(179,71,217,.15);">
             <span style="font-family:Rajdhani,sans-serif;font-size:.65rem;color:#6a6a9a;letter-spacing:1px;text-transform:uppercase">RANK</span>
             <span></span>
             <span style="font-family:Rajdhani,sans-serif;font-size:.65rem;color:#6a6a9a;letter-spacing:1px;text-transform:uppercase">PLAYER</span>
             <span style="font-family:Rajdhani,sans-serif;font-size:.65rem;color:#6a6a9a;letter-spacing:1px;text-transform:uppercase;text-align:right">GAME</span>
             <span style="font-family:Rajdhani,sans-serif;font-size:.65rem;color:#6a6a9a;letter-spacing:1px;text-transform:uppercase;text-align:right">SCORE</span>
         </div>
-
-        <!-- Entries -->
         <div style="display:flex;flex-direction:column;gap:6px;">
             ${top.map((entry, i) => {
                 const rankMedal  = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : null;
                 const rankColor  = i === 0 ? '#FFD700' : i === 1 ? '#C0C0C0' : i === 2 ? '#CD7F32' : '#6a6a9a';
-                const rowBg      = entry.isPlayer
-                    ? 'rgba(0,245,255,0.06)'
-                    : i < 3
-                        ? 'rgba(179,71,217,0.06)'
-                        : 'rgba(255,255,255,0.025)';
-                const rowBorder  = entry.isPlayer
-                    ? '1px solid rgba(0,245,255,.28)'
-                    : i < 3
-                        ? '1px solid rgba(179,71,217,.14)'
-                        : '1px solid rgba(255,255,255,.05)';
+                const rowBg      = entry.isPlayer ? 'rgba(0,245,255,0.06)' : i < 3 ? 'rgba(179,71,217,0.06)' : 'rgba(255,255,255,0.025)';
+                const rowBorder  = entry.isPlayer ? '1px solid rgba(0,245,255,.28)' : i < 3 ? '1px solid rgba(179,71,217,.14)' : '1px solid rgba(255,255,255,.05)';
 
                 return `
-                <div style="
-                    display:grid;
-                    grid-template-columns:40px 36px 1fr auto auto;
-                    gap:8px;
-                    align-items:center;
-                    padding:10px 14px;
-                    border-radius:10px;
-                    background:${rowBg};
-                    border:${rowBorder};
-                    transition:background .2s;
-                    animation:fadeInUp .3s ease both;
-                    animation-delay:${i * 0.04}s;
-                ">
-                    <!-- Rank -->
+                <div style="display:grid;grid-template-columns:40px 36px 1fr auto auto;gap:8px;align-items:center;padding:10px 14px;border-radius:10px;background:${rowBg};border:${rowBorder};animation:fadeInUp .3s ease both;animation-delay:${i * 0.04}s;">
                     <div style="text-align:center;">
-                        ${rankMedal
-                            ? `<span style="font-size:1.1rem">${rankMedal}</span>`
-                            : `<span style="
-                                font-family:Orbitron,sans-serif;
-                                font-size:.7rem;
-                                font-weight:700;
-                                color:${rankColor};
-                              ">#${i + 1}</span>`
-                        }
+                        ${rankMedal ? `<span style="font-size:1.1rem">${rankMedal}</span>` : `<span style="font-family:Orbitron,sans-serif;font-size:.7rem;font-weight:700;color:${rankColor};">#${i + 1}</span>`}
                     </div>
-
-                    <!-- Avatar -->
-                    <div style="
-                        width:32px;height:32px;
-                        border-radius:50%;
-                        background:rgba(255,255,255,.06);
-                        border:1px solid rgba(255,255,255,.1);
-                        display:flex;align-items:center;justify-content:center;
-                        font-size:1rem;
-                    ">${entry.avatar || '🎮'}</div>
-
-                    <!-- Name + country -->
+                    <div style="width:32px;height:32px;border-radius:50%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);display:flex;align-items:center;justify-content:center;font-size:1rem;">${entry.avatar || '🎮'}</div>
                     <div>
-                        <div style="
-                            font-family:Rajdhani,sans-serif;
-                            font-size:.88rem;
-                            font-weight:700;
-                            color:${entry.isPlayer ? '#00f5ff' : '#e0e0f0'};
-                            display:flex;align-items:center;gap:5px;
-                        ">
+                        <div style="font-family:Rajdhani,sans-serif;font-size:.88rem;font-weight:700;color:${entry.isPlayer ? '#00f5ff' : '#e0e0f0'};display:flex;align-items:center;gap:5px;">
                             ${entry.name}
                             ${entry.isPlayer ? '<span style="font-size:.6rem;background:rgba(0,245,255,.15);color:#00f5ff;border:1px solid rgba(0,245,255,.3);border-radius:4px;padding:1px 5px;letter-spacing:.5px">YOU</span>' : ''}
                         </div>
-                        <div style="font-size:.65rem;color:#6a6a9a;margin-top:1px">
-                            ${entry.country || ''} ${entry.game}
-                        </div>
+                        <div style="font-size:.65rem;color:#6a6a9a;margin-top:1px">${entry.country || ''} ${entry.game}</div>
                     </div>
-
-                    <!-- Game badge (hidden on small screen via overflow) -->
-                    <div style="
-                        font-size:.6rem;
-                        color:#8080a8;
-                        text-align:right;
-                        white-space:nowrap;
-                        overflow:hidden;
-                        text-overflow:ellipsis;
-                        max-width:70px;
-                    ">${entry.game}</div>
-
-                    <!-- Score -->
-                    <div style="
-                        font-family:Orbitron,sans-serif;
-                        font-size:.82rem;
-                        font-weight:700;
-                        color:${i < 3 ? rankColor : entry.isPlayer ? '#00f5ff' : '#d470ff'};
-                        text-align:right;
-                        white-space:nowrap;
-                    ">${entry.score.toLocaleString()}</div>
+                    <div style="font-size:.6rem;color:#8080a8;text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:70px;">${entry.game}</div>
+                    <div style="font-family:Orbitron,sans-serif;font-size:.82rem;font-weight:700;color:${i < 3 ? rankColor : entry.isPlayer ? '#00f5ff' : '#d470ff'};text-align:right;white-space:nowrap;">${entry.score.toLocaleString()}</div>
                 </div>`;
             }).join('')}
         </div>
-
-        <!-- Footer note -->
-        <div style="
-            text-align:center;
-            padding:16px 0 4px;
-            font-family:Rajdhani,sans-serif;
-            font-size:.72rem;
-            color:#3a3a5a;
-            letter-spacing:.5px;
-        ">Play games to appear on the leaderboard!</div>
+        <div style="text-align:center;padding:16px 0 4px;font-family:Rajdhani,sans-serif;font-size:.72rem;color:#3a3a5a;letter-spacing:.5px;">Play games to appear on the leaderboard!</div>
     `;
 }
 
 // ============================================================
-// 24. TOAST
+// 23. TOAST
 // ============================================================
 
 function showToast(message, type = 'info', duration = 3000) {
@@ -959,31 +801,13 @@ function showToast(message, type = 'info', duration = 3000) {
     if (!container) {
         container = document.createElement('div');
         container.id = 'toast-container';
-        container.style.cssText = `
-            position:fixed;top:70px;right:16px;z-index:10000;
-            display:flex;flex-direction:column;gap:8px;
-            pointer-events:none;max-width:300px;
-        `;
+        container.style.cssText = `position:fixed;top:70px;right:16px;z-index:10000;display:flex;flex-direction:column;gap:8px;pointer-events:none;max-width:300px;`;
         document.body.appendChild(container);
     }
     const colors = { success: '#39ff14', error: '#fe2254', info: '#00f5ff', warning: '#ffff00' };
     const color  = colors[type] || colors.info;
     const toast  = document.createElement('div');
-    toast.style.cssText = `
-        background:rgba(10,10,20,.92);
-        border:1px solid ${color};
-        border-left:4px solid ${color};
-        border-radius:8px;
-        padding:10px 16px;
-        color:#fff;
-        font-family:Rajdhani,sans-serif;
-        font-size:13px;font-weight:600;
-        box-shadow:0 4px 20px ${color}33;
-        transform:translateX(120%);
-        transition:transform .3s cubic-bezier(.175,.885,.32,1.275);
-        pointer-events:auto;cursor:pointer;
-        backdrop-filter:blur(8px);
-    `;
+    toast.style.cssText = `background:rgba(10,10,20,.92);border:1px solid ${color};border-left:4px solid ${color};border-radius:8px;padding:10px 16px;color:#fff;font-family:Rajdhani,sans-serif;font-size:13px;font-weight:600;box-shadow:0 4px 20px ${color}33;transform:translateX(120%);transition:transform .3s cubic-bezier(.175,.885,.32,1.275);pointer-events:auto;cursor:pointer;backdrop-filter:blur(8px);`;
     toast.textContent = message;
     container.appendChild(toast);
     requestAnimationFrame(() => { toast.style.transform = 'translateX(0)'; });
@@ -996,7 +820,7 @@ function showToast(message, type = 'info', duration = 3000) {
 }
 
 // ============================================================
-// 25. SCROLL REVEAL
+// 24. SCROLL REVEAL
 // ============================================================
 
 function initScrollReveal() {
@@ -1009,7 +833,7 @@ function initScrollReveal() {
 }
 
 // ============================================================
-// 26. WINDOW EVENTS
+// 25. WINDOW EVENTS
 // ============================================================
 
 window.addEventListener('scroll', () => {
@@ -1022,14 +846,16 @@ window.addEventListener('resize', debounce(() => {
         const c = document.getElementById('game-canvas');
         const w = document.getElementById('game-wrapper');
         if (c && w) {
-            c.width  = w.offsetWidth  || window.innerWidth;
-            c.height = w.offsetHeight || (window.innerHeight - 48);
-            c.style.width  = c.width  + 'px';
-            c.style.height = c.height + 'px';
-            if (state.gameInstance.resize) state.gameInstance.resize();
+            const ww = w.clientWidth  || window.innerWidth;
+            const wh = w.clientHeight || (window.innerHeight - 48);
+            c.style.width  = ww + 'px';
+            c.style.height = wh + 'px';
+            if (state.gameInstance.resize) {
+                try { state.gameInstance.resize(); } catch(e) {}
+            }
         }
     }
-}, 250));
+}, 150));
 
 document.addEventListener('visibilitychange', () => {
     if (document.hidden && state.currentPage === 'game' && state.gameInstance) {
@@ -1043,7 +869,7 @@ document.addEventListener('visibilitychange', () => {
 window.addEventListener('beforeunload', () => destroyCurrentGame());
 
 // ============================================================
-// 27. UTILS
+// 26. UTILS
 // ============================================================
 
 function debounce(fn, ms) {
