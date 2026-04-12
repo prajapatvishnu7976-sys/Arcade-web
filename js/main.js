@@ -1,6 +1,6 @@
 // ============================================================
-// NEONARCADE - PREMIUM MAIN.JS v7.0
-// UNIFIED FULLSCREEN | PROPER RESIZE | MOBILE FIXED
+// NEONARCADE - PREMIUM MAIN.JS v8.0
+// FIXED: Footer black screen | Back button | Fullscreen exit
 // ============================================================
 
 'use strict';
@@ -91,10 +91,12 @@ document.addEventListener('DOMContentLoaded', () => {
     initSoundToggle();
     initGameControls();
     initSearch();
+    initBackButton();
+    initBrowserBack();
     renderGames();
     renderLeaderboard();
     initScrollReveal();
-    console.log('%c🎮 NeonArcade v7.0 Loaded!', 'color:#b347d9;font-size:16px;font-weight:bold;');
+    console.log('%c🎮 NeonArcade v8.0 Loaded!', 'color:#b347d9;font-size:16px;font-weight:bold;');
 });
 
 // ============================================================
@@ -110,7 +112,7 @@ function cacheElements() {
         'overlay-title', 'overlay-score', 'back-to-games',
         'resume-btn', 'overlay-restart-btn', 'game-search',
         'search-clear', 'game-wrapper', 'fullscreen-btn',
-        'instruction-toast', 'game-header'
+        'instruction-toast', 'game-header', 'game-page'
     ];
     ids.forEach(id => {
         const key = id.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
@@ -125,13 +127,7 @@ function cacheElements() {
 function simulateLoading() {
     const fill = document.getElementById('loading-bar-fill');
     const text = document.getElementById('loading-text');
-    const tips = [
-        'Loading neon lights...',
-        'Generating game thumbnails...',
-        'Warming up the arcade...',
-        'Calibrating audio engine...',
-        'Almost there...'
-    ];
+    const tips = ['Loading neon lights...','Generating game thumbnails...','Warming up the arcade...','Calibrating audio engine...','Almost there...'];
     let progress = 0, tipIdx = 0;
 
     const interval = setInterval(() => {
@@ -144,9 +140,7 @@ function simulateLoading() {
             tipIdx = newTip;
             if (text) {
                 text.style.opacity = '0';
-                setTimeout(() => {
-                    if (text) { text.textContent = tips[tipIdx]; text.style.opacity = '1'; }
-                }, 200);
+                setTimeout(() => { if (text) { text.textContent = tips[tipIdx]; text.style.opacity = '1'; } }, 200);
             }
         }
 
@@ -165,7 +159,81 @@ function simulateLoading() {
 }
 
 // ============================================================
-// 8. NAVIGATION
+// 8. BACK BUTTON — Fullscreen se back aane ka fix
+// ============================================================
+
+function initBackButton() {
+    const btn = document.getElementById('back-to-games');
+    if (!btn) return;
+
+    btn.addEventListener('click', () => {
+        if (window.audioManager) audioManager.play('click');
+        exitGamePage();
+    });
+}
+
+// ============================================================
+// 9. BROWSER BACK BUTTON FIX
+// Jab browser back button press ho, website close na ho
+// ============================================================
+
+function initBrowserBack() {
+    // Game page kholne par history push karo
+    // Jab back press ho, game se exit karo
+
+    // Initial state
+    window.history.replaceState({ page: 'home' }, '', window.location.href);
+
+    window.addEventListener('popstate', function(e) {
+        const s = e.state;
+
+        // Agar fullscreen mein hai, pehle fullscreen exit karo
+        if (window.NeonFS && window.NeonFS.isActive()) {
+            window.NeonFS.exit();
+            // History wapas push karo taaki next back game se exit kare
+            window.history.pushState({ page: 'game' }, '', window.location.href);
+            return;
+        }
+
+        // Agar game page par hai, game se exit karo
+        if (state.currentPage === 'game') {
+            exitGamePage();
+            return;
+        }
+
+        // Agar koi aur page hai, home par jao
+        if (s && s.page && s.page !== 'home') {
+            navigateTo('home');
+            return;
+        }
+
+        // Home par hai, normal back allow karo (ya website rehne do)
+        // Push state taaki website close na ho
+        if (state.currentPage === 'home') {
+            window.history.pushState({ page: 'home' }, '', window.location.href);
+        }
+    });
+}
+
+// ============================================================
+// 10. EXIT GAME PAGE — Single function for all exits
+// ============================================================
+
+function exitGamePage() {
+    // Pehle fullscreen exit karo
+    if (window.NeonFS && window.NeonFS.isActive()) {
+        window.NeonFS.exit();
+    }
+
+    // Game destroy karo
+    destroyCurrentGame();
+
+    // Home page par navigate karo (games page se aaya tha toh games pe)
+    navigateTo('games');
+}
+
+// ============================================================
+// 11. NAVIGATION
 // ============================================================
 
 function initNavigation() {
@@ -176,50 +244,66 @@ function initNavigation() {
             navigateTo(link.dataset.page);
         });
     });
-
-    if (elements.backToGames) {
-        elements.backToGames.addEventListener('click', () => {
-            if (window.audioManager) audioManager.play('click');
-            // Exit fullscreen first
-            if (window.NeonFS && window.NeonFS.isActive()) window.NeonFS.exit();
-            destroyCurrentGame();
-            navigateTo('games');
-        });
-    }
 }
 
 function navigateTo(page) {
     const validPages = ['home', 'games', 'leaderboard', 'about', 'game'];
     if (!validPages.includes(page)) return;
 
+    // Game page se leave karne par cleanup
     if (state.currentPage === 'game' && page !== 'game') {
         if (window.NeonFS && window.NeonFS.isActive()) window.NeonFS.exit();
         destroyCurrentGame();
     }
 
-    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-    const target = document.getElementById(`${page}-page`);
-    if (target) target.classList.add('active');
+    // Game page special handling - fixed position hai
+    const gamePage = document.getElementById('game-page');
 
+    if (page === 'game') {
+        // Game page show karo (fixed position, #app ke bahar)
+        if (gamePage) gamePage.style.display = 'flex';
+        // Main content scroll top
+        window.scrollTo(0, 0);
+        // History push karo
+        window.history.pushState({ page: 'game' }, '', window.location.href);
+    } else {
+        // Game page hide karo
+        if (gamePage) gamePage.style.display = 'none';
+
+        // Normal pages
+        document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+        const target = document.getElementById(`${page}-page`);
+        if (target) target.classList.add('active');
+
+        // History update
+        if (page !== state.currentPage) {
+            window.history.pushState({ page }, '', window.location.href);
+        }
+    }
+
+    // Nav active states update
     document.querySelectorAll('.nav-link').forEach(l =>
         l.classList.toggle('active', l.dataset.page === page));
 
+    // Mobile menu close
     elements.mobileMenu?.classList.remove('active');
     elements.hamburger?.classList.remove('active');
     document.body.classList.remove('menu-open');
 
     state.currentPage = page;
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+
+    if (page !== 'game') {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
 
     if (page === 'leaderboard') updateLeaderboardWithScores();
 }
 
 // ============================================================
-// 9. DESTROY GAME — Clean up properly
+// 12. DESTROY GAME
 // ============================================================
 
 function destroyCurrentGame() {
-    // Clear global reference
     window._activeGameInstance = null;
 
     if (state.gameInstance) {
@@ -237,7 +321,6 @@ function destroyCurrentGame() {
         } catch (e) {}
         const fresh = canvas.cloneNode(false);
         fresh.id = 'game-canvas';
-        // Keep CSS sizing from wrapper
         fresh.style.cssText = 'position:absolute;top:0;left:0;width:100%!important;height:100%!important;display:block;touch-action:none;-webkit-user-select:none;user-select:none;';
         canvas.parentNode?.replaceChild(fresh, canvas);
         elements.gameCanvas = fresh;
@@ -249,13 +332,13 @@ function destroyCurrentGame() {
     if (overlay) overlay.classList.add('hidden');
     if (elements.gameScore) elements.gameScore.textContent = '0';
 
-    state.currentGame  = null;
-    state.gameInstance = null;
+    state.currentGame   = null;
+    state.gameInstance  = null;
     state.gameStartTime = null;
 }
 
 // ============================================================
-// 10. MOBILE MENU
+// 13. MOBILE MENU
 // ============================================================
 
 function initMobileMenu() {
@@ -279,7 +362,7 @@ function initMobileMenu() {
 }
 
 // ============================================================
-// 11. SOUND TOGGLE
+// 14. SOUND TOGGLE
 // ============================================================
 
 function initSoundToggle() {
@@ -295,7 +378,7 @@ function initSoundToggle() {
 }
 
 // ============================================================
-// 12. SEARCH
+// 15. SEARCH
 // ============================================================
 
 function initSearch() {
@@ -318,7 +401,7 @@ function initSearch() {
 }
 
 // ============================================================
-// 13. GAME CONTROLS
+// 16. GAME CONTROLS
 // ============================================================
 
 function initGameControls() {
@@ -348,7 +431,7 @@ function initGameControls() {
 }
 
 // ============================================================
-// 14. OVERLAY
+// 17. OVERLAY
 // ============================================================
 
 function showOverlay(title, score = null, isHighScore = false) {
@@ -361,18 +444,12 @@ function showOverlay(title, score = null, isHighScore = false) {
 
     if (scoreEl) {
         if (score !== null) {
-            let html = `
-                <div style="margin:6px 0">
-                    <span style="color:#8080a8;font-size:.9rem">Score</span><br>
-                    <span style="color:#d470ff;font-family:Orbitron,sans-serif;font-size:1.8rem;font-weight:900">
-                        ${score.toLocaleString()}
-                    </span>`;
+            let html = `<div style="margin:6px 0"><span style="color:#8080a8;font-size:.9rem">Score</span><br>
+                <span style="color:#d470ff;font-family:Orbitron,sans-serif;font-size:1.8rem;font-weight:900">${score.toLocaleString()}</span>`;
             if (isHighScore) html += '<br><span style="color:#39ff14;font-size:.85rem">🏆 NEW BEST!</span>';
             html += '</div>';
             if (state.scores[state.currentGame] && !isHighScore) {
-                html += `<div style="color:#6a6a9a;font-size:.8rem">
-                             Best: ${state.scores[state.currentGame].toLocaleString()}
-                         </div>`;
+                html += `<div style="color:#6a6a9a;font-size:.8rem">Best: ${state.scores[state.currentGame].toLocaleString()}</div>`;
             }
             scoreEl.innerHTML = html;
         } else {
@@ -390,7 +467,7 @@ function hideOverlay() {
 }
 
 // ============================================================
-// 15. RESTART
+// 18. RESTART
 // ============================================================
 
 function restartGame() {
@@ -400,12 +477,11 @@ function restartGame() {
     state.currentGame = currentId;
     if (elements.gameScore) elements.gameScore.textContent = '0';
     state.gameStartTime = Date.now();
-
     requestAnimationFrame(() => requestAnimationFrame(() => startGame(currentId)));
 }
 
 // ============================================================
-// 16. RENDER GAMES
+// 19. RENDER GAMES
 // ============================================================
 
 function renderGames() {
@@ -483,7 +559,7 @@ function attachCardEvents(container) {
 }
 
 // ============================================================
-// 17. FILTER
+// 20. FILTER
 // ============================================================
 
 function initFilterButtons() {
@@ -508,17 +584,10 @@ function filterAndRenderGames() {
         const desc = card.querySelector('.game-card-desc')?.textContent.toLowerCase() || '';
         const gid  = card.dataset.gameId;
 
-        const matchFilter =
-            state.activeFilter === 'all' ||
-            cat === state.activeFilter ||
+        const matchFilter = state.activeFilter === 'all' || cat === state.activeFilter ||
             (state.activeFilter === 'favorites' && state.favorites.includes(gid));
-
-        const matchSearch =
-            !state.searchQuery ||
-            name.includes(state.searchQuery) ||
-            desc.includes(state.searchQuery) ||
-            tags.includes(state.searchQuery) ||
-            cat.includes(state.searchQuery);
+        const matchSearch = !state.searchQuery || name.includes(state.searchQuery) ||
+            desc.includes(state.searchQuery) || tags.includes(state.searchQuery) || cat.includes(state.searchQuery);
 
         const show = matchFilter && matchSearch;
         card.style.display = show ? '' : 'none';
@@ -530,7 +599,7 @@ function filterAndRenderGames() {
 }
 
 // ============================================================
-// 18. FAVORITES
+// 21. FAVORITES
 // ============================================================
 
 function toggleFavorite(gameId) {
@@ -552,7 +621,7 @@ function toggleFavorite(gameId) {
 }
 
 // ============================================================
-// 19. OPEN GAME
+// 22. OPEN GAME
 // ============================================================
 
 function openGame(gameId) {
@@ -562,19 +631,21 @@ function openGame(gameId) {
     destroyCurrentGame();
     state.currentGame = gameId;
 
-    if (elements.currentGameTitle) elements.currentGameTitle.textContent = game.name;
-    if (elements.gameScore) elements.gameScore.textContent = '0';
+    const titleEl = document.getElementById('current-game-title');
+    const scoreEl = document.getElementById('game-score');
+    if (titleEl) titleEl.textContent = game.name;
+    if (scoreEl) scoreEl.textContent = '0';
 
     if (window.audioManager) {
         audioManager.stopMusic();
         setTimeout(() => audioManager.startMusic('game'), 200);
     }
 
+    // Navigate to game page
     navigateTo('game');
     showInstructionToast(game.instructions);
     state.gameStartTime = Date.now();
 
-    // Double rAF ensures DOM is painted and layout calculated
     requestAnimationFrame(() => {
         requestAnimationFrame(() => {
             startGame(gameId);
@@ -582,8 +653,8 @@ function openGame(gameId) {
     });
 }
 
-// Expose for hero mini-cards
-window.navigateToGame = openGame;
+// Global expose
+window.openGame = openGame;
 
 function showInstructionToast(text) {
     const toast = document.getElementById('instruction-toast');
@@ -594,8 +665,7 @@ function showInstructionToast(text) {
 }
 
 // ============================================================
-// 20. START GAME — THE KEY FIX
-// Canvas gets sized from wrapper BEFORE game constructor runs
+// 23. START GAME
 // ============================================================
 
 function startGame(gameId) {
@@ -606,15 +676,12 @@ function startGame(gameId) {
     const wrapper = document.getElementById('game-wrapper');
     if (!wrapper) return;
 
-    // Get REAL wrapper dimensions (after layout)
     const wrapW = wrapper.clientWidth  || wrapper.offsetWidth  || window.innerWidth;
     const wrapH = wrapper.clientHeight || wrapper.offsetHeight || (window.innerHeight - 48);
 
-    // Set CSS size — game's _setupHD will read this via getBoundingClientRect
     canvas.style.width  = wrapW + 'px';
     canvas.style.height = wrapH + 'px';
 
-    // Also set canvas buffer size as fallback
     const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
     canvas.width  = Math.round(wrapW * dpr);
     canvas.height = Math.round(wrapH * dpr);
@@ -622,13 +689,11 @@ function startGame(gameId) {
     const ctx = canvas.getContext('2d');
     if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // Get game class
     const GameClass = getGameClass(gameId);
 
     if (GameClass) {
         try {
             state.gameInstance = new GameClass(canvas, updateScore);
-            // Store globally for FSManager to call resize
             window._activeGameInstance = state.gameInstance;
             console.log(`✅ ${gameId} started (${wrapW}×${wrapH})`);
         } catch (err) {
@@ -646,24 +711,6 @@ function showPlaceholder(ctx, canvas, gameId) {
     const game = gamesData.find(g => g.id === gameId);
     ctx.fillStyle = '#0a0a1a';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    if (typeof GameThumbnails !== 'undefined') {
-        const img = new Image();
-        img.onload = () => {
-            ctx.globalAlpha = 0.25;
-            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-            ctx.globalAlpha = 1;
-            ctx.fillStyle = 'rgba(10,10,26,0.6)';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-            drawPlaceholderText(ctx, canvas, game);
-        };
-        img.src = GameThumbnails.generate(gameId);
-    } else {
-        drawPlaceholderText(ctx, canvas, game);
-    }
-}
-
-function drawPlaceholderText(ctx, canvas, game) {
     ctx.textAlign = 'center';
     ctx.font = `bold ${Math.min(canvas.width * 0.06, 28)}px Orbitron, sans-serif`;
     ctx.fillStyle = '#d470ff';
@@ -675,21 +722,19 @@ function drawPlaceholderText(ctx, canvas, game) {
 }
 
 // ============================================================
-// 21. SCORE UPDATE
+// 24. SCORE UPDATE
 // ============================================================
 
 function updateScore(score, gameOver = false) {
-    if (elements.gameScore) {
-        elements.gameScore.textContent = typeof score === 'number'
-            ? score.toLocaleString() : score;
-        elements.gameScore.style.transform = 'scale(1.3)';
-        setTimeout(() => {
-            if (elements.gameScore) elements.gameScore.style.transform = 'scale(1)';
-        }, 200);
+    const scoreEl = document.getElementById('game-score');
+    if (scoreEl) {
+        scoreEl.textContent = typeof score === 'number' ? score.toLocaleString() : score;
+        scoreEl.style.transform = 'scale(1.3)';
+        setTimeout(() => { if (scoreEl) scoreEl.style.transform = 'scale(1)'; }, 200);
     }
 
     if (gameOver) {
-        const gid   = state.currentGame;
+        const gid = state.currentGame;
         const numScore = typeof score === 'number' ? score : parseInt(score) || 0;
         const prev  = state.scores[gid] || 0;
         const isNew = numScore > prev;
@@ -712,12 +757,10 @@ function updateScore(score, gameOver = false) {
 }
 
 // ============================================================
-// 22. LEADERBOARD
+// 25. LEADERBOARD
 // ============================================================
 
-function renderLeaderboard() {
-    updateLeaderboardWithScores();
-}
+function renderLeaderboard() { updateLeaderboardWithScores(); }
 
 function updateLeaderboardWithScores() {
     if (!elements.leaderboardContent) return;
@@ -739,17 +782,16 @@ function updateLeaderboardWithScores() {
 
     entries.sort((a, b) => b.score - a.score);
     const top = entries.slice(0, 15);
-
     const totalScore = top.reduce((s, e) => s + e.score, 0);
 
     elements.leaderboardContent.innerHTML = `
         <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:24px;">
             ${[
-                { label: 'Players',     val: top.length,              icon: '👥', col: '#00f5ff' },
-                { label: 'Total Score', val: fmtNum(totalScore),      icon: '⭐', col: '#FFD700' },
-                { label: 'Top Score',   val: fmtNum(top[0]?.score||0),icon: '🏆', col: '#b347d9' }
+                { label:'Players', val:top.length, icon:'👥', col:'#00f5ff' },
+                { label:'Total Score', val:fmtNum(totalScore), icon:'⭐', col:'#FFD700' },
+                { label:'Top Score', val:fmtNum(top[0]?.score||0), icon:'🏆', col:'#b347d9' }
             ].map(s => `
-                <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(${s.col === '#00f5ff' ? '0,245,255' : s.col === '#FFD700' ? '255,215,0' : '179,71,217'},.2);border-radius:12px;padding:14px 10px;text-align:center;">
+                <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(${s.col==='#00f5ff'?'0,245,255':s.col==='#FFD700'?'255,215,0':'179,71,217'},.2);border-radius:12px;padding:14px 10px;text-align:center;">
                     <div style="font-size:1.4rem;margin-bottom:4px">${s.icon}</div>
                     <div style="font-family:Orbitron,sans-serif;font-size:.95rem;font-weight:700;color:${s.col}">${s.val}</div>
                     <div style="font-size:.65rem;color:#6a6a9a;margin-top:2px;font-family:Rajdhani,sans-serif;letter-spacing:1px;text-transform:uppercase">${s.label}</div>
@@ -765,35 +807,31 @@ function updateLeaderboardWithScores() {
         </div>
         <div style="display:flex;flex-direction:column;gap:6px;">
             ${top.map((entry, i) => {
-                const rankMedal  = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : null;
-                const rankColor  = i === 0 ? '#FFD700' : i === 1 ? '#C0C0C0' : i === 2 ? '#CD7F32' : '#6a6a9a';
-                const rowBg      = entry.isPlayer ? 'rgba(0,245,255,0.06)' : i < 3 ? 'rgba(179,71,217,0.06)' : 'rgba(255,255,255,0.025)';
-                const rowBorder  = entry.isPlayer ? '1px solid rgba(0,245,255,.28)' : i < 3 ? '1px solid rgba(179,71,217,.14)' : '1px solid rgba(255,255,255,.05)';
-
+                const rankMedal = i===0?'🥇':i===1?'🥈':i===2?'🥉':null;
+                const rankColor = i===0?'#FFD700':i===1?'#C0C0C0':i===2?'#CD7F32':'#6a6a9a';
+                const rowBg = entry.isPlayer?'rgba(0,245,255,0.06)':i<3?'rgba(179,71,217,0.06)':'rgba(255,255,255,0.025)';
+                const rowBorder = entry.isPlayer?'1px solid rgba(0,245,255,.28)':i<3?'1px solid rgba(179,71,217,.14)':'1px solid rgba(255,255,255,.05)';
                 return `
-                <div style="display:grid;grid-template-columns:40px 36px 1fr auto auto;gap:8px;align-items:center;padding:10px 14px;border-radius:10px;background:${rowBg};border:${rowBorder};animation:fadeInUp .3s ease both;animation-delay:${i * 0.04}s;">
-                    <div style="text-align:center;">
-                        ${rankMedal ? `<span style="font-size:1.1rem">${rankMedal}</span>` : `<span style="font-family:Orbitron,sans-serif;font-size:.7rem;font-weight:700;color:${rankColor};">#${i + 1}</span>`}
-                    </div>
-                    <div style="width:32px;height:32px;border-radius:50%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);display:flex;align-items:center;justify-content:center;font-size:1rem;">${entry.avatar || '🎮'}</div>
+                <div style="display:grid;grid-template-columns:40px 36px 1fr auto auto;gap:8px;align-items:center;padding:10px 14px;border-radius:10px;background:${rowBg};border:${rowBorder};animation:fadeInUp .3s ease both;animation-delay:${i*0.04}s;">
+                    <div style="text-align:center;">${rankMedal?`<span style="font-size:1.1rem">${rankMedal}</span>`:`<span style="font-family:Orbitron,sans-serif;font-size:.7rem;font-weight:700;color:${rankColor};">#${i+1}</span>`}</div>
+                    <div style="width:32px;height:32px;border-radius:50%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);display:flex;align-items:center;justify-content:center;font-size:1rem;">${entry.avatar||'🎮'}</div>
                     <div>
-                        <div style="font-family:Rajdhani,sans-serif;font-size:.88rem;font-weight:700;color:${entry.isPlayer ? '#00f5ff' : '#e0e0f0'};display:flex;align-items:center;gap:5px;">
-                            ${entry.name}
-                            ${entry.isPlayer ? '<span style="font-size:.6rem;background:rgba(0,245,255,.15);color:#00f5ff;border:1px solid rgba(0,245,255,.3);border-radius:4px;padding:1px 5px;letter-spacing:.5px">YOU</span>' : ''}
+                        <div style="font-family:Rajdhani,sans-serif;font-size:.88rem;font-weight:700;color:${entry.isPlayer?'#00f5ff':'#e0e0f0'};display:flex;align-items:center;gap:5px;">
+                            ${entry.name}${entry.isPlayer?'<span style="font-size:.6rem;background:rgba(0,245,255,.15);color:#00f5ff;border:1px solid rgba(0,245,255,.3);border-radius:4px;padding:1px 5px;">YOU</span>':''}
                         </div>
-                        <div style="font-size:.65rem;color:#6a6a9a;margin-top:1px">${entry.country || ''} ${entry.game}</div>
+                        <div style="font-size:.65rem;color:#6a6a9a;margin-top:1px">${entry.country||''} ${entry.game}</div>
                     </div>
                     <div style="font-size:.6rem;color:#8080a8;text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:70px;">${entry.game}</div>
-                    <div style="font-family:Orbitron,sans-serif;font-size:.82rem;font-weight:700;color:${i < 3 ? rankColor : entry.isPlayer ? '#00f5ff' : '#d470ff'};text-align:right;white-space:nowrap;">${entry.score.toLocaleString()}</div>
+                    <div style="font-family:Orbitron,sans-serif;font-size:.82rem;font-weight:700;color:${i<3?rankColor:entry.isPlayer?'#00f5ff':'#d470ff'};text-align:right;white-space:nowrap;">${entry.score.toLocaleString()}</div>
                 </div>`;
             }).join('')}
         </div>
-        <div style="text-align:center;padding:16px 0 4px;font-family:Rajdhani,sans-serif;font-size:.72rem;color:#3a3a5a;letter-spacing:.5px;">Play games to appear on the leaderboard!</div>
+        <div style="text-align:center;padding:16px 0 4px;font-family:Rajdhani,sans-serif;font-size:.72rem;color:#3a3a5a;">Play games to appear on the leaderboard!</div>
     `;
 }
 
 // ============================================================
-// 23. TOAST
+// 26. TOAST
 // ============================================================
 
 function showToast(message, type = 'info', duration = 3000) {
@@ -801,39 +839,34 @@ function showToast(message, type = 'info', duration = 3000) {
     if (!container) {
         container = document.createElement('div');
         container.id = 'toast-container';
-        container.style.cssText = `position:fixed;top:70px;right:16px;z-index:10000;display:flex;flex-direction:column;gap:8px;pointer-events:none;max-width:300px;`;
+        container.style.cssText = 'position:fixed;top:70px;right:16px;z-index:999999;display:flex;flex-direction:column;gap:8px;pointer-events:none;max-width:300px;';
         document.body.appendChild(container);
     }
-    const colors = { success: '#39ff14', error: '#fe2254', info: '#00f5ff', warning: '#ffff00' };
-    const color  = colors[type] || colors.info;
-    const toast  = document.createElement('div');
+    const colors = { success:'#39ff14', error:'#fe2254', info:'#00f5ff', warning:'#ffff00' };
+    const color = colors[type] || colors.info;
+    const toast = document.createElement('div');
     toast.style.cssText = `background:rgba(10,10,20,.92);border:1px solid ${color};border-left:4px solid ${color};border-radius:8px;padding:10px 16px;color:#fff;font-family:Rajdhani,sans-serif;font-size:13px;font-weight:600;box-shadow:0 4px 20px ${color}33;transform:translateX(120%);transition:transform .3s cubic-bezier(.175,.885,.32,1.275);pointer-events:auto;cursor:pointer;backdrop-filter:blur(8px);`;
     toast.textContent = message;
     container.appendChild(toast);
     requestAnimationFrame(() => { toast.style.transform = 'translateX(0)'; });
-    const dismiss = () => {
-        toast.style.transform = 'translateX(120%)';
-        setTimeout(() => toast.remove(), 300);
-    };
+    const dismiss = () => { toast.style.transform = 'translateX(120%)'; setTimeout(() => toast.remove(), 300); };
     toast.addEventListener('click', dismiss);
     setTimeout(dismiss, duration);
 }
 
 // ============================================================
-// 24. SCROLL REVEAL
+// 27. SCROLL REVEAL
 // ============================================================
 
 function initScrollReveal() {
     const obs = new IntersectionObserver(entries => {
-        entries.forEach(e => {
-            if (e.isIntersecting) { e.target.classList.add('visible'); obs.unobserve(e.target); }
-        });
+        entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('visible'); obs.unobserve(e.target); } });
     }, { threshold: 0.1 });
     document.querySelectorAll('.scroll-fade-in').forEach(el => obs.observe(el));
 }
 
 // ============================================================
-// 25. WINDOW EVENTS
+// 28. WINDOW EVENTS
 // ============================================================
 
 window.addEventListener('scroll', () => {
@@ -869,7 +902,7 @@ document.addEventListener('visibilitychange', () => {
 window.addEventListener('beforeunload', () => destroyCurrentGame());
 
 // ============================================================
-// 26. UTILS
+// 29. UTILS
 // ============================================================
 
 function debounce(fn, ms) {
