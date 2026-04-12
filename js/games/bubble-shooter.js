@@ -1,1030 +1,672 @@
 'use strict';
 
 class BubbleShooter {
-    constructor(canvas, onScore, options = {}) {
-        this.canvas = canvas;
-        this.onScore = onScore;
-        this.options = options;
-        this.destroyed = false;
-        this.paused = false;
-        this.isPaused = false;
-        this.gameOver = false;
-
-        this.isMobile = /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
-            || ('ontouchstart' in window)
-            || (window.innerWidth < 768);
-
-        // Clean DPR - no over-scaling
-        this.dpr = Math.min(window.devicePixelRatio || 1, this.isMobile ? 2 : 2);
-
-        this.setupCanvas();
-
-        this.ctx = this.canvas.getContext('2d', {
-            alpha: false,
-            desynchronized: true
-        });
-
-        this.ctx.imageSmoothingEnabled = true;
-        this.ctx.imageSmoothingQuality = 'high';
-
-        this.W = this.canvas.width / this.dpr;
-        this.H = this.canvas.height / this.dpr;
-        this.isSmallScreen = this.W < 380;
-
-        // Clean system fonts
-        this.FONT = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-        this.FONT_MONO = 'SFMono-Regular, Consolas, "Segoe UI", monospace';
-
-        this.cache = { bubbles: new Map(), glows: new Map() };
-
-        this.saveKey = 'neonarcade_bubbleshooter_v9';
-        this.playerData = this.loadPlayerData();
-
-        this.COLS = this.isSmallScreen ? 8 : 10;
-        this.ROWS = 14;
-
-        // Screen zones
-        this.HUD_HEIGHT = this.isMobile ? 44 : 48;
-        this.BOTTOM_ZONE = this.isMobile ? 100 : 110;
-        this.GRID_TOP = this.HUD_HEIGHT + 8;
-
-        this.BUBBLE_R = this.calcRadius();
+    constructor(canvasElement, onScoreCallback) {
+        this._onScore = onScoreCallback || function () {};
+        this._destroyed = false;
 
         this.COLORS = [
-            { hex: '#FF1A6D', light: '#FF6699', dark: '#CC1557', glow: 'rgba(255,26,109,' },
-            { hex: '#00D4FF', light: '#66E8FF', dark: '#00A8CC', glow: 'rgba(0,212,255,' },
-            { hex: '#00FF88', light: '#66FFB3', dark: '#00CC6D', glow: 'rgba(0,255,136,' },
-            { hex: '#FFD700', light: '#FFE566', dark: '#CCAC00', glow: 'rgba(255,215,0,' },
-            { hex: '#B94FE3', light: '#D088EE', dark: '#9440B6', glow: 'rgba(185,79,227,' },
-            { hex: '#FF8811', light: '#FFB266', dark: '#CC6D0E', glow: 'rgba(255,136,17,' },
-            { hex: '#FF3864', light: '#FF7799', dark: '#CC2D50', glow: 'rgba(255,56,100,' },
-            { hex: '#18FFAB', light: '#66FFCC', dark: '#14CC89', glow: 'rgba(24,255,171,' }
+            { hex: '#FF2244', light: '#FF6677', dark: '#AA0022', glow: 'rgba(255,34,68,0.4)',    name: 'Red'      },
+            { hex: '#00EE66', light: '#66FFaa', dark: '#007733', glow: 'rgba(0,238,102,0.4)',    name: 'Green'    },
+            { hex: '#1166FF', light: '#66AAFF', dark: '#003399', glow: 'rgba(17,102,255,0.4)',   name: 'Blue'     },
+            { hex: '#FFD700', light: '#FFE866', dark: '#AA8800', glow: 'rgba(255,215,0,0.4)',    name: 'Yellow'   },
+            { hex: '#DD00FF', light: '#EE77FF', dark: '#880099', glow: 'rgba(221,0,255,0.4)',    name: 'Magenta'  },
+            { hex: '#00EEFF', light: '#77FFFF', dark: '#007788', glow: 'rgba(0,238,255,0.4)',    name: 'Cyan'     },
+            { hex: '#FF7700', light: '#FFAA44', dark: '#993300', glow: 'rgba(255,119,0,0.4)',    name: 'Orange'   },
+            { hex: '#9900FF', light: '#CC66FF', dark: '#550099', glow: 'rgba(153,0,255,0.4)',    name: 'Purple'   },
         ];
-        this.colorsInPlay = [];
 
-        this.cellW = this.BUBBLE_R * 2;
-        this.cellH = this.BUBBLE_R * 1.732;
-        this.offsetX = 0;
-        this.offsetY = this.GRID_TOP;
-        this.recalcGrid();
+        this.LEVELS = [
+            { colors: 3, rows: 4, emptyTubes: 0 },
+            { colors: 4, rows: 5, emptyTubes: 0 },
+            { colors: 5, rows: 5, emptyTubes: 0 },
+            { colors: 6, rows: 6, emptyTubes: 0 },
+            { colors: 7, rows: 6, emptyTubes: 0 },
+            { colors: 8, rows: 7, emptyTubes: 0 },
+            { colors: 8, rows: 8, emptyTubes: 0 },
+            { colors: 8, rows: 9, emptyTubes: 0 },
+            { colors: 8, rows: 10, emptyTubes: 0 },
+            { colors: 8, rows: 11, emptyTubes: 0 },
+        ];
 
-        this.shooterX = this.W / 2;
-        this.shooterY = this.H - this.BOTTOM_ZONE / 2;
-        this.angle = -Math.PI / 2;
-        this.targetAngle = -Math.PI / 2;
-        this.currentBubble = null;
-        this.nextBubble = null;
-        this.projectile = null;
-        this.projectileSpeed = this.isMobile ? 12 : 14;
-        this.canShoot = true;
-        this.shootCooldown = 0;
+        const isMobile = window.innerWidth < 768 || ('ontouchstart' in window);
+        this.isMobile = isMobile;
+        this.DPR = Math.min(window.devicePixelRatio || 1, isMobile ? 2 : 2);
 
-        this.swapAnim = 0;
-        this.swapColorIdx = 0;
-        this.isFullscreen = false;
-
-        this.particles = [];
-        this.fallingBubbles = [];
-        this.aimDots = [];
-        this.popRings = [];
-        this.textPopups = [];
-        this.floatingTexts = [];
-
-        this.MAX_PARTICLES = this.isMobile ? 30 : 80;
-        this.MAX_FALLING = this.isMobile ? 8 : 16;
-        this.MAX_POP_RINGS = this.isMobile ? 6 : 12;
-        this.MAX_POPUPS = this.isMobile ? 5 : 10;
-
-        this.shakeX = 0; this.shakeY = 0;
-        this.shakeTimer = 0; this.shakeForce = 0;
-
-        this.time = 0;
-        this.frame = 0;
-        this.fpsHistory = [];
-        this.adaptiveMode = false;
-
-        this.grid = [];
-        this.score = 0;
-        this.level = this.playerData.currentLevel || 1;
-        this.combo = 0;
-        this.maxCombo = 0;
+        // Game state
+        this.grid          = [];
+        this.currentLevel  = 0;
+        this.score         = 0;
+        this.moves         = 0;
+        this.combo         = 0;
+        this.maxCombo      = 0;
         this.bubblesPopped = 0;
-        this.totalBubbles = 0;
-        this.shotsUsed = 0;
-        this.levelCoins = 0;
-        this.levelDiamonds = 0;
+        this.gameWon       = false;
+        this.gameOver      = false;
+        this.timeElapsed   = 0;
+        this.timerInterval = null;
+        this.history       = [];
 
-        this.levelConfig = null;
-        this.levelGoal = 0;
-        this.levelProgress = 0;
-        this.levelComplete = false;
-        this.levelTransition = false;
-        this.levelTransitionTimer = 0;
-        this.starRating = 0;
-        this.showLevelComplete = false;
-        this.levelCompleteTimer = 0;
+        // Shooter state
+        this.shooterAngle  = -Math.PI / 2;
+        this.targetAngle   = -Math.PI / 2;
+        this.currentBubble = 0;
+        this.nextBubble    = 0;
+        this.projectile    = null;
+        this.canShoot      = true;
+        this.shootCooldown = 0;
+        this.colorsInPlay  = [];
+        this.aimDots       = [];
 
-        this.dropTimer = 0;
-        this.dropInterval = 30000;
-        this.dropWarning = false;
+        // Layout
+        this.COLS       = 10;
+        this.ROWS       = 14;
+        this.BUBBLE_R   = 20;
+        this.offsetX    = 0;
+        this.offsetY    = 0;
+        this.shooterX   = 0;
+        this.shooterY   = 0;
+        this.HUD_H      = 0;
+        this.BOTTOM_H   = 0;
 
-        this.gridBounce = {};
-        this.shootRecoil = 0;
-        this.shootGlow = 0;
+        // FX
+        this.particles      = [];
+        this.fallingBubbles = [];
+        this.popRings       = [];
+        this.textPopups     = [];
+        this.floatingTexts  = [];
+        this.MAX_PARTICLES  = isMobile ? 40 : 100;
 
+        // Power-ups
         this.powerUps = {
-            bomb: { count: this.playerData.powerUps?.bomb || 1, icon: 'B', name: 'Bomb', color: '#FF8811' },
-            precision: { count: this.playerData.powerUps?.precision || 2, icon: 'A', name: 'Aim+', color: '#00FF88' }
+            bomb:      { count: 1, name: 'Bomb',  color: '#FF7700' },
+            precision: { count: 2, name: 'Aim+',  color: '#00EE66' },
         };
         this.activePowerUp = null;
-        this.hudFlash = {};
 
-        this.showDailyReward = false;
+        // Anim & render
+        this.globalTime        = 0;
+        this.frame             = 0;
+        this._lastFrameTime    = 0;
+        this.shakeX            = 0;
+        this.shakeY            = 0;
+        this.shakeTimer        = 0;
+        this.shakeForce        = 0;
+        this.shootRecoil       = 0;
+        this.hoverX            = -1;
+        this.hoverY            = -1;
+        this.fsBtnRect         = { x: 0, y: 0, w: 0, h: 0 };
+        this.bgCache           = null;
+        this._bubbleCache      = new Map();
+        this._glowCache        = new Map();
+        this._gradCache        = new Map();
+        this.animationFrameId  = null;
+        this.swapAnim          = 0;
+
+        // Daily reward
+        this.showDailyReward    = false;
         this.dailyRewardClaimed = false;
-        this.dailyRewardAnim = 0;
-        this.checkDailyReward();
+        this.dailyAnim          = 0;
+        this._checkDailyReward();
 
-        this.stars = this.makeStars(this.isMobile ? 25 : 55);
+        // Level complete overlay
+        this.showLevelComplete    = false;
+        this.levelCompleteTimer   = 0;
+        this.starRating           = 0;
+        this.levelCoins           = 0;
+        this.levelDiamonds        = 0;
 
-        this.initLevel(this.level);
-        this.generateShooter();
-        this.preRenderBubbles();
+        // Player data
+        this.saveKey    = 'neonBubble_v10';
+        this.playerData = this._loadPlayerData();
 
-        this.pointerDown = false;
-        this.lastPointerX = this.W / 2;
-        this.lastPointerY = this.H / 2;
-        this.bindEvents();
+        // Audio
+        this.audioCtx = null;
+        this._initAudio();
 
-        this.boundFSChange = this.onFullscreenChange.bind(this);
-        document.addEventListener('fullscreenchange', this.boundFSChange);
-        document.addEventListener('webkitfullscreenchange', this.boundFSChange);
+        this.canvas = canvasElement;
+        this.ctx    = this.canvas.getContext('2d', { alpha: false });
 
-        this.lastTime = 0;
-        this.animId = requestAnimationFrame(t => this.loop(t));
+        this._handleClick     = this._onHandleClick.bind(this);
+        this._handleMove      = this._onHandleMove.bind(this);
+        this._handleKey       = this._onKey.bind(this);
+        this._handleResize    = this._onResize.bind(this);
+
+        this._init();
     }
 
-    // ============================================================
-    // CANVAS SETUP - Screen fit
-    // ============================================================
-    setupCanvas() {
+    // ══════════════════ INIT ══════════════════
+
+    _init() {
+        this._setupCanvas();
+        const savedLevel = this.playerData.currentLevel || 0;
+        this._startLevel(savedLevel);
+        this._preCacheBubbles();
+
+        this.canvas.addEventListener('click',      this._handleClick,  { passive: false });
+        this.canvas.addEventListener('touchend',   this._handleClick,  { passive: false });
+        this.canvas.addEventListener('mousemove',  this._handleMove);
+        this.canvas.addEventListener('touchmove',  this._handleMove,   { passive: false });
+        this.canvas.addEventListener('touchstart', e => e.preventDefault(), { passive: false });
+        window.addEventListener('keydown', this._handleKey);
+        window.addEventListener('resize',  this._handleResize);
+
+        this._resumeAudio = () => {
+            if (this.audioCtx?.state === 'suspended') this.audioCtx.resume();
+            document.removeEventListener('click',      this._resumeAudio);
+            document.removeEventListener('touchstart', this._resumeAudio);
+        };
+        document.addEventListener('click',      this._resumeAudio);
+        document.addEventListener('touchstart', this._resumeAudio);
+
+        this._mainLoop();
+    }
+
+    destroy() {
+        this._destroyed = true;
+        if (this.animationFrameId) cancelAnimationFrame(this.animationFrameId);
+        this._stopTimer();
+
+        this.canvas.removeEventListener('click',     this._handleClick);
+        this.canvas.removeEventListener('touchend',  this._handleClick);
+        this.canvas.removeEventListener('mousemove', this._handleMove);
+        this.canvas.removeEventListener('touchmove', this._handleMove);
+        window.removeEventListener('keydown', this._handleKey);
+        window.removeEventListener('resize',  this._handleResize);
+
+        if (this._resumeAudio) {
+            document.removeEventListener('click',      this._resumeAudio);
+            document.removeEventListener('touchstart', this._resumeAudio);
+        }
+
+        try { this.audioCtx?.close(); } catch (e) {}
+        this._bubbleCache.clear();
+        this._glowCache.clear();
+        this._gradCache.clear();
+        this._savePlayerData();
+    }
+
+    resize() { this._setupCanvas(); }
+    togglePause() { return false; }
+
+    // ══════════════════ CANVAS SETUP ══════════════════
+
+    _setupCanvas() {
         const parent = this.canvas.parentElement;
-        let w, h;
+        let cw = parent ? (parent.clientWidth  || parent.offsetWidth)  : window.innerWidth;
+        let ch = parent ? (parent.clientHeight || parent.offsetHeight) : window.innerHeight;
+        if (cw < 10) cw = window.innerWidth;
+        if (ch < 10) ch = window.innerHeight;
+        cw = Math.max(cw, 320);
+        ch = Math.max(ch, 480);
 
-        if (parent) {
-            w = parent.clientWidth;
-            h = parent.clientHeight;
-        } else {
-            w = window.innerWidth;
-            h = window.innerHeight;
-        }
+        this.canvas.width  = Math.round(cw * this.DPR);
+        this.canvas.height = Math.round(ch * this.DPR);
+        this.canvas.style.width  = cw + 'px';
+        this.canvas.style.height = ch + 'px';
 
-        // Cap to reasonable size
-        w = Math.min(w, 500);
-        h = Math.min(h, window.innerHeight);
-
-        this.canvas.style.width = w + 'px';
-        this.canvas.style.height = h + 'px';
-        this.canvas.width = Math.round(w * this.dpr);
-        this.canvas.height = Math.round(h * this.dpr);
+        this.bgCache = null;
+        this._bubbleCache.clear();
+        this._glowCache.clear();
+        this._gradCache.clear();
+        this._calculateLayout();
+        this._preCacheBubbles();
     }
 
-    // ============================================================
-    // CLEAN TEXT - No blur, no glow, just sharp HD text
-    // ============================================================
-    text(ctx, str, x, y, size, color, opts = {}) {
-        const {
-            align = 'left',
-            baseline = 'top',
-            weight = '600',
-            font = this.FONT,
-            alpha = 1,
-            outline = false,
-            outlineColor = '#000',
-            outlineWidth = 3
-        } = opts;
+    // ══════════════════ LAYOUT ══════════════════
 
-        ctx.save();
-        ctx.globalAlpha = alpha;
+    _calculateLayout() {
+        const cw = this.canvas.width, ch = this.canvas.height, D = this.DPR;
+        const isMob = this.isMobile;
 
-        // Pixel perfect positioning
-        const px = Math.round(x * this.dpr);
-        const py = Math.round(y * this.dpr);
-        const fs = Math.round(size * this.dpr);
+        this.HUD_H    = 72 * D;
+        this.BOTTOM_H = isMob ? 110 * D : 120 * D;
 
-        ctx.font = `${weight} ${fs}px ${font}`;
-        ctx.textAlign = align;
-        ctx.textBaseline = baseline;
+        const gridH = ch - this.HUD_H - this.BOTTOM_H;
+        const gridW = cw;
 
-        // NO shadow, NO glow - clean text
-        ctx.shadowBlur = 0;
-        ctx.shadowOffsetX = 0;
-        ctx.shadowOffsetY = 0;
+        this.COLS = this.isMobile ? (this.canvas.width < 340 * D ? 8 : 9) : 10;
+        const lvl = this.LEVELS[Math.min(this.currentLevel, this.LEVELS.length - 1)];
+        this.ROWS = Math.max(12, lvl.rows + 5);
 
-        if (outline) {
-            ctx.strokeStyle = outlineColor;
-            ctx.lineWidth = outlineWidth * this.dpr;
-            ctx.lineJoin = 'round';
-            ctx.strokeText(str, px, py);
-        }
+        const maxByW = Math.floor((gridW - 8 * D) / (this.COLS * 2 + 0.5));
+        const maxByH = Math.floor(gridH / (this.ROWS * 1.732));
+        this.BUBBLE_R = Math.min(maxByW, maxByH, isMob ? 18 * D : 22 * D);
 
-        ctx.fillStyle = color;
-        ctx.fillText(str, px, py);
-        ctx.restore();
+        this.cellW   = this.BUBBLE_R * 2;
+        this.cellH   = this.BUBBLE_R * 1.732;
+        const totalW = this.COLS * this.cellW;
+        this.offsetX = (cw - totalW) / 2 + this.BUBBLE_R;
+        this.offsetY = this.HUD_H + 8 * D;
+
+        this.shooterX = cw / 2;
+        this.shooterY = ch - this.BOTTOM_H / 2;
     }
 
-    // ============================================================
-    // SHAPES
-    // ============================================================
-    circle(ctx, x, y, r) {
-        ctx.beginPath();
-        ctx.arc(Math.round(x * this.dpr), Math.round(y * this.dpr), r * this.dpr, 0, 6.2832);
-    }
+    // ══════════════════ BUBBLE CACHE ══════════════════
 
-    roundRect(ctx, x, y, w, h, rad) {
-        const dx = Math.round(x * this.dpr);
-        const dy = Math.round(y * this.dpr);
-        const dw = w * this.dpr;
-        const dh = h * this.dpr;
-        const dr = Math.min(rad * this.dpr, dw / 2, dh / 2);
-        ctx.beginPath();
-        ctx.moveTo(dx + dr, dy);
-        ctx.arcTo(dx + dw, dy, dx + dw, dy + dh, dr);
-        ctx.arcTo(dx + dw, dy + dh, dx, dy + dh, dr);
-        ctx.arcTo(dx, dy + dh, dx, dy, dr);
-        ctx.arcTo(dx, dy, dx + dw, dy, dr);
-        ctx.closePath();
-    }
-
-    dX(x) { return Math.round(x * this.dpr); }
-    dY(y) { return Math.round(y * this.dpr); }
-    dS(s) { return s * this.dpr; }
-
-    // ============================================================
-    // PRE-RENDER BUBBLES
-    // ============================================================
-    preRenderBubbles() {
-        this.cache.bubbles.clear();
-        this.cache.glows.clear();
+    _preCacheBubbles() {
+        this._bubbleCache.clear();
+        this._glowCache.clear();
         const r = this.BUBBLE_R;
+        if (r <= 0) return;
 
         this.COLORS.forEach((col, idx) => {
-            const size = Math.ceil((r + 3) * 2 * this.dpr);
-            const c = document.createElement('canvas');
-            c.width = c.height = size;
-            const cx = c.getContext('2d');
-            this.drawBubbleOffscreen(cx, size / 2, size / 2, r * this.dpr, col);
-            this.cache.bubbles.set(idx, c);
+            // Bubble
+            const bSize = Math.ceil((r + 3) * 2);
+            const bc    = document.createElement('canvas');
+            bc.width = bc.height = bSize;
+            const bctx  = bc.getContext('2d');
+            this._renderBubble(bctx, bSize / 2, bSize / 2, r, col);
+            this._bubbleCache.set(idx, bc);
 
-            // Glow
+            // Glow (desktop only)
             if (!this.isMobile) {
-                const gs = Math.ceil((r + 12) * 2 * this.dpr);
-                const gc = document.createElement('canvas');
+                const gs  = Math.ceil((r + 14) * 2);
+                const gc  = document.createElement('canvas');
                 gc.width = gc.height = gs;
-                const gx = gc.getContext('2d');
-                const gg = gx.createRadialGradient(gs / 2, gs / 2, r * this.dpr * 0.2, gs / 2, gs / 2, (r + 10) * this.dpr);
-                gg.addColorStop(0, col.glow + '0.18)');
+                const gctx = gc.getContext('2d');
+                const gg   = gctx.createRadialGradient(gs / 2, gs / 2, r * 0.1, gs / 2, gs / 2, r + 12);
+                gg.addColorStop(0, col.glow.replace('0.4)', '0.25)'));
                 gg.addColorStop(1, 'rgba(0,0,0,0)');
-                gx.fillStyle = gg;
-                gx.beginPath();
-                gx.arc(gs / 2, gs / 2, (r + 10) * this.dpr, 0, 6.2832);
-                gx.fill();
-                this.cache.glows.set(idx, gc);
+                gctx.fillStyle = gg;
+                gctx.beginPath();
+                gctx.arc(gs / 2, gs / 2, r + 12, 0, Math.PI * 2);
+                gctx.fill();
+                this._glowCache.set(idx, gc);
             }
         });
     }
 
-    drawBubbleOffscreen(ctx, cx, cy, r, col) {
+    _renderBubble(ctx, cx, cy, r, col) {
         // Base sphere
         const g1 = ctx.createRadialGradient(cx - r * 0.25, cy - r * 0.3, r * 0.05, cx, cy, r);
         g1.addColorStop(0, col.light);
         g1.addColorStop(0.4, col.hex);
         g1.addColorStop(1, col.dark);
-        ctx.beginPath();
-        ctx.arc(cx, cy, r, 0, 6.2832);
-        ctx.fillStyle = g1;
-        ctx.fill();
+        ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.fillStyle = g1; ctx.fill();
 
-        // Rim
+        // Rim darkening
         const g2 = ctx.createRadialGradient(cx, cy, r * 0.6, cx, cy, r);
         g2.addColorStop(0, 'rgba(0,0,0,0)');
-        g2.addColorStop(1, 'rgba(0,0,0,0.25)');
+        g2.addColorStop(1, 'rgba(0,0,0,0.28)');
         ctx.fillStyle = g2;
-        ctx.beginPath();
-        ctx.arc(cx, cy, r, 0, 6.2832);
-        ctx.fill();
+        ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
 
-        // Highlight
+        // Main highlight
         const g3 = ctx.createRadialGradient(cx - r * 0.3, cy - r * 0.35, 0, cx - r * 0.15, cy - r * 0.15, r * 0.55);
         g3.addColorStop(0, 'rgba(255,255,255,0.65)');
         g3.addColorStop(1, 'rgba(255,255,255,0)');
         ctx.fillStyle = g3;
-        ctx.beginPath();
-        ctx.arc(cx, cy, r, 0, 6.2832);
-        ctx.fill();
+        ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
 
-        // Small specular
+        // Specular dot
         const g4 = ctx.createRadialGradient(cx - r * 0.35, cy - r * 0.4, 0, cx - r * 0.35, cy - r * 0.4, r * 0.18);
         g4.addColorStop(0, 'rgba(255,255,255,0.8)');
         g4.addColorStop(1, 'rgba(255,255,255,0)');
         ctx.fillStyle = g4;
-        ctx.beginPath();
-        ctx.arc(cx, cy, r, 0, 6.2832);
-        ctx.fill();
+        ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
     }
 
-    // ============================================================
-    // RADIUS CALC - Fits screen
-    // ============================================================
-    calcRadius() {
-        const availW = this.W - 8;
-        const maxByW = Math.floor(availW / (this.COLS * 2 + 0.5));
-        const gridH = this.H - this.HUD_HEIGHT - 8 - this.BOTTOM_ZONE;
-        const maxByH = Math.floor(gridH / (this.ROWS * 1.732));
-        return Math.min(maxByW, maxByH, this.isMobile ? 17 : 20);
+    // ══════════════════ AUDIO ══════════════════
+
+    _initAudio() {
+        try { this.audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {}
     }
 
-    recalcGrid() {
-        this.cellW = this.BUBBLE_R * 2;
-        this.cellH = this.BUBBLE_R * 1.732;
-        const totalW = this.COLS * this.cellW;
-        this.offsetX = (this.W - totalW) / 2 + this.BUBBLE_R;
-        this.offsetY = this.GRID_TOP;
-        this.shooterX = this.W / 2;
-        this.shooterY = this.H - this.BOTTOM_ZONE / 2;
-    }
-
-    // ============================================================
-    // SAVE / LOAD
-    // ============================================================
-    loadPlayerData() {
-        const def = {
-            coins: 0, diamonds: 0, currentLevel: 1, highestLevel: 1,
-            totalScore: 0, totalPopped: 0, totalCoinsEarned: 0, totalDiamondsEarned: 0,
-            dailyStreak: 0, lastDailyReward: null, levelStars: {},
-            powerUps: { bomb: 1, precision: 2 }, gamesPlayed: 0
-        };
+    _playTone(freq, dur, type = 'sine', vol = 0.1) {
+        if (!this.audioCtx) return;
         try {
-            const s = JSON.parse(localStorage.getItem(this.saveKey));
-            if (s) return { ...def, ...s };
-        } catch (e) { }
+            const osc  = this.audioCtx.createOscillator();
+            const gain = this.audioCtx.createGain();
+            osc.connect(gain); gain.connect(this.audioCtx.destination);
+            osc.frequency.value = freq; osc.type = type;
+            gain.gain.setValueAtTime(vol, this.audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, this.audioCtx.currentTime + dur);
+            osc.start(this.audioCtx.currentTime);
+            osc.stop(this.audioCtx.currentTime + dur);
+        } catch (e) {}
+    }
+
+    _playShoot()  { this._playTone(440, 0.12, 'sine', 0.08); }
+    _playPop()    { this._playTone(660, 0.15, 'sine', 0.1);  setTimeout(() => this._playTone(880, 0.1, 'sine', 0.08), 80); }
+    _playSwap()   { this._playTone(540, 0.1,  'sine', 0.08); }
+    _playError()  { this._playTone(180, 0.2,  'square', 0.06); }
+    _playCombo()  { [440, 550, 660].forEach((f, i) => setTimeout(() => this._playTone(f, 0.12, 'sine', 0.09), i * 70)); }
+    _playWin()    { [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => this._playTone(f, 0.25, 'sine', 0.12), i * 150)); }
+
+    // ══════════════════ SAVE / LOAD ══════════════════
+
+    _loadPlayerData() {
+        const def = { coins: 0, diamonds: 0, currentLevel: 0, levelStars: {}, dailyStreak: 0, lastDaily: null, powerUps: { bomb: 1, precision: 2 } };
+        try { const s = JSON.parse(localStorage.getItem(this.saveKey)); if (s) return { ...def, ...s }; } catch (e) {}
         return def;
     }
 
-    savePlayerData() {
-        this.playerData.powerUps = {};
-        for (const k in this.powerUps) this.playerData.powerUps[k] = this.powerUps[k].count;
-        try { localStorage.setItem(this.saveKey, JSON.stringify(this.playerData)); } catch (e) { }
+    _savePlayerData() {
+        this.playerData.powerUps = { bomb: this.powerUps.bomb.count, precision: this.powerUps.precision.count };
+        try { localStorage.setItem(this.saveKey, JSON.stringify(this.playerData)); } catch (e) {}
     }
 
-    // ============================================================
-    // DAILY REWARD
-    // ============================================================
-    checkDailyReward() {
+    // ══════════════════ DAILY REWARD ══════════════════
+
+    _checkDailyReward() {
         const today = new Date().toDateString();
-        if (this.playerData.lastDailyReward !== today) {
-            if (this.playerData.lastDailyReward) {
-                const diff = Math.floor((new Date() - new Date(this.playerData.lastDailyReward)) / 86400000);
-                this.playerData.dailyStreak = diff === 1 ? this.playerData.dailyStreak + 1 : 0;
-            }
+        if (this.playerData?.lastDaily !== today) {
             this.showDailyReward = true;
             this.dailyRewardClaimed = false;
-            this.dailyRewardAnim = 0;
+            this.dailyAnim = 0;
         }
     }
 
-    claimDailyReward() {
+    _claimDailyReward() {
         if (this.dailyRewardClaimed) return;
-        const streak = this.playerData.dailyStreak;
-        const coins = Math.floor(50 * Math.min(1 + streak * 0.25, 3));
-        const diamonds = Math.floor(2 * Math.max(1, Math.floor(streak / 3)));
-        this.playerData.coins += coins;
-        this.playerData.diamonds += diamonds;
-        this.playerData.totalCoinsEarned += coins;
-        this.playerData.totalDiamondsEarned += diamonds;
-        this.playerData.lastDailyReward = new Date().toDateString();
-        this.playerData.dailyStreak++;
+        const streak = this.playerData.dailyStreak || 0;
+        const coins  = Math.floor(50 * Math.min(1 + streak * 0.25, 3));
+        const dias   = Math.floor(2 * Math.max(1, Math.floor(streak / 3)));
+        this.playerData.coins    = (this.playerData.coins    || 0) + coins;
+        this.playerData.diamonds = (this.playerData.diamonds || 0) + dias;
+        this.playerData.lastDaily     = new Date().toDateString();
+        this.playerData.dailyStreak   = streak + 1;
         this.dailyRewardClaimed = true;
-        this.showDailyReward = false;
-        this.addFloatingText(this.W / 2, this.H / 2 - 30, `+${coins} Coins`, '#FFD700', 22);
-        this.addFloatingText(this.W / 2, this.H / 2 + 10, `+${diamonds} Gems`, '#00D4FF', 20);
-        this.savePlayerData();
+        this.showDailyReward    = false;
+        this._addFloatingText(this.canvas.width / 2 / this.DPR, this.canvas.height / 2 / this.DPR - 30, `+${coins} Coins`, '#FFD700', 20);
+        this._addFloatingText(this.canvas.width / 2 / this.DPR, this.canvas.height / 2 / this.DPR + 10, `+${dias} Gems`,  '#00EEFF', 18);
+        this._savePlayerData();
     }
 
-    // ============================================================
-    // LEVEL SYSTEM
-    // ============================================================
-    getLevelConfig(lvl) {
-        const configs = {
-            1: { rows: 4, colors: 3, goal: 25, drop: 45000, name: 'Warm Up', layout: 'std' },
-            2: { rows: 4, colors: 3, goal: 30, drop: 42000, name: 'Getting Started', layout: 'std' },
-            3: { rows: 5, colors: 4, goal: 40, drop: 40000, name: 'Color Mix', layout: 'std' },
-            4: { rows: 5, colors: 4, goal: 45, drop: 38000, name: 'Rising Tide', layout: 'std' },
-            5: { rows: 6, colors: 4, goal: 55, drop: 35000, name: 'The Wall', layout: 'boss_wall' },
-            6: { rows: 5, colors: 5, goal: 50, drop: 35000, name: 'Rainbow Rush', layout: 'std' },
-            7: { rows: 5, colors: 5, goal: 55, drop: 33000, name: 'Quick Fire', layout: 'zigzag' },
-            8: { rows: 6, colors: 5, goal: 60, drop: 32000, name: 'Deep Colors', layout: 'std' },
-            9: { rows: 6, colors: 5, goal: 65, drop: 30000, name: 'Speed Run', layout: 'diamond' },
-            10: { rows: 7, colors: 5, goal: 75, drop: 28000, name: 'Pyramid', layout: 'boss_pyr' },
-            11: { rows: 6, colors: 6, goal: 70, drop: 28000, name: 'Hex Mix', layout: 'std' },
-            12: { rows: 6, colors: 6, goal: 75, drop: 26000, name: 'Cascade', layout: 'checker' },
-            13: { rows: 7, colors: 6, goal: 80, drop: 25000, name: 'Tight Squeeze', layout: 'std' },
-            14: { rows: 7, colors: 6, goal: 85, drop: 24000, name: 'Storm', layout: 'zigzag' },
-            15: { rows: 7, colors: 6, goal: 90, drop: 22000, name: 'The Cross', layout: 'boss_cross' },
-            16: { rows: 7, colors: 7, goal: 85, drop: 22000, name: 'Spectrum', layout: 'std' },
-            17: { rows: 7, colors: 7, goal: 90, drop: 20000, name: 'Maze Runner', layout: 'maze' },
-            18: { rows: 8, colors: 7, goal: 95, drop: 20000, name: 'Dense Pack', layout: 'std' },
-            19: { rows: 8, colors: 7, goal: 100, drop: 18000, name: 'Pressure', layout: 'diamond' },
-            20: { rows: 8, colors: 7, goal: 110, drop: 16000, name: 'Spiral', layout: 'boss_spiral' },
-            21: { rows: 8, colors: 8, goal: 100, drop: 16000, name: 'Octachrome', layout: 'std' },
-            22: { rows: 8, colors: 8, goal: 110, drop: 15000, name: 'Blitz', layout: 'checker' },
-            23: { rows: 9, colors: 8, goal: 120, drop: 14000, name: 'Endurance', layout: 'zigzag' },
-            24: { rows: 9, colors: 8, goal: 130, drop: 12000, name: 'Nightmare', layout: 'maze' },
-            25: { rows: 10, colors: 8, goal: 150, drop: 10000, name: 'FINAL BOSS', layout: 'boss_final' }
-        };
-        if (configs[lvl]) return configs[lvl];
-        return {
-            rows: Math.min(10, 6 + Math.floor(lvl / 5)),
-            colors: Math.min(8, 3 + Math.floor(lvl / 3)),
-            goal: 50 + lvl * 10,
-            drop: Math.max(8000, 30000 - lvl * 800),
-            name: `Endless ${lvl}`,
-            layout: ['std', 'zigzag', 'diamond', 'checker', 'maze'][lvl % 5]
-        };
-    }
+    // ══════════════════ LEVEL GENERATION ══════════════════
 
-    initLevel(level) {
-        this.levelConfig = this.getLevelConfig(level);
-        this.ROWS = Math.max(12, this.levelConfig.rows + 5);
-        this.dropInterval = this.levelConfig.drop;
-        this.dropTimer = 0;
+    _startLevel(lvl) {
+        this.currentLevel  = Math.min(lvl, this.LEVELS.length - 1);
+        const cfg          = this.LEVELS[this.currentLevel];
+        this.moves         = 0;
+        this.combo         = 0;
+        this.maxCombo      = 0;
         this.bubblesPopped = 0;
-        this.shotsUsed = 0;
-        this.levelCoins = 0;
+        this.gameWon       = false;
+        this.gameOver      = false;
+        this.score         = 0;
+        this.levelCoins    = 0;
         this.levelDiamonds = 0;
-        this.combo = 0;
-        this.maxCombo = 0;
-        this.levelComplete = false;
-        this.showLevelComplete = false;
-        this.levelGoal = this.levelConfig.goal;
-        this.levelProgress = 0;
+        this.starRating    = 0;
+        this.projectile    = null;
+        this.canShoot      = true;
+        this.shootCooldown = 0;
         this.activePowerUp = null;
-        this.totalBubbles = 0;
-        this.gridBounce = {};
+        this.history       = [];
+        this.particles     = [];
+        this.fallingBubbles = [];
+        this.popRings      = [];
+        this.textPopups    = [];
+        this.floatingTexts = [];
+        this.showLevelComplete = false;
+        this.timeElapsed   = 0;
+        this.bgCache       = null;
 
+        this.COLS = this.isMobile ? 9 : 10;
+        this.ROWS = Math.max(12, cfg.rows + 5);
+        this._calculateLayout();
+        this._buildGrid(cfg);
+        this._updateColorsInPlay();
+        this._generateShooter();
+        this._calcAimLine();
+        this._startTimer();
+
+        this._addFloatingText(this.canvas.width / 2 / this.DPR, this.canvas.height / 2 / this.DPR - 30, `Level ${this.currentLevel + 1}`, '#DD00FF', 24);
+        this._addFloatingText(this.canvas.width / 2 / this.DPR, this.canvas.height / 2 / this.DPR + 8,  cfg.name || '', '#00EEFF', 13);
+
+        this.playerData.currentLevel = this.currentLevel;
+        this._savePlayerData();
+    }
+
+    _buildGrid(cfg) {
         this.grid = [];
         for (let r = 0; r < this.ROWS; r++) this.grid[r] = new Array(this.COLS).fill(null);
-        this.buildLayout(this.levelConfig);
-        this.updateColorsInPlay();
-
-        this.particles = [];
-        this.fallingBubbles = [];
-        this.popRings = [];
-
-        this.addFloatingText(this.W / 2, this.H / 2 - 30, `Level ${level}`, '#B94FE3', 24);
-        this.addFloatingText(this.W / 2, this.H / 2 + 5, this.levelConfig.name, '#00D4FF', 13);
-    }
-
-    buildLayout(cfg) {
-        const n = cfg.colors, rows = cfg.rows;
-        switch (cfg.layout) {
-            case 'zigzag':
-                for (let r = 0; r < rows; r++) for (let c = 0; c < this.COLS; c++)
-                    if ((r + c) % 2 === 0) this.grid[r][c] = this.makeBubble(Math.floor(Math.random() * n));
-                break;
-            case 'diamond': {
-                const mid = Math.floor(this.COLS / 2);
-                for (let r = 0; r < rows; r++) {
-                    const half = Math.min(r, rows - 1 - r);
-                    for (let c = mid - half; c <= mid + half; c++)
-                        if (c >= 0 && c < this.COLS) this.grid[r][c] = this.makeBubble(Math.floor(Math.random() * n));
-                }
-                break;
-            }
-            case 'checker':
-                for (let r = 0; r < rows; r++) for (let c = 0; c < this.COLS; c++)
-                    this.grid[r][c] = this.makeBubble((r + c) % n);
-                break;
-            case 'maze':
-                for (let r = 0; r < rows; r++) for (let c = 0; c < this.COLS; c++)
-                    if (r % 2 === 0 || c % 3 === 0) this.grid[r][c] = this.makeBubble(Math.floor(Math.random() * n));
-                break;
-            case 'boss_wall':
-                for (let r = 0; r < 6; r++) for (let c = 0; c < this.COLS; c++)
-                    this.grid[r][c] = this.makeBubble(r % n);
-                break;
-            case 'boss_pyr':
-                for (let r = 0; r < 7; r++) {
-                    const s = Math.max(0, Math.floor(r / 2)), e = Math.min(this.COLS, this.COLS - Math.floor(r / 2));
-                    for (let c = s; c < e; c++) this.grid[r][c] = this.makeBubble(Math.floor(Math.random() * n));
-                }
-                break;
-            case 'boss_cross': {
-                const m = Math.floor(this.COLS / 2);
-                for (let r = 0; r < 7; r++) {
-                    if (r === 3) for (let c = 0; c < this.COLS; c++) this.grid[r][c] = this.makeBubble(Math.floor(Math.random() * n));
-                    for (let c = m - 1; c <= m + 1; c++) if (c >= 0 && c < this.COLS) this.grid[r][c] = this.makeBubble(Math.floor(Math.random() * n));
-                }
-                break;
-            }
-            case 'boss_spiral': {
-                const cx = Math.floor(this.COLS / 2);
-                for (let r = 0; r < 8; r++) for (let c = 0; c < this.COLS; c++) {
-                    const dx = c - cx, d = Math.sqrt(dx * dx + r * r);
-                    if (d < 6 && (Math.floor(Math.atan2(r, dx) * 3 + d) % 2 === 0))
-                        this.grid[r][c] = this.makeBubble(Math.floor(Math.random() * n));
-                }
-                break;
-            }
-            case 'boss_final':
-                for (let r = 0; r < 8; r++) for (let c = 0; c < this.COLS; c++)
-                    this.grid[r][c] = this.makeBubble(r < 3 ? (r % n) : Math.floor(Math.random() * n));
-                break;
-            default:
-                for (let r = 0; r < rows; r++) for (let c = 0; c < this.COLS; c++)
-                    this.grid[r][c] = this.makeBubble(Math.floor(Math.random() * n));
-        }
-    }
-
-    makeBubble(ci) {
-        this.totalBubbles++;
-        return { ci, scale: 1, flash: 0, breathe: Math.random() * 6.28, isNew: false };
-    }
-
-    // ============================================================
-    // ECONOMY
-    // ============================================================
-    earnCoins(amt, x, y) {
-        this.playerData.coins += amt;
-        this.playerData.totalCoinsEarned += amt;
-        this.levelCoins += amt;
-        this.addTextPopup(x, y, `+${amt}`, '#FFD700');
-        this.hudFlash.coins = 12;
-    }
-
-    earnDiamonds(amt, x, y) {
-        this.playerData.diamonds += amt;
-        this.playerData.totalDiamondsEarned += amt;
-        this.levelDiamonds += amt;
-        this.addTextPopup(x, y - 15, `+${amt}`, '#00D4FF');
-        this.hudFlash.diamonds = 12;
-    }
-
-    // ============================================================
-    // POWER-UPS
-    // ============================================================
-    activatePowerUp(type) {
-        if (!this.powerUps[type] || this.powerUps[type].count <= 0) return;
-        if (this.activePowerUp === type) { this.activePowerUp = null; return; }
-        this.activePowerUp = null;
-        this.powerUps[type].count--;
-        this.activePowerUp = type;
-        this.addFloatingText(this.W / 2, this.H / 2, `${this.powerUps[type].name}!`, this.powerUps[type].color, 18);
-        this.savePlayerData();
-    }
-
-    // ============================================================
-    // INPUT
-    // ============================================================
-    bindEvents() {
-        this.canvas.style.touchAction = 'none';
-        this.canvas.style.userSelect = 'none';
-        this.canvas.style.webkitUserSelect = 'none';
-
-        if (window.PointerEvent) {
-            this.canvas.addEventListener('pointermove', e => { e.preventDefault(); this.onPointerMove(e); }, { passive: false });
-            this.canvas.addEventListener('pointerup', e => { e.preventDefault(); this.onPointerUp(e); }, { passive: false });
-            this.canvas.addEventListener('pointerdown', e => { e.preventDefault(); this.pointerDown = true; }, { passive: false });
-        } else {
-            this.canvas.addEventListener('mousemove', e => this.onMouseMove(e));
-            this.canvas.addEventListener('click', e => this.onClick(e));
-            this.canvas.addEventListener('touchmove', e => { e.preventDefault(); this.onTouchMove(e); }, { passive: false });
-            this.canvas.addEventListener('touchend', e => { e.preventDefault(); this.onTouchEnd(e); }, { passive: false });
-            this.canvas.addEventListener('touchstart', e => { e.preventDefault(); }, { passive: false });
-        }
-        document.addEventListener('keydown', e => this.onKey(e));
-    }
-
-    getPos(e) {
-        const rect = this.canvas.getBoundingClientRect();
-        const sx = this.W / rect.width;
-        const sy = this.H / rect.height;
-        let cx, cy;
-        if (e.touches) {
-            const t = e.touches[0] || e.changedTouches[0];
-            cx = t.clientX; cy = t.clientY;
-        } else { cx = e.clientX; cy = e.clientY; }
-        return { x: (cx - rect.left) * sx, y: (cy - rect.top) * sy };
-    }
-
-    onPointerMove(e) { if (this.paused || this.gameOver) return; const p = this.getPos(e); this.aimAt(p.x, p.y); }
-    onPointerUp(e) { const p = this.getPos(e); if (this.onUIClick(p.x, p.y)) return; this.aimAt(p.x, p.y); this.tryShoot(); }
-    onMouseMove(e) { if (this.paused || this.gameOver) return; const p = this.getPos(e); this.aimAt(p.x, p.y); }
-    onClick(e) { const p = this.getPos(e); if (this.onUIClick(p.x, p.y)) return; this.aimAt(p.x, p.y); this.tryShoot(); }
-    onTouchMove(e) { if (this.paused || this.gameOver) return; const p = this.getPos(e); this.aimAt(p.x, p.y); }
-    onTouchEnd(e) { const p = this.getPos(e); if (this.onUIClick(p.x, p.y)) return; this.aimAt(p.x, p.y); this.tryShoot(); }
-
-    onKey(e) {
-        if (this.destroyed) return;
-        if (e.key === '1') this.activatePowerUp('bomb');
-        if (e.key === '2') this.activatePowerUp('precision');
-        if (e.key === ' ') { e.preventDefault(); this.tryShoot(); }
-        if (e.key === 'c' || e.key === 'C') this.swapBubble();
-        if (e.key === 'f' || e.key === 'F') this.toggleFullscreen();
-    }
-
-    // ============================================================
-    // UI CLICK
-    // ============================================================
-    onUIClick(x, y) {
-        if (this.showDailyReward && !this.dailyRewardClaimed) { this.claimDailyReward(); return true; }
-        if (this.showLevelComplete) { this.goNextLevel(); return true; }
-
-        const fs = this.getFSRect();
-        if (x >= fs.x && x <= fs.x + fs.w && y >= fs.y && y <= fs.y + fs.h) { this.toggleFullscreen(); return true; }
-
-        // Tap current bubble = swap
-        const dx = x - this.shooterX, dy = y - this.shooterY;
-        if (dx * dx + dy * dy < (this.BUBBLE_R + 14) ** 2) { this.swapBubble(); return true; }
-
-        // Power-up buttons
-        const btns = this.getPUBtns();
-        for (let i = 0; i < btns.length; i++) {
-            const b = btns[i];
-            if (x >= b.x && x <= b.x + b.s && y >= b.y && y <= b.y + b.s) {
-                this.activatePowerUp(b.key);
-                return true;
+        const n = cfg.colors;
+        for (let r = 0; r < cfg.rows; r++) {
+            for (let c = 0; c < this.COLS; c++) {
+                this.grid[r][c] = { ci: Math.floor(Math.random() * n), scale: 1, flash: 0, breathe: Math.random() * 6.28 };
             }
         }
-        return false;
     }
 
-    getPUBtns() {
-        const s = this.isMobile ? 42 : 36;
-        const gap = 8;
-        const keys = Object.keys(this.powerUps);
-        const total = keys.length * s + (keys.length - 1) * gap;
-        const startX = (this.W - total) / 2;
-        const by = this.H - s - 6;
-        return keys.map((key, i) => ({ x: startX + i * (s + gap), y: by, s, key }));
+    _levelGoal() { return this.LEVELS[Math.min(this.currentLevel, this.LEVELS.length - 1)].rows * this.COLS; }
+
+    // ══════════════════ GAME LOGIC ══════════════════
+
+    _updateColorsInPlay() {
+        const used = new Set();
+        for (let r = 0; r < this.ROWS; r++) for (let c = 0; c < this.COLS; c++) if (this.grid[r]?.[c]) used.add(this.grid[r][c].ci);
+        this.colorsInPlay = [...used];
+        if (!this.colorsInPlay.length) this.colorsInPlay = [0, 1, 2];
     }
 
-    getFSRect() {
-        const s = this.isMobile ? 34 : 30;
-        return { x: this.W - s - 8, y: 7, w: s, h: s };
+    _generateShooter() {
+        this.currentBubble = this.nextBubble ?? this._randColor();
+        this.nextBubble    = this._randColor();
     }
 
-    // ============================================================
-    // SWAP
-    // ============================================================
-    swapBubble() {
+    _randColor() {
+        const pool = this.colorsInPlay.length ? this.colorsInPlay : [0, 1, 2];
+        return pool[Math.floor(Math.random() * pool.length)];
+    }
+
+    _swapBubble() {
         if (!this.canShoot || this.projectile) return;
         const pool = this.colorsInPlay.length ? this.colorsInPlay : [0, 1, 2];
-        const cur = pool.indexOf(this.currentBubble.ci);
-        const next = pool[(cur + 1) % pool.length];
+        const idx  = pool.indexOf(this.currentBubble);
+        this.currentBubble = pool[(idx + 1) % pool.length];
         this.swapAnim = 1;
-        this.swapColorIdx = next;
-        this.currentBubble = { ci: next, color: this.COLORS[next].hex };
-        this.calcAimLine();
+        this._playSwap();
+        this._calcAimLine();
     }
 
-    // ============================================================
-    // FULLSCREEN
-    // ============================================================
-    toggleFullscreen() {
-        const el = document.documentElement;
-        if (!document.fullscreenElement && !document.webkitFullscreenElement) {
-            (el.requestFullscreen || el.webkitRequestFullscreen)?.call(el).catch(() => { });
-        } else {
-            (document.exitFullscreen || document.webkitExitFullscreen)?.call(document);
-        }
+    _bubblePos(r, c) {
+        const ox = r % 2 === 1 ? this.BUBBLE_R : 0;
+        return { x: this.offsetX + c * this.cellW + ox, y: this.offsetY + r * this.cellH };
     }
 
-    onFullscreenChange() {
-        this.isFullscreen = !!(document.fullscreenElement || document.webkitFullscreenElement);
-        setTimeout(() => this.resize(), 250);
-    }
-
-    // ============================================================
-    // AIM
-    // ============================================================
-    aimAt(mx, my) {
-        let a = Math.atan2(my - this.shooterY, mx - this.shooterX);
-        a = Math.max(-Math.PI + 0.1, Math.min(-0.1, a));
-        this.targetAngle = a;
-        this.calcAimLine();
-    }
-
-    tryShoot() {
-        if (this.showDailyReward || this.showLevelComplete) return;
-        if (this.paused || this.gameOver || !this.canShoot || this.projectile) return;
-        if (this.levelComplete || this.levelTransition || this.shootCooldown > 0) return;
-        this.shoot();
-    }
-
-    calcAimLine() {
+    _calcAimLine() {
         this.aimDots = [];
-        let x = this.shooterX, y = this.shooterY;
-        let vx = Math.cos(this.targetAngle), vy = Math.sin(this.targetAngle);
-        let bounces = 0;
+        const D    = this.DPR;
+        let x      = this.shooterX / D, y = this.shooterY / D;
+        let vx     = Math.cos(this.shooterAngle), vy = Math.sin(this.shooterAngle);
+        const R    = this.BUBBLE_R / D;
         const maxB = this.activePowerUp === 'precision' ? 4 : 2;
-        const step = this.isMobile ? 13 : 10;
-        const maxSteps = this.isMobile ? 20 : 30;
+        const step = this.isMobile ? 12 : 9;
+        let bounces = 0;
 
-        for (let i = 0; i < maxSteps; i++) {
+        for (let i = 0; i < (this.isMobile ? 22 : 35); i++) {
             x += vx * step; y += vy * step;
-            if (x <= this.BUBBLE_R) { x = this.BUBBLE_R; vx = -vx; bounces++; }
-            if (x >= this.W - this.BUBBLE_R) { x = this.W - this.BUBBLE_R; vx = -vx; bounces++; }
-            if (y <= this.offsetY || y > this.shooterY + 10) break;
+            const lx = x * D, ly = y * D;
+            if (lx <= R * D)              { x = R; vx = -vx; bounces++; }
+            if (lx >= this.canvas.width / D - R) { x = this.canvas.width / D - R; vx = -vx; bounces++; }
+            if (ly <= this.offsetY / D + R) break;
+            if (ly > this.shooterY / D + 10) break;
             if (bounces >= maxB) break;
 
             let hit = false;
-            const r2 = (this.BUBBLE_R * 1.8) ** 2;
-            for (let r = 0; r < this.ROWS && !hit; r++)
-                for (let c = 0; c < this.COLS && !hit; c++) {
-                    if (!this.grid[r]?.[c]) continue;
-                    const pos = this.bubblePos(r, c);
-                    if ((x - pos.x) ** 2 + (y - pos.y) ** 2 < r2) hit = true;
-                }
-            this.aimDots.push({ x, y, t: i / maxSteps });
+            const r2 = (R * 1.85) ** 2;
+            for (let r = 0; r < this.ROWS && !hit; r++) for (let c = 0; c < this.COLS && !hit; c++) {
+                if (!this.grid[r]?.[c]) continue;
+                const pos = this._bubblePosLogical(r, c);
+                if ((x - pos.x) ** 2 + (y - pos.y) ** 2 < r2) hit = true;
+            }
+            this.aimDots.push({ x, y, t: i / 35 });
             if (hit) break;
         }
     }
 
-    // ============================================================
-    // SHOOT
-    // ============================================================
-    shoot() {
-        this.canShoot = false;
-        this.shotsUsed++;
-        this.shootCooldown = 5;
-        this.shootRecoil = 5;
-        this.shootGlow = 1;
+    _bubblePosLogical(r, c) {
+        const D  = this.DPR;
+        const ox = r % 2 === 1 ? this.BUBBLE_R / D : 0;
+        return { x: this.offsetX / D + c * (this.cellW / D) + ox, y: this.offsetY / D + r * (this.cellH / D) };
+    }
 
-        const isBomb = this.activePowerUp === 'bomb';
+    _shoot() {
+        if (!this.canShoot || this.projectile || this.shootCooldown > 0) return;
+        this.canShoot      = false;
+        this.shootCooldown = 6;
+        this.shootRecoil   = 6;
+        this.moves++;
+
         this.projectile = {
             x: this.shooterX, y: this.shooterY,
-            vx: Math.cos(this.angle) * this.projectileSpeed,
-            vy: Math.sin(this.angle) * this.projectileSpeed,
-            ci: this.currentBubble.ci,
-            color: this.COLORS[this.currentBubble.ci].hex,
-            trail: [], isBomb, age: 0
+            vx: Math.cos(this.shooterAngle) * (this.isMobile ? 11 : 14) * this.DPR,
+            vy: Math.sin(this.shooterAngle) * (this.isMobile ? 11 : 14) * this.DPR,
+            ci: this.currentBubble, isBomb: this.activePowerUp === 'bomb',
+            trail: [], age: 0,
         };
-
         this.activePowerUp = null;
-        this.generateShooter();
+        this._playShoot();
+        this._generateShooter();
     }
 
-    // ============================================================
-    // UPDATE
-    // ============================================================
-    update(dt) {
-        if (this.paused || this.gameOver) return;
-        this.time += dt;
-        this.frame++;
-        if (this.shootCooldown > 0) this.shootCooldown--;
-        if (this.swapAnim > 0) this.swapAnim = Math.max(0, this.swapAnim - 0.07);
-
-        if (this.showDailyReward) this.dailyRewardAnim = Math.min(1, this.dailyRewardAnim + 0.06);
-        if (this.showLevelComplete) { this.levelCompleteTimer++; this.updateFX(); return; }
-        if (this.levelTransition) {
-            this.levelTransitionTimer--;
-            if (this.levelTransitionTimer <= 0) { this.levelTransition = false; this.initLevel(this.level); this.generateShooter(); }
-            return;
-        }
-
-        this.angle += (this.targetAngle - this.angle) * 0.35;
-        if (this.shootRecoil > 0) this.shootRecoil *= 0.8;
-        if (this.shootGlow > 0) this.shootGlow *= 0.88;
-
-        if (this.shakeTimer > 0) {
-            const f = this.shakeForce * (this.shakeTimer / 10) * (this.isMobile ? 0.5 : 1);
-            this.shakeX = (Math.random() - 0.5) * f;
-            this.shakeY = (Math.random() - 0.5) * f * 0.3;
-            this.shakeTimer--;
-        } else { this.shakeX = 0; this.shakeY = 0; }
-
-        for (const k in this.hudFlash) if (this.hudFlash[k] > 0) this.hudFlash[k]--;
-        if (!this.isMobile || this.frame % 2 === 0) this.stars.forEach(s => s.phase += s.speed);
-
-        if (this.projectile) this.updateProjectile();
-
-        for (let r = 0; r < this.ROWS; r++) for (let c = 0; c < this.COLS; c++) {
-            const b = this.grid[r]?.[c];
-            if (!b) continue;
-            if (b.isNew) { b.scale += (1 - b.scale) * 0.2; if (b.scale > 0.97) { b.scale = 1; b.isNew = false; } }
-            if (b.flash > 0) b.flash -= 0.8;
-            if (!this.isMobile) b.breathe += 0.015;
-            const bk = `${r},${c}`;
-            if (this.gridBounce[bk]) { this.gridBounce[bk] *= 0.82; if (Math.abs(this.gridBounce[bk]) < 0.2) delete this.gridBounce[bk]; }
-        }
-
-        this.dropTimer += dt;
-        if (this.dropTimer >= this.dropInterval) { this.dropTimer = 0; this.dropRow(); }
-        this.dropWarning = (this.dropInterval - this.dropTimer) < 5000;
-
-        this.levelProgress = Math.min(1, this.bubblesPopped / this.levelGoal);
-        if (this.bubblesPopped >= this.levelGoal && !this.levelComplete) this.completeLevel();
-
-        if (this.grid.flat().filter(Boolean).length === 0 && !this.levelComplete && this.totalBubbles > 0) {
-            this.earnCoins(100, this.W / 2, this.H / 2);
-            this.completeLevel();
-        }
-
-        this.checkGameOver();
-        this.updateFX();
-    }
-
-    updateFX() {
-        for (let i = this.particles.length - 1; i >= 0; i--) {
-            const p = this.particles[i];
-            p.x += p.vx; p.y += p.vy; p.vy += 0.08; p.life--; p.vx *= 0.97;
-            if (p.life <= 0) this.particles.splice(i, 1);
-        }
-        for (let i = this.fallingBubbles.length - 1; i >= 0; i--) {
-            const b = this.fallingBubbles[i];
-            b.vy += 0.5; b.y += b.vy; b.x += b.vx; b.life--;
-            if (b.life <= 0 || b.y > this.H + 40) this.fallingBubbles.splice(i, 1);
-        }
-        for (let i = this.popRings.length - 1; i >= 0; i--) {
-            const r = this.popRings[i];
-            r.radius += 3; r.opacity -= 0.05;
-            if (r.opacity <= 0) this.popRings.splice(i, 1);
-        }
-        for (let i = this.textPopups.length - 1; i >= 0; i--) {
-            const t = this.textPopups[i];
-            t.y -= 1; t.life--; t.opacity = Math.min(1, t.life / 20);
-            if (t.life <= 0) this.textPopups.splice(i, 1);
-        }
-        for (let i = this.floatingTexts.length - 1; i >= 0; i--) {
-            const t = this.floatingTexts[i];
-            t.y -= 0.5; t.life--; t.opacity = Math.min(1, t.life / 25);
-            t.scale += (1 - t.scale) * 0.15;
-            if (t.life <= 0) this.floatingTexts.splice(i, 1);
-        }
-    }
-
-    updateProjectile() {
+    _updateProjectile() {
         const p = this.projectile;
+        if (!p) return;
         p.age++;
         p.trail.push({ x: p.x, y: p.y });
         if (p.trail.length > (this.isMobile ? 5 : 8)) p.trail.shift();
         p.x += p.vx; p.y += p.vy;
 
-        if (p.x <= this.BUBBLE_R) { p.x = this.BUBBLE_R; p.vx = -p.vx; }
-        if (p.x >= this.W - this.BUBBLE_R) { p.x = this.W - this.BUBBLE_R; p.vx = -p.vx; }
-        if (p.y <= this.BUBBLE_R + this.offsetY) { this.snapBubble(); return; }
-        if (p.y > this.H + 20) { this.projectile = null; this.canShoot = true; return; }
+        const R = this.BUBBLE_R;
+        if (p.x <= R)                        { p.x = R;                         p.vx = -p.vx; }
+        if (p.x >= this.canvas.width - R)    { p.x = this.canvas.width - R;     p.vx = -p.vx; }
+        if (p.y <= this.BUBBLE_R + this.offsetY) { this._snapBubble(); return; }
+        if (p.y > this.canvas.height + 30)   { this.projectile = null; this.canShoot = true; return; }
 
-        const r2 = (this.BUBBLE_R * 1.85) ** 2;
+        const r2 = (R * 1.85) ** 2;
         for (let r = 0; r < this.ROWS; r++) for (let c = 0; c < this.COLS; c++) {
             if (!this.grid[r]?.[c]) continue;
-            const pos = this.bubblePos(r, c);
-            if ((p.x - pos.x) ** 2 + (p.y - pos.y) ** 2 < r2) { this.snapBubble(); return; }
+            const pos = this._bubblePos(r, c);
+            if ((p.x - pos.x) ** 2 + (p.y - pos.y) ** 2 < r2) { this._snapBubble(); return; }
         }
     }
 
-    // ============================================================
-    // SNAP & MATCH
-    // ============================================================
-    snapBubble() {
-        if (!this.projectile) return;
+    _snapBubble() {
         const p = this.projectile;
+        if (!p) return;
         let bestR = -1, bestC = -1, bestD = Infinity;
+        const snap2 = (this.BUBBLE_R * 3.5) ** 2;
+
         for (let r = 0; r < this.ROWS; r++) for (let c = 0; c < this.COLS; c++) {
             if (this.grid[r]?.[c]) continue;
-            const pos = this.bubblePos(r, c);
-            const d = (p.x - pos.x) ** 2 + (p.y - pos.y) ** 2;
-            if (d < bestD && d < (this.BUBBLE_R * 3.5) ** 2) { bestD = d; bestR = r; bestC = c; }
+            const pos = this._bubblePos(r, c);
+            const d   = (p.x - pos.x) ** 2 + (p.y - pos.y) ** 2;
+            if (d < bestD && d < snap2) { bestD = d; bestR = r; bestC = c; }
         }
-        if (bestR === -1) { bestR = 0; bestC = Math.max(0, Math.min(this.COLS - 1, Math.round((p.x - this.offsetX) / this.cellW))); }
+
+        if (bestR === -1) {
+            bestR = 0;
+            bestC = Math.max(0, Math.min(this.COLS - 1, Math.round((p.x - this.offsetX) / this.cellW)));
+        }
 
         if (bestR !== -1 && bestC !== -1) {
-            if (p.isBomb) { this.explodeBomb(bestR, bestC); this.projectile = null; this.canShoot = true; return; }
-            this.grid[bestR][bestC] = { ci: p.ci, scale: 0.2, flash: 5, breathe: 0, isNew: true };
-            const nbs = this.getNeighbors(bestR, bestC);
-            for (const [nr, nc] of nbs) if (this.grid[nr]?.[nc]) this.gridBounce[`${nr},${nc}`] = 2;
-            const matches = this.findMatches(bestR, bestC);
-            if (matches.length >= 3) { this.combo++; this.maxCombo = Math.max(this.maxCombo, this.combo); this.popMatches(matches, bestR, bestC); }
-            else { this.combo = 0; }
-            setTimeout(() => this.dropFloating(), 100);
+            if (p.isBomb) { this._explodeBomb(bestR, bestC); this.projectile = null; this.canShoot = true; return; }
+            this.grid[bestR][bestC] = { ci: p.ci, scale: 0.2, flash: 6, breathe: 0, isNew: true };
+            const matches = this._findMatches(bestR, bestC);
+            if (matches.length >= 3) {
+                this.combo++;
+                this.maxCombo = Math.max(this.maxCombo, this.combo);
+                this._popMatches(matches, bestR, bestC);
+                if (this.combo >= 2) this._playCombo();
+            } else {
+                this.combo = 0;
+            }
+            setTimeout(() => this._dropFloating(), 80);
         }
+
         this.projectile = null;
-        this.canShoot = true;
-        this.updateColorsInPlay();
+        this.canShoot   = true;
+        this._updateColorsInPlay();
     }
 
-    explodeBomb(r, c) {
+    _explodeBomb(r, c) {
         let count = 0;
-        const pos = this.bubblePos(r, c);
-        for (let dr = -3; dr <= 3; dr++) for (let dc = -3; dc <= 3; dc++) {
-            if (dr * dr + dc * dc > 6.25) continue;
+        for (let dr = -2; dr <= 2; dr++) for (let dc = -2; dc <= 2; dc++) {
+            if (dr * dr + dc * dc > 5) continue;
             const nr = r + dr, nc = c + dc;
             if (nr < 0 || nr >= this.ROWS || nc < 0 || nc >= this.COLS || !this.grid[nr]?.[nc]) continue;
-            const bp = this.bubblePos(nr, nc);
-            this.spawnPop(bp.x, bp.y, this.COLORS[this.grid[nr][nc].ci].hex, this.isMobile ? 3 : 5);
+            const pos = this._bubblePos(nr, nc);
+            this._spawnPop(pos.x, pos.y, this.COLORS[this.grid[nr][nc].ci].hex, 4);
             this.grid[nr][nc] = null;
             count++;
         }
         this.bubblesPopped += count;
-        this.score += count * 15;
-        this.onScore(this.score);
-        this.earnCoins(count * 3, pos.x, pos.y);
-        this.shake(8, 6);
-        this.addTextPopup(pos.x, pos.y - 15, `BOMB +${count * 15}`, '#FF8811');
-        setTimeout(() => this.dropFloating(), 150);
+        this.score         += count * 15;
+        this._addEarnCoins(count * 3);
+        this._addTextPopup(this.shooterX / this.DPR, this.shooterY / this.DPR - 30, `BOMB +${count * 15}`, '#FF7700');
+        this._shake(8, 6);
+        this._onScore(this.score);
+        setTimeout(() => this._dropFloating(), 100);
     }
 
-    findMatches(sr, sc) {
+    _findMatches(sr, sc) {
         if (!this.grid[sr]?.[sc]) return [];
-        const target = this.grid[sr][sc].ci;
+        const target  = this.grid[sr][sc].ci;
         const visited = new Set(), matches = [], queue = [[sr, sc]];
         while (queue.length) {
             const [r, c] = queue.shift();
             const k = r * 100 + c;
-            if (visited.has(k)) continue;
-            if (r < 0 || r >= this.ROWS || c < 0 || c >= this.COLS) continue;
+            if (visited.has(k) || r < 0 || r >= this.ROWS || c < 0 || c >= this.COLS) continue;
             if (!this.grid[r]?.[c] || this.grid[r][c].ci !== target) continue;
-            visited.add(k);
-            matches.push([r, c]);
-            for (const n of this.getNeighbors(r, c)) queue.push(n);
+            visited.add(k); matches.push([r, c]);
+            for (const n of this._neighbors(r, c)) queue.push(n);
         }
         return matches;
     }
 
-    getNeighbors(r, c) {
+    _neighbors(r, c) {
         return r % 2 === 1
-            ? [[r - 1, c], [r - 1, c + 1], [r, c - 1], [r, c + 1], [r + 1, c], [r + 1, c + 1]]
-            : [[r - 1, c - 1], [r - 1, c], [r, c - 1], [r, c + 1], [r + 1, c - 1], [r + 1, c]];
+            ? [[r-1,c],[r-1,c+1],[r,c-1],[r,c+1],[r+1,c],[r+1,c+1]]
+            : [[r-1,c-1],[r-1,c],[r,c-1],[r,c+1],[r+1,c-1],[r+1,c]];
     }
 
-    bubblePos(r, c) {
-        const ox = r % 2 === 1 ? this.BUBBLE_R : 0;
-        return { x: this.offsetX + c * this.cellW + ox, y: this.offsetY + r * this.cellH };
-    }
-
-    updateColorsInPlay() {
-        const used = new Set();
-        for (let r = 0; r < this.ROWS; r++) for (let c = 0; c < this.COLS; c++) if (this.grid[r]?.[c]) used.add(this.grid[r][c].ci);
-        this.colorsInPlay = [...used];
-        if (!this.colorsInPlay.length) this.colorsInPlay = Array.from({ length: Math.min(3, this.levelConfig?.colors || 3) }, (_, i) => i);
-    }
-
-    generateShooter() {
-        this.currentBubble = this.nextBubble || this.randBubble();
-        this.nextBubble = this.randBubble();
-    }
-
-    randBubble() {
-        const pool = this.colorsInPlay.length ? this.colorsInPlay : [0, 1, 2];
-        const ci = pool[Math.floor(Math.random() * pool.length)];
-        return { ci, color: this.COLORS[ci].hex };
-    }
-
-    // ============================================================
-    // POP & DROP
-    // ============================================================
-    popMatches(matches, oR, oC) {
+    _popMatches(matches, oR, oC) {
         const combo = Math.min(this.combo, 10);
-        const pts = matches.length * 10 * combo;
-        this.score += pts;
+        const pts   = matches.length * 10 * combo;
+        this.score  += pts;
         this.bubblesPopped += matches.length;
-        const oPos = this.bubblePos(oR, oC);
-        this.earnCoins(Math.floor(matches.length * (1 + combo * 0.5)), oPos.x, oPos.y);
-        if (combo >= 3 || (matches.length >= 5 && Math.random() < 0.3))
-            this.earnDiamonds(combo >= 5 ? 2 : 1, oPos.x, oPos.y - 20);
+        this._addEarnCoins(Math.floor(matches.length * (1 + combo * 0.5)));
+        if (combo >= 3 || matches.length >= 5) this._addEarnDiamonds(combo >= 5 ? 2 : 1);
 
         matches.forEach(([r, c], i) => {
             setTimeout(() => {
-                if (this.destroyed) return;
-                const pos = this.bubblePos(r, c);
-                const col = this.grid[r]?.[c] ? this.COLORS[this.grid[r][c].ci].hex : '#FFF';
-                this.spawnPop(pos.x, pos.y, col, this.isMobile ? 3 : 6);
+                if (this._destroyed) return;
+                const pos = this._bubblePos(r, c);
+                const hex = this.grid[r]?.[c] ? this.COLORS[this.grid[r][c].ci].hex : '#fff';
+                this._spawnPop(pos.x, pos.y, hex, this.isMobile ? 4 : 7);
                 if (this.grid[r]) this.grid[r][c] = null;
-            }, i * (this.isMobile ? 15 : 25));
+            }, i * (this.isMobile ? 15 : 22));
         });
 
-        this.addTextPopup(oPos.x, oPos.y - 12, combo > 1 ? `x${combo} +${pts}` : `+${pts}`, combo > 2 ? '#FFD700' : '#00FF88');
-        this.onScore(this.score);
-        this.shake(combo > 2 ? 8 : 3, combo > 2 ? 5 : 2);
+        const oPos = this._bubblePos(oR, oC);
+        this._addTextPopup(oPos.x / this.DPR, oPos.y / this.DPR - 10, combo > 1 ? `x${combo} +${pts}` : `+${pts}`, combo > 2 ? '#FFD700' : '#00EE66');
+        this._onScore(this.score);
+        this._shake(combo > 2 ? 8 : 3, combo > 2 ? 5 : 2);
+        this._playPop();
     }
 
-    dropFloating() {
+    _dropFloating() {
         const connected = new Set(), queue = [];
         for (let c = 0; c < this.COLS; c++) if (this.grid[0]?.[c]) queue.push([0, c]);
         while (queue.length) {
             const [r, c] = queue.shift();
             const k = r * 100 + c;
-            if (connected.has(k)) continue;
-            if (r < 0 || r >= this.ROWS || c < 0 || c >= this.COLS || !this.grid[r]?.[c]) continue;
+            if (connected.has(k) || r < 0 || r >= this.ROWS || c < 0 || c >= this.COLS || !this.grid[r]?.[c]) continue;
             connected.add(k);
-            for (const n of this.getNeighbors(r, c)) queue.push(n);
+            for (const n of this._neighbors(r, c)) queue.push(n);
         }
         let dropped = 0;
         for (let r = 0; r < this.ROWS; r++) for (let c = 0; c < this.COLS; c++) {
             if (this.grid[r]?.[c] && !connected.has(r * 100 + c)) {
-                const pos = this.bubblePos(r, c);
-                if (this.fallingBubbles.length < this.MAX_FALLING)
-                    this.fallingBubbles.push({ x: pos.x, y: pos.y, vx: (Math.random() - 0.5) * 2.5, vy: -Math.random() * 2.5 - 0.5, ci: this.grid[r][c].ci, life: 60 });
+                const pos = this._bubblePos(r, c);
+                if (this.fallingBubbles.length < this.MAX_PARTICLES / 2) {
+                    this.fallingBubbles.push({ x: pos.x, y: pos.y, vx: (Math.random() - 0.5) * 2.5 * this.DPR, vy: -Math.random() * 2 * this.DPR, ci: this.grid[r][c].ci, life: 1 });
+                }
                 this.grid[r][c] = null;
                 dropped++;
                 this.bubblesPopped++;
@@ -1032,673 +674,823 @@ class BubbleShooter {
         }
         if (dropped > 0) {
             this.score += dropped * 15;
-            this.earnCoins(dropped * 2, this.W / 2, this.H / 2);
-            this.onScore(this.score);
-            this.addTextPopup(this.W / 2, this.H / 2, `${dropped} Drop! +${dropped * 15}`, '#FF8811');
+            this._addEarnCoins(dropped * 2);
+            this._addTextPopup(this.canvas.width / 2 / this.DPR, this.canvas.height / 2 / this.DPR - 20, `${dropped} Drop! +${dropped * 15}`, '#FF7700');
+            this._onScore(this.score);
+        }
+        this._checkWin();
+    }
+
+    _checkWin() {
+        const remaining = this.grid.flat().filter(Boolean).length;
+        if (remaining === 0 && !this.gameWon && !this.gameOver) {
+            this.gameWon = true;
+            const eff = this._levelGoal() / Math.max(1, this.moves);
+            this.starRating = eff >= 0.9 ? 3 : eff >= 0.6 ? 2 : 1;
+            this.score += Math.max(0, 600 - this.moves * 5 - this.timeElapsed * 2);
+            const lc = 50 + (this.currentLevel + 1) * 10 + this.starRating * 20 + this.maxCombo * 5;
+            const ld = this.starRating >= 3 ? 3 : this.starRating >= 2 ? 1 : 0;
+            this.levelCoins    = lc;
+            this.levelDiamonds = ld;
+            this.playerData.coins    = (this.playerData.coins    || 0) + lc;
+            this.playerData.diamonds = (this.playerData.diamonds || 0) + ld;
+            this.showLevelComplete = true;
+            this.levelCompleteTimer = 0;
+            this._stopTimer();
+            this._playWin();
+            this._createWinParticles();
+            this._onScore(this.score, true);
+            this._savePlayerData();
         }
     }
 
-    dropRow() {
-        for (let r = this.ROWS - 1; r > 0; r--) this.grid[r] = this.grid[r - 1] ? [...this.grid[r - 1]] : new Array(this.COLS).fill(null);
-        this.grid[0] = [];
-        const n = this.levelConfig?.colors || 4;
-        for (let c = 0; c < this.COLS; c++) { const b = this.makeBubble(Math.floor(Math.random() * n)); b.isNew = true; b.scale = 0; this.grid[0][c] = b; }
-        this.updateColorsInPlay();
-        this.shake(6, 4);
-    }
-
-    completeLevel() {
-        this.levelComplete = true;
-        this.showLevelComplete = true;
-        this.levelCompleteTimer = 0;
-        const eff = this.levelGoal / Math.max(1, this.shotsUsed);
-        this.starRating = eff >= 0.8 ? 3 : eff >= 0.5 ? 2 : 1;
-        const lc = 50 + this.level * 10 + this.starRating * 20 + this.maxCombo * 5;
-        const ld = this.starRating >= 3 ? 3 : this.starRating >= 2 ? 1 : 0;
-        this.earnCoins(lc, this.W / 2, this.H / 2 - 50);
-        if (ld > 0) this.earnDiamonds(ld, this.W / 2, this.H / 2 - 25);
-        const prev = this.playerData.levelStars[this.level] || 0;
-        if (this.starRating > prev) this.playerData.levelStars[this.level] = this.starRating;
-        if (this.level >= this.playerData.highestLevel) this.playerData.highestLevel = this.level + 1;
-        this.playerData.currentLevel = this.level;
-        this.playerData.totalScore += this.score;
-        this.playerData.totalPopped += this.bubblesPopped;
-        this.playerData.gamesPlayed++;
-        this.savePlayerData();
-    }
-
-    goNextLevel() {
-        this.level++;
-        this.score = 0;
-        this.showLevelComplete = false;
-        this.levelTransition = true;
-        this.levelTransitionTimer = 40;
-        this.playerData.currentLevel = this.level;
-        this.savePlayerData();
-    }
-
-    checkGameOver() {
+    _checkGameOver() {
         for (let c = 0; c < this.COLS; c++) {
             if (this.grid[this.ROWS - 2]?.[c]) {
                 this.gameOver = true;
-                this.playerData.totalScore += this.score;
-                this.playerData.totalPopped += this.bubblesPopped;
-                this.playerData.gamesPlayed++;
-                this.savePlayerData();
-                setTimeout(() => this.onScore(this.score, true, { level: this.level, coins: this.levelCoins, diamonds: this.levelDiamonds }), 1200);
+                this._stopTimer();
+                this._savePlayerData();
+                setTimeout(() => this._onScore(this.score, true, { level: this.currentLevel + 1, coins: this.levelCoins, diamonds: this.levelDiamonds }), 1200);
                 return;
             }
         }
     }
 
-    // ============================================================
-    // FX HELPERS
-    // ============================================================
-    addParticle(x, y, vx, vy, color, size, life) {
-        if (this.particles.length >= this.MAX_PARTICLES) return;
-        this.particles.push({ x, y, vx, vy, color, size, life, maxLife: life });
+    _goNextLevel() {
+        const next = this.currentLevel + 1 >= this.LEVELS.length ? 0 : this.currentLevel + 1;
+        this._startLevel(next);
     }
 
-    spawnPop(x, y, color, count) {
+    // ══════════════════ FX ══════════════════
+
+    _addEarnCoins(amt) {
+        this.playerData.coins = (this.playerData.coins || 0) + amt;
+        this.levelCoins += amt;
+    }
+
+    _addEarnDiamonds(amt) {
+        this.playerData.diamonds = (this.playerData.diamonds || 0) + amt;
+        this.levelDiamonds += amt;
+    }
+
+    _addParticle(arr, p) { if (arr.length < this.MAX_PARTICLES) arr.push(p); }
+
+    _spawnPop(x, y, color, count) {
         for (let i = 0; i < count; i++) {
-            const a = Math.PI * 2 * i / count;
-            const spd = Math.random() * 3 + 1.5;
-            this.addParticle(x, y, Math.cos(a) * spd, Math.sin(a) * spd, color, Math.random() * 2.5 + 1, 35);
+            const a   = (Math.PI * 2 * i) / count + Math.random() * 0.4;
+            const spd = (Math.random() * 3 + 1.5) * this.DPR;
+            this._addParticle(this.particles, { x, y, vx: Math.cos(a) * spd, vy: Math.sin(a) * spd, life: 1, color, size: (Math.random() * 2.5 + 1) * this.DPR });
         }
-        if (this.popRings.length < this.MAX_POP_RINGS)
-            this.popRings.push({ x, y, radius: this.BUBBLE_R * 0.3, opacity: 0.55, color });
+        if (this.popRings.length < 12) this.popRings.push({ x, y, radius: this.BUBBLE_R * 0.3, opacity: 0.6, color });
     }
 
-    addTextPopup(x, y, t, color) {
-        if (this.textPopups.length >= this.MAX_POPUPS) this.textPopups.shift();
-        this.textPopups.push({ x, y, text: t, color, life: 50, opacity: 1 });
+    _createWinParticles() {
+        const count = this.isMobile ? 50 : 90;
+        for (let i = 0; i < count; i++) {
+            this._addParticle(this.particles, {
+                x: this.canvas.width / 2 + (Math.random() - 0.5) * this.canvas.width * 0.8,
+                y: this.canvas.height / 2 + (Math.random() - 0.5) * this.canvas.height * 0.5,
+                vx: (Math.random() - 0.5) * 10 * this.DPR,
+                vy: (Math.random() - 0.5) * 10 * this.DPR - this.DPR,
+                life: 1, color: `hsl(${Math.random() * 360},100%,65%)`,
+                size: (Math.random() * 4 + 2) * this.DPR,
+            });
+        }
     }
 
-    addFloatingText(x, y, t, color, size) {
-        this.floatingTexts.push({ x, y, text: t, color, size: size || 16, life: 90, opacity: 1, scale: 0.4 });
+    _addTextPopup(x, y, text, color) {
+        if (this.textPopups.length >= 10) this.textPopups.shift();
+        this.textPopups.push({ x, y, text, color, life: 1 });
     }
 
-    shake(timer, force) {
+    _addFloatingText(x, y, text, color, size) {
+        this.floatingTexts.push({ x, y, text, color, size: size || 14, life: 1, scale: 0.4 });
+    }
+
+    _shake(timer, force) {
         this.shakeTimer = this.isMobile ? Math.ceil(timer * 0.6) : timer;
         this.shakeForce = force;
     }
 
-    makeStars(count) {
-        return Array.from({ length: count }, () => ({
-            x: Math.random() * this.W, y: Math.random() * this.H,
-            size: Math.random() * 1.2 + 0.3, phase: Math.random() * 6.28,
-            speed: Math.random() * 0.012 + 0.004
-        }));
+    _activatePowerUp(type) {
+        if (!this.powerUps[type] || this.powerUps[type].count <= 0) return;
+        if (this.activePowerUp === type) { this.activePowerUp = null; return; }
+        this.powerUps[type].count--;
+        this.activePowerUp = type;
+        this._addFloatingText(this.canvas.width / 2 / this.DPR, this.canvas.height / 2 / this.DPR, `${this.powerUps[type].name}!`, this.powerUps[type].color, 18);
+        this._savePlayerData();
     }
 
-    fmtNum(n) {
-        if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
-        if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K';
-        return '' + n;
-    }
+    // ══════════════════ UPDATE ══════════════════
 
-    // ============================================================
-    // MAIN DRAW
-    // ============================================================
-    draw() {
-        const ctx = this.ctx;
-        ctx.fillStyle = '#050510';
-        ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    _update(dt) {
+        this.frame++;
+        this.globalTime += dt;
+        if (this.showDailyReward) { this.dailyAnim = Math.min(1, this.dailyAnim + 0.06); }
+        if (this.showLevelComplete) { this.levelCompleteTimer++; }
+        if (this.swapAnim > 0) this.swapAnim = Math.max(0, this.swapAnim - 0.07);
 
-        ctx.save();
-        if (this.shakeX || this.shakeY) ctx.translate(this.dS(this.shakeX), this.dS(this.shakeY));
+        // Angle lerp
+        this.shooterAngle += (this.targetAngle - this.shooterAngle) * 0.3;
+        if (this.shootRecoil > 0) this.shootRecoil *= 0.78;
+        if (this.shootCooldown > 0) this.shootCooldown--;
 
-        this.drawBG(ctx);
-        this.drawProgress(ctx);
-        this.drawGrid(ctx);
-        this.drawPopRings(ctx);
-        this.drawAimLine(ctx);
-        this.drawShooter(ctx);
-        this.drawProjectile(ctx);
-        this.drawFalling(ctx);
-        this.drawParticles(ctx);
-        this.drawTextPopups(ctx);
-        this.drawFloatingTexts(ctx);
-        this.drawHUD(ctx);
-        this.drawPowerUps(ctx);
-        this.drawFSBtn(ctx);
+        // Shake
+        if (this.shakeTimer > 0) {
+            const f = this.shakeForce * (this.shakeTimer / 10) * (this.isMobile ? 0.5 : 1);
+            this.shakeX = (Math.random() - 0.5) * f * this.DPR;
+            this.shakeY = (Math.random() - 0.5) * f * this.DPR * 0.3;
+            this.shakeTimer--;
+        } else { this.shakeX = 0; this.shakeY = 0; }
 
-        ctx.restore();
-
-        if (this.showDailyReward && !this.dailyRewardClaimed) this.drawDailyReward(ctx);
-        if (this.showLevelComplete) this.drawLevelCompleteScreen(ctx);
-        if (this.levelTransition) this.drawTransition(ctx);
-        if (this.gameOver) this.drawGameOverScreen(ctx);
-    }
-
-    // ============================================================
-    // BG
-    // ============================================================
-    drawBG(ctx) {
-        if (!this._bgGrad || this._bgKey !== `${this.W}x${this.H}`) {
-            this._bgGrad = ctx.createRadialGradient(this.dX(this.W / 2), this.dY(this.H * 0.3), 0, this.dX(this.W / 2), this.dY(this.H * 0.5), this.dS(this.H));
-            this._bgGrad.addColorStop(0, '#110825');
-            this._bgGrad.addColorStop(1, '#030210');
-            this._bgKey = `${this.W}x${this.H}`;
-        }
-        ctx.fillStyle = this._bgGrad;
-        ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-
-        if (!this.isMobile || this.frame % 2 === 0) {
-            for (const s of this.stars) {
-                ctx.globalAlpha = 0.15 + ((Math.sin(s.phase) + 1) / 2) * 0.5;
-                ctx.fillStyle = '#FFF';
-                ctx.beginPath();
-                ctx.arc(Math.round(s.x * this.dpr), Math.round(s.y * this.dpr), s.size * this.dpr, 0, 6.2832);
-                ctx.fill();
-            }
-            ctx.globalAlpha = 1;
-        }
-    }
-
-    // ============================================================
-    // PROGRESS BAR
-    // ============================================================
-    drawProgress(ctx) {
-        const bx = 10, by = this.HUD_HEIGHT + 2, bw = this.W - 20, bh = 4;
-        ctx.fillStyle = 'rgba(255,255,255,0.06)';
-        this.roundRect(ctx, bx, by, bw, bh, 2); ctx.fill();
-        if (this.levelProgress > 0) {
-            const fw = bw * this.levelProgress;
-            const gr = ctx.createLinearGradient(this.dX(bx), 0, this.dX(bx + fw), 0);
-            gr.addColorStop(0, '#B94FE3');
-            gr.addColorStop(1, '#00D4FF');
-            ctx.fillStyle = gr;
-            this.roundRect(ctx, bx, by, fw, bh, 2); ctx.fill();
-        }
-    }
-
-    // ============================================================
-    // GRID BUBBLES
-    // ============================================================
-    drawGrid(ctx) {
-        const R = this.BUBBLE_R;
+        // Grid bubbles
         for (let r = 0; r < this.ROWS; r++) for (let c = 0; c < this.COLS; c++) {
             const b = this.grid[r]?.[c];
             if (!b) continue;
-            const pos = this.bubblePos(r, c);
-            const scale = b.isNew ? b.scale : (this.isMobile ? 1 : 1 + Math.sin(b.breathe) * 0.005);
-            const bounce = this.gridBounce[`${r},${c}`] || 0;
-            const px = pos.x, py = pos.y - bounce;
+            if (b.isNew) { b.scale += (1 - b.scale) * 0.2; if (b.scale > 0.97) { b.scale = 1; b.isNew = false; } }
+            if (b.flash > 0) b.flash -= 0.9;
+            if (!this.isMobile) b.breathe += 0.015;
+        }
 
-            // Desktop glow
+        if (!this.gameWon && !this.gameOver) {
+            if (this.projectile) this._updateProjectile();
+            this._checkGameOver();
+        }
+
+        this._updateFX();
+    }
+
+    _updateFX() {
+        const g = 0.18 * this.DPR;
+        for (let i = this.particles.length - 1; i >= 0; i--) {
+            const p = this.particles[i];
+            p.x += p.vx; p.y += p.vy; p.vy += g; p.life -= 0.018; p.vx *= 0.97;
+            if (p.life <= 0) this.particles.splice(i, 1);
+        }
+        for (let i = this.fallingBubbles.length - 1; i >= 0; i--) {
+            const b = this.fallingBubbles[i];
+            b.vy += g * 0.9; b.y += b.vy; b.x += b.vx; b.life -= 0.022;
+            if (b.life <= 0 || b.y > this.canvas.height + 40) this.fallingBubbles.splice(i, 1);
+        }
+        for (let i = this.popRings.length - 1; i >= 0; i--) {
+            const r = this.popRings[i];
+            r.radius += 3 * this.DPR; r.opacity -= 0.055;
+            if (r.opacity <= 0) this.popRings.splice(i, 1);
+        }
+        for (let i = this.textPopups.length - 1; i >= 0; i--) {
+            const t = this.textPopups[i];
+            t.y -= 0.9; t.life -= 0.02;
+            if (t.life <= 0) this.textPopups.splice(i, 1);
+        }
+        for (let i = this.floatingTexts.length - 1; i >= 0; i--) {
+            const t = this.floatingTexts[i];
+            t.y -= 0.5; t.life -= 0.012;
+            t.scale += (1 - t.scale) * 0.14;
+            if (t.life <= 0) this.floatingTexts.splice(i, 1);
+        }
+    }
+
+    // ══════════════════ TIMER ══════════════════
+
+    _startTimer() {
+        this._stopTimer();
+        this.timerInterval = setInterval(() => { if (!this.gameWon && !this.gameOver) this.timeElapsed++; }, 1000);
+    }
+
+    _stopTimer() {
+        if (this.timerInterval) { clearInterval(this.timerInterval); this.timerInterval = null; }
+    }
+
+    // ══════════════════ INPUT ══════════════════
+
+    _getPos(e) {
+        const rect = this.canvas.getBoundingClientRect();
+        const sx = this.canvas.width / rect.width, sy = this.canvas.height / rect.height;
+        const src = e.changedTouches ? e.changedTouches[0] : (e.touches ? e.touches[0] : e);
+        return { x: (src.clientX - rect.left) * sx, y: (src.clientY - rect.top) * sy };
+    }
+
+    _aimAt(px, py) {
+        let a = Math.atan2(py - this.shooterY, px - this.shooterX);
+        a = Math.max(-Math.PI + 0.08, Math.min(-0.08, a));
+        this.targetAngle = a;
+        this._calcAimLine();
+    }
+
+    _getPUButtons() {
+        const D  = this.DPR, s = (this.isMobile ? 44 : 38) * D, gap = 10 * D;
+        const keys = Object.keys(this.powerUps), total = keys.length * s + (keys.length - 1) * gap;
+        const sx = (this.canvas.width - total) / 2, by = this.canvas.height - s - 8 * D;
+        return keys.map((key, i) => ({ x: sx + i * (s + gap), y: by, s, key }));
+    }
+
+    _getFSRect() {
+        const D = this.DPR, sz = 36 * D, mg = 8 * D;
+        return { x: this.canvas.width - sz - mg, y: 10 * D, w: sz, h: sz };
+    }
+
+    _isInRect(px, py, r) { return px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h; }
+
+    _onHandleClick(e) {
+        e.preventDefault();
+        if (this.projectile) return;
+        const pos = this._getPos(e);
+
+        if (this._isInRect(pos.x, pos.y, this._getFSRect())) { this._toggleFullscreen(); return; }
+        if (this.showDailyReward) { this._claimDailyReward(); return; }
+        if (this.showLevelComplete || this.gameWon) { this._goNextLevel(); return; }
+        if (this.gameOver) return;
+
+        // Power-up buttons
+        for (const b of this._getPUButtons()) {
+            if (pos.x >= b.x && pos.x <= b.x + b.s && pos.y >= b.y && pos.y <= b.y + b.s) {
+                this._activatePowerUp(b.key); return;
+            }
+        }
+
+        // Tap current bubble = swap
+        const dx = pos.x - this.shooterX, dy = pos.y - this.shooterY;
+        if (dx * dx + dy * dy < (this.BUBBLE_R + 14 * this.DPR) ** 2) { this._swapBubble(); return; }
+
+        this._aimAt(pos.x, pos.y);
+        this._shoot();
+    }
+
+    _onHandleMove(e) {
+        if (e.cancelable) e.preventDefault();
+        if (this.gameOver || this.gameWon || this.projectile) return;
+        const pos = this._getPos(e);
+        this.hoverX = pos.x; this.hoverY = pos.y;
+        this._aimAt(pos.x, pos.y);
+    }
+
+    _onKey(e) {
+        if (this._destroyed) return;
+        if (e.key === '1') this._activatePowerUp('bomb');
+        if (e.key === '2') this._activatePowerUp('precision');
+        if (e.key === 'c' || e.key === 'C') this._swapBubble();
+        if (e.key === ' ') { e.preventDefault(); this._shoot(); }
+        if (e.key === 'f' || e.key === 'F') this._toggleFullscreen();
+        if (e.key === 'r') this._startLevel(this.currentLevel);
+        if (e.key === 'n' && (this.gameWon || this.showLevelComplete)) this._goNextLevel();
+    }
+
+    _onResize() { this._setupCanvas(); }
+
+    _toggleFullscreen() {
+        const el = document.documentElement;
+        const isFS = !!(document.fullscreenElement || document.webkitFullscreenElement);
+        if (!isFS) (el.requestFullscreen || el.webkitRequestFullscreen || function () {}).call(el);
+        else (document.exitFullscreen || document.webkitExitFullscreen || function () {}).call(document);
+        setTimeout(() => this._setupCanvas(), 250);
+    }
+
+    // ══════════════════ RENDERING ══════════════════
+
+    _mainLoop(ts) {
+        if (this._destroyed) return;
+        const dt = Math.min((ts || 0) - this._lastFrameTime, 50);
+        if (dt < 14) { this.animationFrameId = requestAnimationFrame(t => this._mainLoop(t)); return; }
+        this._lastFrameTime = ts || 0;
+
+        this._update(dt);
+
+        const ctx = this.ctx, cw = this.canvas.width, ch = this.canvas.height;
+
+        ctx.save();
+        if (this.shakeX || this.shakeY) ctx.translate(Math.round(this.shakeX), Math.round(this.shakeY));
+
+        this._drawBackground();
+        this._drawTopBar();
+        this._drawProgressBar();
+        this._drawGrid();
+        this._drawAimLine();
+        this._drawShooter();
+        this._drawProjectile();
+        this._drawFallingBubbles();
+        this._drawPopRings();
+        this._drawParticles();
+        this._drawTextPopups();
+        this._drawFloatingTexts();
+        this._drawPowerUpButtons();
+        this._drawBottomHUD();
+        this._drawFullscreenBtn();
+
+        ctx.restore();
+
+        if (this.showDailyReward && !this.dailyRewardClaimed) this._drawDailyReward();
+        if (this.showLevelComplete || this.gameWon) this._drawLevelComplete();
+        if (this.gameOver) this._drawGameOver();
+
+        this.animationFrameId = requestAnimationFrame(t => this._mainLoop(t));
+    }
+
+    // ══════════════════ DRAW: BACKGROUND ══════════════════
+
+    _drawBackground() {
+        const ctx = this.ctx, cw = this.canvas.width, ch = this.canvas.height;
+        if (!this.bgCache || this.bgCache.w !== cw || this.bgCache.h !== ch) {
+            const off = document.createElement('canvas');
+            off.width = cw; off.height = ch;
+            const oc = off.getContext('2d');
+            const g  = oc.createLinearGradient(0, 0, 0, ch);
+            g.addColorStop(0, '#06061a'); g.addColorStop(0.5, '#0a0a24'); g.addColorStop(1, '#06061a');
+            oc.fillStyle = g; oc.fillRect(0, 0, cw, ch);
+            const D = this.DPR, gs = 70 * D;
+            oc.strokeStyle = 'rgba(100,120,255,0.03)'; oc.lineWidth = D;
+            for (let x = 0; x < cw; x += gs) { oc.beginPath(); oc.moveTo(x, 0); oc.lineTo(x, ch); oc.stroke(); }
+            for (let y = 0; y < ch; y += gs) { oc.beginPath(); oc.moveTo(0, y); oc.lineTo(cw, y); oc.stroke(); }
+            const v = oc.createRadialGradient(cw / 2, ch / 2, ch * 0.2, cw / 2, ch / 2, ch * 0.85);
+            v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,0.5)');
+            oc.fillStyle = v; oc.fillRect(0, 0, cw, ch);
+            this.bgCache = { img: off, w: cw, h: ch };
+        }
+        ctx.drawImage(this.bgCache.img, 0, 0);
+    }
+
+    // ══════════════════ DRAW: TOP BAR ══════════════════
+
+    _drawTopBar() {
+        const ctx = this.ctx, cw = this.canvas.width, D = this.DPR;
+        const pd = 16 * D, midY = 38 * D;
+        const bW = 100 * D, bH = 28 * D, bX = pd, bY = midY - bH / 2;
+
+        // Level badge
+        ctx.fillStyle = 'rgba(0,200,150,0.1)';
+        ctx.strokeStyle = 'rgba(0,255,200,0.35)';
+        ctx.lineWidth = 1.5 * D;
+        this._roundRect(ctx, bX, bY, bW, bH, 7 * D, true, true);
+        ctx.fillStyle = '#00ffcc';
+        ctx.font = `bold ${11 * D}px "Segoe UI",sans-serif`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.shadowColor = '#00ffcc'; ctx.shadowBlur = 6 * D;
+        ctx.fillText(`LEVEL ${this.currentLevel + 1}`, bX + bW / 2, midY);
+        ctx.shadowBlur = 0;
+
+        // Score center
+        ctx.fillStyle = '#ffffff';
+        ctx.font = `bold ${15 * D}px "Segoe UI",sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.fillText(`${this.score} pts`, cw / 2, midY);
+
+        // Right: time + moves
+        const mins = Math.floor(this.timeElapsed / 60).toString().padStart(2, '0');
+        const secs = (this.timeElapsed % 60).toString().padStart(2, '0');
+        ctx.fillStyle = '#aabbdd';
+        ctx.font = `${10 * D}px "Segoe UI",sans-serif`;
+        ctx.textAlign = 'right';
+        ctx.fillText(`Moves: ${this.moves}  ${mins}:${secs}`, cw - pd, midY - 6 * D);
+
+        // Coins & gems
+        ctx.fillStyle = '#FFD700';
+        ctx.font = `bold ${10 * D}px "Segoe UI",sans-serif`;
+        ctx.fillText(`C:${this.playerData.coins || 0}  D:${this.playerData.diamonds || 0}`, cw - pd, midY + 7 * D);
+
+        // Bottom line
+        const lineY = 66 * D;
+        ctx.strokeStyle = 'rgba(0,255,200,0.25)';
+        ctx.lineWidth = D;
+        ctx.beginPath(); ctx.moveTo(pd, lineY); ctx.lineTo(cw - pd, lineY); ctx.stroke();
+    }
+
+    // ══════════════════ DRAW: PROGRESS BAR ══════════════════
+
+    _drawProgressBar() {
+        const ctx = this.ctx, D = this.DPR, cw = this.canvas.width;
+        const bx = 10 * D, by = this.HUD_H - 10 * D, bw = cw - 20 * D, bh = 4 * D;
+        const total   = this._levelGoal();
+        const progress = Math.min(1, this.bubblesPopped / total);
+
+        ctx.fillStyle = 'rgba(255,255,255,0.06)';
+        this._roundRect(ctx, bx, by, bw, bh, 2 * D, true, false);
+
+        if (progress > 0) {
+            const gr = ctx.createLinearGradient(bx, 0, bx + bw * progress, 0);
+            gr.addColorStop(0, '#9900FF'); gr.addColorStop(1, '#00EEFF');
+            ctx.fillStyle = gr;
+            this._roundRect(ctx, bx, by, bw * progress, bh, 2 * D, true, false);
+        }
+    }
+
+    // ══════════════════ DRAW: GRID ══════════════════
+
+    _drawGrid() {
+        const ctx = this.ctx, D = this.DPR, R = this.BUBBLE_R;
+        for (let r = 0; r < this.ROWS; r++) for (let c = 0; c < this.COLS; c++) {
+            const b = this.grid[r]?.[c];
+            if (!b) continue;
+            const pos    = this._bubblePos(r, c);
+            const scale  = b.isNew ? b.scale : (this.isMobile ? 1 : 1 + Math.sin(b.breathe) * 0.005);
+            const px     = pos.x, py = pos.y;
+
+            // Glow (desktop)
             if (!this.isMobile) {
-                const glowImg = this.cache.glows.get(b.ci);
+                const glowImg = this._glowCache.get(b.ci);
                 if (glowImg) {
                     ctx.globalAlpha = 0.25;
-                    const gs = (R + 12) * 2 * scale;
-                    ctx.drawImage(glowImg, this.dX(px) - this.dS(gs / 2), this.dY(py) - this.dS(gs / 2), this.dS(gs), this.dS(gs));
+                    const gs = (R + 14) * 2 * scale;
+                    ctx.drawImage(glowImg, px - gs / 2, py - gs / 2, gs, gs);
                     ctx.globalAlpha = 1;
                 }
             }
 
-            if (b.flash > 0) ctx.globalAlpha = 0.7 + (b.flash / 5) * 0.3;
-            const bubImg = this.cache.bubbles.get(b.ci);
-            if (bubImg) {
+            if (b.flash > 0) ctx.globalAlpha = 0.65 + (b.flash / 6) * 0.35;
+            const img = this._bubbleCache.get(b.ci);
+            if (img) {
                 const bs = (R + 3) * 2 * scale;
-                ctx.drawImage(bubImg, this.dX(px) - this.dS(bs / 2), this.dY(py) - this.dS(bs / 2), this.dS(bs), this.dS(bs));
+                ctx.drawImage(img, px - bs / 2, py - bs / 2, bs, bs);
             }
             ctx.globalAlpha = 1;
         }
     }
 
-    // ============================================================
-    // AIM LINE
-    // ============================================================
-    drawAimLine(ctx) {
+    // ══════════════════ DRAW: AIM LINE ══════════════════
+
+    _drawAimLine() {
         if (!this.aimDots.length || this.projectile) return;
-        const col = this.COLORS[this.currentBubble?.ci || 0];
-        for (let i = 0; i < this.aimDots.length; i++) {
-            const d = this.aimDots[i];
-            ctx.globalAlpha = (1 - d.t) * 0.5;
-            ctx.fillStyle = col.hex;
+        const ctx = this.ctx, D = this.DPR;
+        const col = this.COLORS[this.currentBubble];
+        for (const d of this.aimDots) {
+            ctx.globalAlpha = (1 - d.t) * 0.55;
+            ctx.fillStyle   = col.hex;
             ctx.beginPath();
-            ctx.arc(Math.round(d.x * this.dpr), Math.round(d.y * this.dpr), Math.max(1, (2.5 - d.t * 1.2)) * this.dpr, 0, 6.2832);
+            ctx.arc(d.x * D, d.y * D, Math.max(D, (2.5 - d.t * 1.2) * D), 0, Math.PI * 2);
             ctx.fill();
         }
         ctx.globalAlpha = 1;
     }
 
-    // ============================================================
-    // SHOOTER
-    // ============================================================
-    drawShooter(ctx) {
+    // ══════════════════ DRAW: SHOOTER ══════════════════
+
+    _drawShooter() {
+        const ctx = this.ctx, D = this.DPR, R = this.BUBBLE_R;
         const x = this.shooterX, y = this.shooterY;
 
         // Barrel
         ctx.save();
-        ctx.translate(this.dX(x), this.dY(y));
-        ctx.rotate(this.angle);
-        ctx.fillStyle = '#9944cc';
-        const rx = this.dS(8 - this.shootRecoil), ry = this.dS(-4.5), rw = this.dS(26), rh = this.dS(9), rr = this.dS(3);
+        ctx.translate(x, y);
+        ctx.rotate(this.shooterAngle);
+        const bx = (8 - this.shootRecoil) * D, by = -4.5 * D, bw = 26 * D, bh = 9 * D, br = 3 * D;
+        const bGrad = ctx.createLinearGradient(0, -4.5 * D, 0, 4.5 * D);
+        bGrad.addColorStop(0, '#CC77FF'); bGrad.addColorStop(1, '#770099');
+        ctx.fillStyle = bGrad;
         ctx.beginPath();
-        ctx.moveTo(rx + rr, ry);
-        ctx.arcTo(rx + rw, ry, rx + rw, ry + rh, rr);
-        ctx.arcTo(rx + rw, ry + rh, rx, ry + rh, rr);
-        ctx.arcTo(rx, ry + rh, rx, ry, rr);
-        ctx.arcTo(rx, ry, rx + rw, ry, rr);
-        ctx.closePath();
-        ctx.fill();
+        ctx.moveTo(bx + br, by); ctx.arcTo(bx + bw, by, bx + bw, by + bh, br);
+        ctx.arcTo(bx + bw, by + bh, bx, by + bh, br); ctx.arcTo(bx, by + bh, bx, by, br);
+        ctx.arcTo(bx, by, bx + bw, by, br); ctx.closePath(); ctx.fill();
         ctx.restore();
 
-        // Current bubble
-        const bci = this.currentBubble.ci;
-        const bubImg = this.cache.bubbles.get(bci);
-        if (bubImg) {
-            const bs = (this.BUBBLE_R + 3) * 2;
-            ctx.drawImage(bubImg, this.dX(x) - this.dS(bs / 2), this.dY(y) - this.dS(bs / 2), this.dS(bs), this.dS(bs));
+        // Shoot glow pulse
+        if (!this.isMobile) {
+            const pulse = 0.1 + Math.abs(Math.sin(this.globalTime / 500)) * 0.1;
+            ctx.globalAlpha = pulse;
+            ctx.shadowColor = this.COLORS[this.currentBubble].hex;
+            ctx.shadowBlur  = 20 * D;
+            ctx.fillStyle   = this.COLORS[this.currentBubble].hex;
+            ctx.beginPath(); ctx.arc(x, y, R * 1.2, 0, Math.PI * 2); ctx.fill();
+            ctx.shadowBlur = 0; ctx.globalAlpha = 1;
         }
 
-        // Swap ring
+        // Current bubble
+        const img = this._bubbleCache.get(this.currentBubble);
+        if (img) { const bs = (R + 3) * 2; ctx.drawImage(img, x - bs / 2, y - bs / 2, bs, bs); }
+
+        // Swap ring anim
         if (this.swapAnim > 0) {
             ctx.globalAlpha = this.swapAnim;
-            ctx.strokeStyle = this.COLORS[this.swapColorIdx].hex;
-            ctx.lineWidth = this.dS(2);
-            this.circle(ctx, x, y, this.BUBBLE_R + 4 + (1 - this.swapAnim) * 8);
-            ctx.stroke();
+            ctx.strokeStyle = this.COLORS[this.currentBubble].hex;
+            ctx.lineWidth   = 2 * D;
+            ctx.beginPath(); ctx.arc(x, y, R + (4 + (1 - this.swapAnim) * 8) * D, 0, Math.PI * 2); ctx.stroke();
             ctx.globalAlpha = 1;
         }
 
-        // Tap hint - CLEAN text, no blur
-        this.text(ctx, 'TAP = COLOR', x, y + this.BUBBLE_R + 13, 8, 'rgba(255,255,255,0.35)',
-            { align: 'center', baseline: 'top', weight: '500', font: this.FONT_MONO });
+        // Tap hint
+        const ha = 0.18 + Math.sin(this.globalTime / 500) * 0.15;
+        ctx.globalAlpha = ha;
+        ctx.fillStyle = '#aabbdd';
+        ctx.font = `${8 * D}px "Segoe UI",sans-serif`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+        ctx.fillText('TAP = COLOR', x, y + R + 13 * D);
+        ctx.globalAlpha = 1;
 
-        // Next bubble
-        this.text(ctx, 'NEXT', x + 46, y - 4, 8, 'rgba(255,255,255,0.3)',
-            { align: 'center', baseline: 'middle', weight: '600' });
-
-        const nImg = this.cache.bubbles.get(this.nextBubble.ci);
+        // Next bubble label + preview
+        ctx.fillStyle = 'rgba(170,187,221,0.35)';
+        ctx.font = `${8 * D}px "Segoe UI",sans-serif`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('NEXT', x + 46 * D, y - 4 * D);
+        const nImg = this._bubbleCache.get(this.nextBubble);
         if (nImg) {
             ctx.globalAlpha = 0.7;
-            const ns = (this.BUBBLE_R + 3) * 2 * 0.6;
-            ctx.drawImage(nImg, this.dX(x + 46) - this.dS(ns / 2), this.dY(y + 12) - this.dS(ns / 2), this.dS(ns), this.dS(ns));
+            const ns = (R + 3) * 2 * 0.6;
+            ctx.drawImage(nImg, x + 46 * D - ns / 2, y + 12 * D - ns / 2, ns, ns);
             ctx.globalAlpha = 1;
         }
     }
 
-    // ============================================================
-    // PROJECTILE
-    // ============================================================
-    drawProjectile(ctx) {
-        if (!this.projectile) return;
+    // ══════════════════ DRAW: PROJECTILE ══════════════════
+
+    _drawProjectile() {
         const p = this.projectile;
+        if (!p) return;
+        const ctx = this.ctx, R = this.BUBBLE_R;
         for (let i = 0; i < p.trail.length; i++) {
             const t = p.trail[i], prog = i / p.trail.length;
             ctx.globalAlpha = prog * 0.25;
-            ctx.fillStyle = p.color;
-            ctx.beginPath();
-            ctx.arc(Math.round(t.x * this.dpr), Math.round(t.y * this.dpr), this.BUBBLE_R * prog * 0.4 * this.dpr, 0, 6.2832);
-            ctx.fill();
+            ctx.fillStyle   = this.COLORS[p.ci].hex;
+            ctx.beginPath(); ctx.arc(t.x, t.y, R * prog * 0.45, 0, Math.PI * 2); ctx.fill();
         }
         ctx.globalAlpha = 1;
-        const bubImg = this.cache.bubbles.get(p.ci);
-        if (bubImg) {
-            const bs = (this.BUBBLE_R + 3) * 2;
-            ctx.drawImage(bubImg, this.dX(p.x) - this.dS(bs / 2), this.dY(p.y) - this.dS(bs / 2), this.dS(bs), this.dS(bs));
-        }
+        const img = this._bubbleCache.get(p.ci);
+        if (img) { const bs = (R + 3) * 2; ctx.drawImage(img, p.x - bs / 2, p.y - bs / 2, bs, bs); }
     }
 
-    // ============================================================
-    // FX DRAW
-    // ============================================================
-    drawFalling(ctx) {
+    // ══════════════════ DRAW: FX ══════════════════
+
+    _drawFallingBubbles() {
+        const ctx = this.ctx, R = this.BUBBLE_R;
         for (const b of this.fallingBubbles) {
-            ctx.globalAlpha = Math.min(1, b.life / 30);
-            const bubImg = this.cache.bubbles.get(b.ci);
-            if (bubImg) {
-                const bs = (this.BUBBLE_R + 3) * 2;
-                ctx.drawImage(bubImg, this.dX(b.x) - this.dS(bs / 2), this.dY(b.y) - this.dS(bs / 2), this.dS(bs), this.dS(bs));
-            }
+            ctx.globalAlpha = Math.max(0, b.life);
+            const img = this._bubbleCache.get(b.ci);
+            if (img) { const bs = (R + 3) * 2 * 0.85; ctx.drawImage(img, b.x - bs / 2, b.y - bs / 2, bs, bs); }
         }
         ctx.globalAlpha = 1;
     }
 
-    drawPopRings(ctx) {
+    _drawPopRings() {
+        const ctx = this.ctx, D = this.DPR;
         for (const r of this.popRings) {
             ctx.globalAlpha = r.opacity;
             ctx.strokeStyle = r.color;
-            ctx.lineWidth = this.dS(2 * r.opacity);
-            this.circle(ctx, r.x, r.y, r.radius);
-            ctx.stroke();
+            ctx.lineWidth   = 2 * D * r.opacity;
+            ctx.beginPath(); ctx.arc(r.x, r.y, r.radius, 0, Math.PI * 2); ctx.stroke();
         }
         ctx.globalAlpha = 1;
     }
 
-    drawParticles(ctx) {
+    _drawParticles() {
+        const ctx = this.ctx;
+        if (!this.particles.length) return;
+        ctx.save();
         for (const p of this.particles) {
-            ctx.globalAlpha = p.life / p.maxLife;
-            ctx.fillStyle = p.color;
-            ctx.beginPath();
-            ctx.arc(Math.round(p.x * this.dpr), Math.round(p.y * this.dpr), Math.max(0.5, p.size * (p.life / p.maxLife)) * this.dpr, 0, 6.2832);
-            ctx.fill();
+            ctx.globalAlpha = Math.max(0, p.life);
+            ctx.fillStyle   = p.color;
+            ctx.beginPath(); ctx.arc(p.x, p.y, Math.max(0.5, p.size * p.life), 0, Math.PI * 2); ctx.fill();
+        }
+        ctx.restore();
+    }
+
+    _drawTextPopups() {
+        const ctx = this.ctx, D = this.DPR;
+        for (const t of this.textPopups) {
+            ctx.globalAlpha = Math.max(0, t.life);
+            ctx.fillStyle   = t.color;
+            ctx.font        = `bold ${12 * D}px "Segoe UI",sans-serif`;
+            ctx.textAlign   = 'center'; ctx.textBaseline = 'middle';
+            ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+            ctx.lineWidth   = 2.5 * D; ctx.lineJoin = 'round';
+            ctx.strokeText(t.text, t.x * D, t.y * D);
+            ctx.fillText(t.text, t.x * D, t.y * D);
         }
         ctx.globalAlpha = 1;
     }
 
-    drawTextPopups(ctx) {
-        for (const t of this.textPopups) {
-            this.text(ctx, t.text, t.x, t.y, 12, t.color,
-                { align: 'center', baseline: 'middle', weight: '700', alpha: t.opacity, outline: true, outlineColor: 'rgba(0,0,0,0.6)', outlineWidth: 2 });
-        }
-    }
-
-    drawFloatingTexts(ctx) {
+    _drawFloatingTexts() {
+        const ctx = this.ctx, D = this.DPR;
         for (const t of this.floatingTexts) {
-            const sz = (t.size || 14) * Math.min(1, t.scale || 1);
-            this.text(ctx, t.text, t.x, t.y, sz, t.color,
-                { align: 'center', baseline: 'middle', weight: '700', alpha: t.opacity, outline: true, outlineColor: 'rgba(0,0,0,0.5)', outlineWidth: 2.5 });
+            const sz = (t.size || 14) * Math.min(1, t.scale) * D;
+            ctx.globalAlpha = Math.max(0, t.life);
+            ctx.fillStyle   = t.color;
+            ctx.font        = `bold ${sz}px "Segoe UI",sans-serif`;
+            ctx.textAlign   = 'center'; ctx.textBaseline = 'middle';
+            ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+            ctx.lineWidth   = 2.5 * D; ctx.lineJoin = 'round';
+            ctx.strokeText(t.text, t.x * D, t.y * D);
+            ctx.fillText(t.text, t.x * D, t.y * D);
         }
+        ctx.globalAlpha = 1;
     }
 
-    // ============================================================
-    // HUD - Clean sharp text
-    // ============================================================
-    drawHUD(ctx) {
-        const W = this.W, hh = this.HUD_HEIGHT;
+    // ══════════════════ DRAW: BOTTOM HUD ══════════════════
 
-        // BG
-        ctx.fillStyle = 'rgba(0,0,0,0.7)';
-        ctx.fillRect(0, 0, this.canvas.width, this.dY(hh));
+    _drawBottomHUD() {
+        const ctx = this.ctx, cw = this.canvas.width, ch = this.canvas.height, D = this.DPR;
+        const pd = 16 * D, lineY = ch - this.BOTTOM_H + 6 * D;
+        ctx.strokeStyle = 'rgba(0,255,200,0.2)';
+        ctx.lineWidth = D;
+        ctx.beginPath(); ctx.moveTo(pd, lineY); ctx.lineTo(cw - pd, lineY); ctx.stroke();
 
-        // Bottom line
-        ctx.fillStyle = 'rgba(185,79,227,0.3)';
-        ctx.fillRect(0, this.dY(hh - 1), this.canvas.width, this.dS(1));
-
-        // Left: Level
-        this.text(ctx, `LVL ${this.level}`, 10, 14, 13, '#B94FE3', { weight: '800' });
-        if (this.levelConfig?.name) {
-            this.text(ctx, this.levelConfig.name, 10, 30, 9, 'rgba(255,255,255,0.35)', { weight: '500', font: this.FONT_MONO });
-        }
-
-        // Center: Progress + Combo
-        this.text(ctx, `${this.bubblesPopped}/${this.levelGoal}`, W / 2, 14, 11, '#00D4FF',
-            { align: 'center', weight: '600', font: this.FONT_MONO });
-
+        // Combo display
         if (this.combo > 1) {
-            this.text(ctx, `x${this.combo} COMBO`, W / 2, 30, 10, '#FFD700',
-                { align: 'center', weight: '800' });
+            ctx.fillStyle = '#FFD700';
+            ctx.shadowColor = '#FFD700'; ctx.shadowBlur = 8 * D;
+            ctx.font = `bold ${13 * D}px "Segoe UI",sans-serif`;
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillText(`x${this.combo} COMBO`, cw / 2, lineY - 10 * D);
+            ctx.shadowBlur = 0;
         }
-
-        // Right: Coins & Gems
-        const cFlash = this.hudFlash.coins > 0;
-        this.text(ctx, `C ${this.fmtNum(this.playerData.coins)}`, W - 10, 14, cFlash ? 11 : 10, cFlash ? '#FFF' : '#FFD700',
-            { align: 'right', weight: '700' });
-
-        const dFlash = this.hudFlash.diamonds > 0;
-        this.text(ctx, `D ${this.fmtNum(this.playerData.diamonds)}`, W - 10, 30, dFlash ? 11 : 10, dFlash ? '#FFF' : '#00D4FF',
-            { align: 'right', weight: '700' });
     }
 
-    // ============================================================
-    // POWER-UP BUTTONS
-    // ============================================================
-    drawPowerUps(ctx) {
-        const btns = this.getPUBtns();
+    // ══════════════════ DRAW: POWER-UP BUTTONS ══════════════════
+
+    _drawPowerUpButtons() {
+        const ctx = this.ctx, D = this.DPR;
+        const btns = this._getPUButtons();
         const keys = Object.keys(this.powerUps);
-
         keys.forEach((key, idx) => {
-            const pup = this.powerUps[key];
-            const b = btns[idx];
+            const pup    = this.powerUps[key];
+            const b      = btns[idx];
             const active = this.activePowerUp === key;
-            const has = pup.count > 0;
+            const has    = pup.count > 0;
 
-            ctx.fillStyle = active ? (pup.color + '33') : `rgba(185,79,227,${has ? 0.08 : 0.03})`;
-            this.roundRect(ctx, b.x, b.y, b.s, b.s, 10); ctx.fill();
+            ctx.fillStyle   = active ? pup.color + '33' : 'rgba(0,255,200,0.05)';
+            ctx.strokeStyle = active ? pup.color : (has ? 'rgba(0,255,200,0.22)' : 'rgba(80,80,80,0.1)');
+            ctx.lineWidth   = (active ? 1.8 : 0.7) * D;
+            this._roundRect(ctx, b.x, b.y, b.s, b.s, 10 * D, true, true);
 
-            ctx.strokeStyle = active ? pup.color : (has ? 'rgba(185,79,227,0.2)' : 'rgba(80,80,80,0.08)');
-            ctx.lineWidth = this.dS(active ? 1.5 : 0.5);
-            this.roundRect(ctx, b.x, b.y, b.s, b.s, 10); ctx.stroke();
+            ctx.globalAlpha = has ? 1 : 0.22;
+            ctx.fillStyle   = pup.color;
+            ctx.font        = `bold ${this.isMobile ? 17 * D : 14 * D}px "Segoe UI",sans-serif`;
+            ctx.textAlign   = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillText(pup.name[0], b.x + b.s / 2, b.y + b.s / 2 - 5 * D);
 
-            ctx.globalAlpha = has ? 1 : 0.2;
-
-            this.text(ctx, pup.icon, b.x + b.s / 2, b.y + b.s / 2 - 6, this.isMobile ? 18 : 15, pup.color,
-                { align: 'center', baseline: 'middle', weight: '700' });
-
-            this.text(ctx, pup.name, b.x + b.s / 2, b.y + b.s - 8, this.isMobile ? 7 : 6, 'rgba(255,255,255,0.5)',
-                { align: 'center', baseline: 'middle', weight: '500', font: this.FONT_MONO });
+            ctx.font      = `${this.isMobile ? 7 * D : 6 * D}px "Segoe UI",sans-serif`;
+            ctx.fillStyle = 'rgba(170,187,221,0.55)';
+            ctx.fillText(pup.name, b.x + b.s / 2, b.y + b.s - 8 * D);
 
             if (has) {
                 ctx.globalAlpha = 1;
-                ctx.fillStyle = 'rgba(0,0,0,0.65)';
-                this.circle(ctx, b.x + b.s - 6, b.y + 6, 7); ctx.fill();
-                this.text(ctx, `${pup.count}`, b.x + b.s - 6, b.y + 6, 7, '#00FF88',
-                    { align: 'center', baseline: 'middle', weight: '700' });
+                ctx.fillStyle   = 'rgba(0,0,0,0.7)';
+                ctx.beginPath(); ctx.arc(b.x + b.s - 6 * D, b.y + 6 * D, 7 * D, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = '#00ffcc';
+                ctx.font      = `bold ${7 * D}px "Segoe UI",sans-serif`;
+                ctx.fillText(`${pup.count}`, b.x + b.s - 6 * D, b.y + 6 * D);
             }
             ctx.globalAlpha = 1;
         });
 
         if (!this.isMobile) {
-            this.text(ctx, '1=Bomb  2=Aim+  C=Color  F=Full', this.W / 2, btns[0].y - 6, 6, 'rgba(255,255,255,0.12)',
-                { align: 'center', baseline: 'bottom', weight: '400', font: this.FONT_MONO });
+            ctx.fillStyle = 'rgba(170,187,221,0.12)';
+            ctx.font      = `${6 * D}px "Segoe UI",sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.fillText('1=Bomb  2=Aim+  C=Color  F=Full', this.canvas.width / 2, btns[0].y - 6 * D);
         }
     }
 
-    // ============================================================
-    // FULLSCREEN BTN
-    // ============================================================
-    drawFSBtn(ctx) {
-        const r = this.getFSRect();
-        const isFS = this.isFullscreen;
+    // ══════════════════ DRAW: FULLSCREEN BTN ══════════════════
 
-        ctx.fillStyle = `rgba(185,79,227,${isFS ? 0.15 : 0.08})`;
-        this.roundRect(ctx, r.x, r.y, r.w, r.h, 8); ctx.fill();
-
-        ctx.strokeStyle = `rgba(185,79,227,${isFS ? 0.4 : 0.2})`;
-        ctx.lineWidth = this.dS(0.7);
-        this.roundRect(ctx, r.x, r.y, r.w, r.h, 8); ctx.stroke();
-
-        const cx = r.x + r.w / 2, cy = r.y + r.h / 2;
-        const sz = 6, arm = 3.5;
-        ctx.strokeStyle = 'rgba(255,255,255,0.8)';
-        ctx.lineWidth = this.dS(1.5);
-        ctx.lineCap = 'round';
-
-        [[-1, -1], [1, -1], [1, 1], [-1, 1]].forEach(([sx, sy]) => {
-            if (!isFS) {
-                const tx = cx + sx * sz, ty = cy + sy * sz;
-                ctx.beginPath();
-                ctx.moveTo(this.dX(tx - sx * arm), this.dY(ty));
-                ctx.lineTo(this.dX(tx), this.dY(ty));
-                ctx.lineTo(this.dX(tx), this.dY(ty - sy * arm));
-                ctx.stroke();
-            } else {
-                const ins = sz - arm * 0.6;
-                const tx = cx + sx * ins, ty = cy + sy * ins;
-                ctx.beginPath();
-                ctx.moveTo(this.dX(tx + sx * arm), this.dY(ty));
-                ctx.lineTo(this.dX(tx), this.dY(ty));
-                ctx.lineTo(this.dX(tx), this.dY(ty + sy * arm));
-                ctx.stroke();
-            }
-        });
-        ctx.lineCap = 'butt';
-    }
-
-    // ============================================================
-    // OVERLAYS - All clean text, no blur
-    // ============================================================
-    drawCard(ctx, x, y, w, h, borderColor) {
-        ctx.fillStyle = 'rgba(8,5,20,0.96)';
-        this.roundRect(ctx, x, y, w, h, 14); ctx.fill();
-        ctx.strokeStyle = borderColor;
-        ctx.globalAlpha = 0.4;
-        ctx.lineWidth = this.dS(1.5);
-        this.roundRect(ctx, x, y, w, h, 14); ctx.stroke();
-        ctx.globalAlpha = 1;
-    }
-
-    drawButton(ctx, cx, cy, w, h, label, c1, c2) {
-        const bx = cx - w / 2, by = cy - h / 2;
-        const gr = ctx.createLinearGradient(this.dX(bx), 0, this.dX(bx + w), 0);
-        gr.addColorStop(0, c1); gr.addColorStop(1, c2);
-        ctx.fillStyle = gr;
-        this.roundRect(ctx, bx, by, w, h, h / 2); ctx.fill();
-        this.text(ctx, label, cx, cy + 1, 13, '#FFF', { align: 'center', baseline: 'middle', weight: '700' });
-    }
-
-    easeOutBack(t) { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * (t - 1) ** 3 + c1 * (t - 1) ** 2; }
-
-    drawDailyReward(ctx) {
-        const a = this.dailyRewardAnim;
-        ctx.fillStyle = `rgba(0,0,0,${(0.85 * a).toFixed(2)})`;
-        ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-        if (a < 0.3) return;
-
-        const W = this.W, H = this.H;
-        const cw = Math.min(270, W - 36), ch = 240;
-        const cx = (W - cw) / 2, cy = (H - ch) / 2;
-        this.drawCard(ctx, cx, cy, cw, ch, '#FFD700');
-
-        const streak = this.playerData.dailyStreak;
-        const coins = Math.floor(50 * Math.min(1 + streak * 0.25, 3));
-        const dias = Math.floor(2 * Math.max(1, Math.floor(streak / 3)));
-
-        this.text(ctx, 'Daily Reward!', W / 2, cy + 34, 20, '#FFD700', { align: 'center', weight: '800' });
-        this.text(ctx, `Day ${streak + 1} Streak`, W / 2, cy + 58, 11, '#00D4FF', { align: 'center', weight: '600', font: this.FONT_MONO });
-        this.text(ctx, `${coins} Coins`, W / 2, cy + 95, 22, '#FFD700', { align: 'center', weight: '800' });
-        this.text(ctx, `${dias} Gems`, W / 2, cy + 124, 18, '#00D4FF', { align: 'center', weight: '700' });
-        this.drawButton(ctx, W / 2, cy + ch - 38, 145, 34, 'CLAIM!', '#B94FE3', '#FF1A6D');
-    }
-
-    drawLevelCompleteScreen(ctx) {
-        const prog = Math.min(1, this.levelCompleteTimer / 25);
-        const eased = this.easeOutBack(prog);
-        ctx.fillStyle = `rgba(0,0,0,${(0.8 * prog).toFixed(2)})`;
-        ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-        if (prog < 0.2) return;
-
-        const W = this.W, H = this.H;
-        const cw = Math.min(295, W - 30), ch = 310;
-        const cx = (W - cw) / 2, cy = (H - ch) / 2;
-
+    _drawFullscreenBtn() {
+        const ctx = this.ctx, D = this.DPR;
+        const r = this._getFSRect();
         ctx.save();
-        ctx.translate(this.dX(W / 2), this.dY(H / 2));
-        ctx.scale(eased, eased);
-        ctx.translate(-this.dX(W / 2), -this.dY(H / 2));
-
-        this.drawCard(ctx, cx, cy, cw, ch, '#00FF88');
-
-        this.text(ctx, 'LEVEL COMPLETE!', W / 2, cy + 32, 19, '#00FF88', { align: 'center', weight: '800' });
-
-        for (let i = 0; i < 3; i++) {
-            const sx = W / 2 + (i - 1) * 38;
-            this.text(ctx, i < this.starRating ? '★' : '☆', sx, cy + 66, 26, i < this.starRating ? '#FFD700' : 'rgba(255,255,255,0.2)',
-                { align: 'center', baseline: 'middle', weight: '400' });
-        }
-
-        const stats = [`Score: ${this.fmtNum(this.score)}`, `Popped: ${this.bubblesPopped}`, `Combo: x${this.maxCombo}`, `Shots: ${this.shotsUsed}`];
-        stats.forEach((s, i) => {
-            this.text(ctx, s, W / 2, cy + 105 + i * 22, 11, 'rgba(255,255,255,0.6)',
-                { align: 'center', weight: '500', font: this.FONT_MONO });
+        ctx.globalAlpha = 0.45;
+        ctx.fillStyle   = 'rgba(0,10,20,0.55)';
+        ctx.strokeStyle = 'rgba(0,255,200,0.25)';
+        ctx.lineWidth   = 1.5 * D;
+        this._roundRect(ctx, r.x, r.y, r.w, r.h, 8 * D, true, true);
+        const cx = r.x + r.w / 2, cy = r.y + r.h / 2, ic = 6 * D;
+        ctx.strokeStyle = '#00ffcc'; ctx.lineWidth = 2 * D; ctx.lineCap = 'round';
+        [[-ic,-(ic-3*D),-ic,-ic,-(ic-3*D),-ic],
+         [ic-3*D,-ic,ic,-ic,ic,-(ic-3*D)],
+         [-ic,ic-3*D,-ic,ic,-(ic-3*D),ic],
+         [ic-3*D,ic,ic,ic,ic,ic-3*D]
+        ].forEach(([x1,y1,x2,y2,x3,y3]) => {
+            ctx.beginPath(); ctx.moveTo(cx+x1,cy+y1); ctx.lineTo(cx+x2,cy+y2); ctx.lineTo(cx+x3,cy+y3); ctx.stroke();
         });
-
-        this.text(ctx, `Coins +${this.levelCoins}`, W / 2, cy + 208, 14, '#FFD700', { align: 'center', weight: '700' });
-        if (this.levelDiamonds > 0)
-            this.text(ctx, `Gems +${this.levelDiamonds}`, W / 2, cy + 230, 13, '#00D4FF', { align: 'center', weight: '700' });
-
-        if (this.levelCompleteTimer > 30)
-            this.drawButton(ctx, W / 2, cy + ch - 36, 155, 34, 'NEXT LEVEL', '#00D4FF', '#00FF88');
-
         ctx.restore();
     }
 
-    drawTransition(ctx) {
-        const prog = 1 - (this.levelTransitionTimer / 40);
-        const alpha = prog < 0.5 ? prog * 2 : 2 - prog * 2;
-        ctx.fillStyle = `rgba(3,2,10,${alpha.toFixed(2)})`;
-        ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-        if (prog > 0.3 && prog < 0.7) {
-            const a = 1 - Math.abs(prog - 0.5) * 5;
-            this.text(ctx, `Level ${this.level}`, this.W / 2, this.H / 2, 22, '#B94FE3',
-                { align: 'center', baseline: 'middle', weight: '800', alpha: Math.max(0, a) });
+    // ══════════════════ OVERLAYS ══════════════════
+
+    _roundRect(ctx, x, y, w, h, r, fill, stroke) {
+        ctx.beginPath();
+        ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r);
+        ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r);
+        ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+        if (fill)   ctx.fill();
+        if (stroke) ctx.stroke();
+    }
+
+    _easeOutBack(t) { const c = 1.70158; return 1 + (c + 1) * (t - 1) ** 3 + c * (t - 1) ** 2; }
+
+    _drawDailyReward() {
+        const ctx = this.ctx, cw = this.canvas.width, ch = this.canvas.height, D = this.DPR;
+        const a = this.dailyAnim;
+        ctx.fillStyle = `rgba(5,5,20,${0.82 * a})`; ctx.fillRect(0, 0, cw, ch);
+        if (a < 0.3) return;
+        const bW = Math.min(400 * D, cw - 40 * D), bH = 230 * D, bX = (cw - bW) / 2, bY = (ch - bH) / 2;
+        ctx.save();
+        ctx.translate(cw / 2, ch / 2); ctx.scale(this._easeOutBack(Math.min(1, a * 1.2)), this._easeOutBack(Math.min(1, a * 1.2)));
+        ctx.translate(-cw / 2, -ch / 2);
+        ctx.fillStyle = 'rgba(0,30,50,0.97)'; ctx.strokeStyle = '#FFD700'; ctx.lineWidth = 2 * D;
+        ctx.shadowColor = '#FFD700'; ctx.shadowBlur = 20 * D;
+        this._roundRect(ctx, bX, bY, bW, bH, 14 * D, true, true);
+        ctx.shadowBlur = 0;
+        const streak = this.playerData.dailyStreak || 0;
+        const coins  = Math.floor(50 * Math.min(1 + streak * 0.25, 3));
+        const dias   = Math.floor(2 * Math.max(1, Math.floor(streak / 3)));
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#FFD700'; ctx.font = `bold ${18 * D}px "Segoe UI",sans-serif`;
+        ctx.fillText('Daily Reward!', cw / 2, bY + 36 * D);
+        ctx.fillStyle = '#00EEFF'; ctx.font = `${11 * D}px "Segoe UI",sans-serif`;
+        ctx.fillText(`Day ${streak + 1} Streak`, cw / 2, bY + 60 * D);
+        ctx.fillStyle = '#FFD700'; ctx.font = `bold ${22 * D}px "Segoe UI",sans-serif`;
+        ctx.fillText(`${coins} Coins`, cw / 2, bY + 100 * D);
+        ctx.fillStyle = '#00EEFF'; ctx.font = `bold ${18 * D}px "Segoe UI",sans-serif`;
+        ctx.fillText(`${dias} Gems`, cw / 2, bY + 130 * D);
+        const btnW = 160 * D, btnH = 38 * D, btnX = (cw - btnW) / 2, btnY = bY + bH - 52 * D;
+        const bg = ctx.createLinearGradient(btnX, 0, btnX + btnW, 0);
+        bg.addColorStop(0, '#9900FF'); bg.addColorStop(1, '#FF2244');
+        ctx.fillStyle = bg; this._roundRect(ctx, btnX, btnY, btnW, btnH, btnH / 2, true, false);
+        ctx.fillStyle = '#fff'; ctx.font = `bold ${12 * D}px "Segoe UI",sans-serif`;
+        ctx.fillText('CLAIM!', cw / 2, btnY + btnH / 2);
+        ctx.restore();
+    }
+
+    _drawLevelComplete() {
+        const ctx = this.ctx, cw = this.canvas.width, ch = this.canvas.height, D = this.DPR;
+        const prog  = Math.min(1, this.levelCompleteTimer / 25);
+        const eased = this._easeOutBack(prog);
+        ctx.fillStyle = `rgba(5,5,20,${0.8 * prog})`; ctx.fillRect(0, 0, cw, ch);
+        if (prog < 0.15) return;
+        const bW = Math.min(420 * D, cw - 30 * D), bH = 310 * D, bX = (cw - bW) / 2, bY = (ch - bH) / 2;
+        ctx.save();
+        ctx.translate(cw / 2, ch / 2); ctx.scale(eased, eased); ctx.translate(-cw / 2, -ch / 2);
+        ctx.fillStyle = 'rgba(0,30,50,0.97)'; ctx.strokeStyle = '#00ffcc'; ctx.lineWidth = 2.5 * D;
+        ctx.shadowColor = '#00ffcc'; ctx.shadowBlur = 30 * D;
+        this._roundRect(ctx, bX, bY, bW, bH, 16 * D, true, true);
+        ctx.shadowBlur = 0;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#00ffcc'; ctx.font = `bold ${18 * D}px "Segoe UI",sans-serif`;
+        ctx.shadowColor = '#00ffcc'; ctx.shadowBlur = 10 * D;
+        ctx.fillText('LEVEL COMPLETE!', cw / 2, bY + 38 * D);
+        ctx.shadowBlur = 0;
+        // Stars
+        for (let i = 0; i < 3; i++) {
+            const sx = cw / 2 + (i - 1) * 40 * D;
+            const lit = i < this.starRating;
+            ctx.fillStyle = lit ? '#FFD700' : 'rgba(255,255,255,0.15)';
+            ctx.font      = `${26 * D}px "Segoe UI",sans-serif`;
+            ctx.fillText(lit ? '★' : '☆', sx, bY + 76 * D);
         }
-    }
-
-    drawGameOverScreen(ctx) {
-        ctx.fillStyle = 'rgba(0,0,0,0.82)';
-        ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-
-        const W = this.W, H = this.H;
-        this.text(ctx, 'GAME OVER', W / 2, H / 2 - 48, 26, '#FF1A6D',
-            { align: 'center', baseline: 'middle', weight: '800' });
-        this.text(ctx, `Score: ${this.fmtNum(this.score)}`, W / 2, H / 2 - 4, 13, 'rgba(255,255,255,0.7)',
-            { align: 'center', baseline: 'middle', weight: '600', font: this.FONT_MONO });
-        this.text(ctx, `Level ${this.level} | Combo x${this.maxCombo}`, W / 2, H / 2 + 22, 10, 'rgba(255,255,255,0.45)',
-            { align: 'center', baseline: 'middle', weight: '500', font: this.FONT_MONO });
-        this.text(ctx, `+${this.levelCoins} Coins`, W / 2, H / 2 + 56, 12, '#FFD700',
-            { align: 'center', baseline: 'middle', weight: '700' });
-        this.text(ctx, `+${this.levelDiamonds} Gems`, W / 2, H / 2 + 78, 12, '#00D4FF',
-            { align: 'center', baseline: 'middle', weight: '700' });
-
-        const blink = 0.45 + Math.sin(this.time / 420) * 0.4;
-        this.text(ctx, 'Tap restart to play again', W / 2, H / 2 + 115, 10, 'rgba(200,200,220,1)',
-            { align: 'center', baseline: 'middle', weight: '500', font: this.FONT_MONO, alpha: blink });
-    }
-
-    // ============================================================
-    // GAME LOOP
-    // ============================================================
-    loop(timestamp) {
-        if (this.destroyed) return;
-        const dt = Math.min(timestamp - (this.lastTime || timestamp), 50);
-        this.lastTime = timestamp;
-
-        if (this.isMobile) {
-            this.fpsHistory.push(dt);
-            if (this.fpsHistory.length > 30) this.fpsHistory.shift();
-            if (this.fpsHistory.length === 30) {
-                const avg = this.fpsHistory.reduce((a, b) => a + b, 0) / 30;
-                this.adaptiveMode = avg > 22;
-            }
-            if (this.adaptiveMode && this.frame % 2 === 1) {
-                if (!this.paused) this.update(dt);
-                this.animId = requestAnimationFrame(t => this.loop(t));
-                return;
-            }
+        // Stats
+        const stats = [
+            { l: 'SCORE',  v: `${this.score}` },
+            { l: 'POPPED', v: `${this.bubblesPopped}` },
+            { l: 'COMBO',  v: `x${this.maxCombo}` },
+            { l: 'MOVES',  v: `${this.moves}` },
+        ];
+        const colW = bW / 4;
+        stats.forEach((s, i) => {
+            const sx = bX + colW * i + colW / 2;
+            ctx.fillStyle = 'rgba(0,255,200,0.06)'; ctx.strokeStyle = 'rgba(0,255,200,0.18)'; ctx.lineWidth = D;
+            this._roundRect(ctx, sx - colW / 2 + 5 * D, bY + 108 * D, colW - 10 * D, 46 * D, 7 * D, true, true);
+            ctx.fillStyle = 'rgba(150,200,220,0.55)'; ctx.font = `${8 * D}px "Segoe UI",sans-serif`;
+            ctx.fillText(s.l, sx, bY + 120 * D);
+            ctx.fillStyle = '#fff'; ctx.font = `bold ${14 * D}px "Segoe UI",sans-serif`;
+            ctx.fillText(s.v, sx, bY + 138 * D);
+        });
+        // Rewards
+        ctx.fillStyle = '#FFD700'; ctx.font = `bold ${13 * D}px "Segoe UI",sans-serif`;
+        ctx.fillText(`+${this.levelCoins} Coins`, cw / 2 - 45 * D, bY + 185 * D);
+        ctx.fillStyle = '#00EEFF'; ctx.font = `bold ${13 * D}px "Segoe UI",sans-serif`;
+        ctx.fillText(`+${this.levelDiamonds} Gems`, cw / 2 + 45 * D, bY + 185 * D);
+        // Button
+        if (this.levelCompleteTimer > 28) {
+            const btnW = 170 * D, btnH = 42 * D, btnX = (cw - btnW) / 2, btnBY = bY + bH - 58 * D;
+            const bg = ctx.createLinearGradient(btnX, 0, btnX + btnW, 0);
+            bg.addColorStop(0, '#00aaff'); bg.addColorStop(1, '#00ffcc');
+            ctx.fillStyle = bg; ctx.shadowColor = '#00ffcc'; ctx.shadowBlur = 14 * D;
+            this._roundRect(ctx, btnX, btnBY, btnW, btnH, 11 * D, true, false);
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = '#061518'; ctx.font = `bold ${12 * D}px "Segoe UI",sans-serif`;
+            ctx.fillText('NEXT LEVEL →', cw / 2, btnBY + btnH / 2);
         }
-
-        if (!this.paused) this.update(dt);
-        this.draw();
-        this.animId = requestAnimationFrame(t => this.loop(t));
+        ctx.restore();
     }
 
-    togglePause() {
-        this.paused = !this.paused;
-        this.isPaused = this.paused;
-        return this.paused;
-    }
-
-    resize() {
-        this.dpr = Math.min(window.devicePixelRatio || 1, this.isMobile ? 2 : 2);
-        this.setupCanvas();
-        this.W = this.canvas.width / this.dpr;
-        this.H = this.canvas.height / this.dpr;
-        this.isMobile = this.W < 768 || ('ontouchstart' in window);
-        this.isSmallScreen = this.W < 380;
-        this.COLS = this.isSmallScreen ? 8 : 10;
-        this.HUD_HEIGHT = this.isMobile ? 44 : 48;
-        this.BOTTOM_ZONE = this.isMobile ? 100 : 110;
-        this.GRID_TOP = this.HUD_HEIGHT + 8;
-        this.BUBBLE_R = this.calcRadius();
-        this.recalcGrid();
-        this.stars = this.makeStars(this.isMobile ? 25 : 55);
-        this._bgGrad = null;
-        this.preRenderBubbles();
-        this.calcAimLine();
-    }
-
-    destroy() {
-        this.destroyed = true;
-        cancelAnimationFrame(this.animId);
-        document.removeEventListener('fullscreenchange', this.boundFSChange);
-        document.removeEventListener('webkitfullscreenchange', this.boundFSChange);
-        this.cache.bubbles.clear();
-        this.cache.glows.clear();
-        this.savePlayerData();
+    _drawGameOver() {
+        const ctx = this.ctx, cw = this.canvas.width, ch = this.canvas.height, D = this.DPR;
+        ctx.fillStyle = 'rgba(5,5,20,0.86)'; ctx.fillRect(0, 0, cw, ch);
+        const bW = Math.min(400 * D, cw - 30 * D), bH = 260 * D, bX = (cw - bW) / 2, bY = (ch - bH) / 2;
+        ctx.fillStyle = 'rgba(0,20,35,0.97)'; ctx.strokeStyle = '#FF2244'; ctx.lineWidth = 2 * D;
+        ctx.shadowColor = '#FF2244'; ctx.shadowBlur = 25 * D;
+        this._roundRect(ctx, bX, bY, bW, bH, 16 * D, true, true);
+        ctx.shadowBlur = 0;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#FF2244'; ctx.font = `bold ${22 * D}px "Segoe UI",sans-serif`;
+        ctx.shadowColor = '#FF2244'; ctx.shadowBlur = 10 * D;
+        ctx.fillText('GAME OVER', cw / 2, bY + 44 * D);
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = '#fff'; ctx.font = `bold ${18 * D}px "Segoe UI",sans-serif`;
+        ctx.fillText(`${this.score} pts`, cw / 2, bY + 90 * D);
+        ctx.fillStyle = 'rgba(150,180,200,0.7)'; ctx.font = `${11 * D}px "Segoe UI",sans-serif`;
+        ctx.fillText(`Level ${this.currentLevel + 1}  |  Combo x${this.maxCombo}  |  ${this.bubblesPopped} Popped`, cw / 2, bY + 122 * D);
+        ctx.fillStyle = '#FFD700'; ctx.font = `bold ${12 * D}px "Segoe UI",sans-serif`;
+        ctx.fillText(`+${this.levelCoins} Coins  +${this.levelDiamonds} Gems`, cw / 2, bY + 155 * D);
+        const blink = 0.4 + Math.abs(Math.sin(this.globalTime / 450)) * 0.55;
+        ctx.globalAlpha = blink;
+        ctx.fillStyle = '#aabbdd'; ctx.font = `${10 * D}px "Segoe UI",sans-serif`;
+        ctx.fillText('Tap restart to play again', cw / 2, bY + bH - 30 * D);
+        ctx.globalAlpha = 1;
     }
 }
