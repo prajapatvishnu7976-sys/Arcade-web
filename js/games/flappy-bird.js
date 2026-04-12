@@ -7,8 +7,9 @@ class FlappyBird {
 
         this.isMobile = ('ontouchstart' in window) || window.innerWidth < 768;
         
-        // Mobile: force DPR=1 for maximum performance
+        // Mobile: force DPR=1 for game objects, but text uses real DPR
         this.dpr = this.isMobile ? 1 : Math.min(window.devicePixelRatio || 1, 2);
+        this.textDpr = window.devicePixelRatio || 1; // HD text always
 
         this.setupHDCanvas();
 
@@ -18,7 +19,7 @@ class FlappyBird {
             willReadFrequently: false
         });
 
-        this.ctx.imageSmoothingEnabled = false; // Always off = faster
+        this.ctx.imageSmoothingEnabled = false;
 
         this.W = canvas.width  / this.dpr;
         this.H = canvas.height / this.dpr;
@@ -26,6 +27,11 @@ class FlappyBird {
         this.FONT_TITLE = 'monospace';
         this.FONT_UI    = 'sans-serif';
         this.loadFonts();
+
+        // ✅ SOUND ENGINE
+        this.sounds = {};
+        this.soundEnabled = true;
+        this.initSounds();
 
         this.gameState = 'menu';
         this.score     = 0;
@@ -61,27 +67,21 @@ class FlappyBird {
         this.particles  = [];
         this.floatTexts = [];
         this.rings      = [];
-        
-        // Mobile: very low particle limit
         this.MAX_PARTICLES = this.isMobile ? 15 : 80;
 
         this.stars     = this.makeStars(this.isMobile ? 20 : 70);
         this.clouds    = this.makeClouds();
         this.bgLayers  = this.makeBgLayers();
 
-        // Pre-render caches
-        this.birdCanvas  = null;
-        this.birdCi      = -1;
-        this.pipeCache   = {}; // Cache pipe canvases
+        this.birdCanvas = null;
+        this.pipeCache  = {};
+        this.colorCache = {};
         this.prebuildBird();
 
         this.screenShake = { x: 0, y: 0, timer: 0, force: 0 };
         this.flashAlpha  = 0;
         this.flashColor  = '#fff';
         this.bgTime      = 0;
-
-        // Pre-computed color cache
-        this.colorCache = {};
 
         this.deathTimer = 0;
         this.menuBirdY  = this.H * 0.4;
@@ -90,7 +90,6 @@ class FlappyBird {
         this.frame        = 0;
         this.fpsHistory   = [];
         this.adaptiveMode = false;
-        this.skipDraw     = false;
 
         this.boundClick = this.handleInput.bind(this);
         this.boundKey   = this.handleKey.bind(this);
@@ -100,13 +99,225 @@ class FlappyBird {
         canvas.addEventListener('touchstart', this.boundTouch, { passive: false });
         document.addEventListener('keydown',  this.boundKey);
 
-        // Pre-build static gradients
         this._buildStaticGradients();
 
         this.lastTime = 0;
         this.animId   = requestAnimationFrame(t => this.loop(t));
     }
 
+    // ══════════════════════════════════════════
+    // ✅ SOUND ENGINE - Web Audio API
+    // ══════════════════════════════════════════
+    initSounds() {
+        try {
+            this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            this._buildSounds();
+        } catch(e) {
+            console.warn('Audio not supported:', e);
+            this.audioCtx = null;
+        }
+    }
+
+    _buildSounds() {
+        if (!this.audioCtx) return;
+
+        // ✅ All sounds generated via Web Audio - no files needed!
+        this.soundDefs = {
+            flap:  () => this._playFlap(),
+            score: () => this._playScore(),
+            die:   () => this._playDie(),
+            hit:   () => this._playHit(),
+            start: () => this._playStart(),
+            best:  () => this._playBest(),
+        };
+    }
+
+    _resumeAudio() {
+        if (this.audioCtx && this.audioCtx.state === 'suspended') {
+            this.audioCtx.resume();
+        }
+    }
+
+    playSound(name) {
+        if (!this.soundEnabled || !this.audioCtx) return;
+        this._resumeAudio();
+        try {
+            if (this.soundDefs && this.soundDefs[name]) {
+                this.soundDefs[name]();
+            }
+        } catch(e) {}
+    }
+
+    // ✅ FLAP - quick whoosh sound
+    _playFlap() {
+        const ctx = this.audioCtx;
+        const t   = ctx.currentTime;
+
+        const osc  = ctx.createOscillator();
+        const gain = ctx.createGain();
+        const filter = ctx.createBiquadFilter();
+
+        filter.type      = 'bandpass';
+        filter.frequency.value = 800;
+        filter.Q.value   = 1.5;
+
+        osc.connect(filter);
+        filter.connect(gain);
+        gain.connect(ctx.destination);
+
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(520, t);
+        osc.frequency.exponentialRampToValueAtTime(280, t + 0.09);
+
+        gain.gain.setValueAtTime(0, t);
+        gain.gain.linearRampToValueAtTime(0.18, t + 0.01);
+        gain.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+
+        osc.start(t);
+        osc.stop(t + 0.13);
+    }
+
+    // ✅ SCORE - happy chime
+    _playScore() {
+        const ctx  = this.audioCtx;
+        const t    = ctx.currentTime;
+        const notes = [523, 659, 784]; // C, E, G chord
+
+        notes.forEach((freq, i) => {
+            const osc  = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(freq, t + i * 0.06);
+
+            gain.gain.setValueAtTime(0, t + i * 0.06);
+            gain.gain.linearRampToValueAtTime(0.15, t + i * 0.06 + 0.02);
+            gain.gain.exponentialRampToValueAtTime(0.001, t + i * 0.06 + 0.22);
+
+            osc.start(t + i * 0.06);
+            osc.stop(t + i * 0.06 + 0.25);
+        });
+    }
+
+    // ✅ DIE - crash explosion sound
+    _playDie() {
+        const ctx = this.audioCtx;
+        const t   = ctx.currentTime;
+
+        // Noise burst
+        const bufSize = ctx.sampleRate * 0.4;
+        const buffer  = ctx.createBuffer(1, bufSize, ctx.sampleRate);
+        const data    = buffer.getChannelData(0);
+        for (let i = 0; i < bufSize; i++) {
+            data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i/bufSize, 1.5);
+        }
+
+        const noise = ctx.createBufferSource();
+        noise.buffer = buffer;
+
+        const filter = ctx.createBiquadFilter();
+        filter.type  = 'lowpass';
+        filter.frequency.setValueAtTime(800, t);
+        filter.frequency.exponentialRampToValueAtTime(100, t + 0.4);
+
+        const gain = ctx.createGain();
+        gain.gain.setValueAtTime(0.5, t);
+        gain.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
+
+        noise.connect(filter);
+        filter.connect(gain);
+        gain.connect(ctx.destination);
+        noise.start(t);
+        noise.stop(t + 0.4);
+
+        // Low thud
+        const osc  = ctx.createOscillator();
+        const og   = ctx.createGain();
+        osc.connect(og);
+        og.connect(ctx.destination);
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(180, t);
+        osc.frequency.exponentialRampToValueAtTime(40, t + 0.25);
+        og.gain.setValueAtTime(0.5, t);
+        og.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
+        osc.start(t);
+        osc.stop(t + 0.3);
+    }
+
+    // ✅ HIT - pipe collision thud
+    _playHit() {
+        const ctx = this.audioCtx;
+        const t   = ctx.currentTime;
+
+        const osc  = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(150, t);
+        osc.frequency.exponentialRampToValueAtTime(60, t + 0.1);
+
+        gain.gain.setValueAtTime(0.35, t);
+        gain.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+
+        osc.start(t);
+        osc.stop(t + 0.13);
+    }
+
+    // ✅ START - game start jingle
+    _playStart() {
+        const ctx   = this.audioCtx;
+        const t     = ctx.currentTime;
+        const notes = [392, 523, 659, 784]; // G, C, E, G
+
+        notes.forEach((freq, i) => {
+            const osc  = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(freq, t + i * 0.08);
+
+            gain.gain.setValueAtTime(0, t + i * 0.08);
+            gain.gain.linearRampToValueAtTime(0.13, t + i * 0.08 + 0.03);
+            gain.gain.exponentialRampToValueAtTime(0.001, t + i * 0.08 + 0.18);
+
+            osc.start(t + i * 0.08);
+            osc.stop(t + i * 0.08 + 0.2);
+        });
+    }
+
+    // ✅ BEST - new best score fanfare
+    _playBest() {
+        const ctx   = this.audioCtx;
+        const t     = ctx.currentTime;
+        const notes = [523, 659, 784, 1047]; // C, E, G, C octave up
+
+        notes.forEach((freq, i) => {
+            const osc  = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+
+            osc.type = i === notes.length-1 ? 'sine' : 'triangle';
+            osc.frequency.setValueAtTime(freq, t + i * 0.07);
+
+            gain.gain.setValueAtTime(0, t + i * 0.07);
+            gain.gain.linearRampToValueAtTime(0.18, t + i * 0.07 + 0.02);
+            gain.gain.exponentialRampToValueAtTime(0.001, t + i * 0.07 + 0.3);
+
+            osc.start(t + i * 0.07);
+            osc.stop(t + i * 0.07 + 0.32);
+        });
+    }
+
+    // ══════════════════════════════════════════
+    // SETUP
+    // ══════════════════════════════════════════
     setupHDCanvas() {
         const rect = this.canvas.getBoundingClientRect();
         const w = rect.width  || this.canvas.clientWidth  || 400;
@@ -126,13 +337,17 @@ class FlappyBird {
         }
     }
 
-    // Fast pixel math
+    // Game object pixel math (uses game dpr)
     dX(x)  { return (x * this.dpr + 0.5) | 0; }
     dY(y)  { return (y * this.dpr + 0.5) | 0; }
     dS(s)  { return s * this.dpr; }
     dSr(s) { return (s * this.dpr + 0.5) | 0; }
 
-    // ✅ Cached color conversion - no repeated parsing
+    // ✅ Text pixel math (uses real device DPR = HD)
+    tX(x)  { return (x * this.textDpr + 0.5) | 0; }
+    tY(y)  { return (y * this.textDpr + 0.5) | 0; }
+
+    // Cached color conversion
     hexToRgba(hex, a) {
         const key = hex + a;
         if (this.colorCache[key]) return this.colorCache[key];
@@ -145,18 +360,16 @@ class FlappyBird {
         return result;
     }
 
-    // ✅ Build all gradients once upfront
+    // Build static gradients once
     _buildStaticGradients() {
         const ctx = this.ctx;
         const W = this.W, H = this.H;
 
-        // Sky gradient
         this.skyGrad = ctx.createLinearGradient(0, 0, 0, this.dY(H * 0.78));
         this.skyGrad.addColorStop(0,    '#050215');
         this.skyGrad.addColorStop(0.45, '#090420');
         this.skyGrad.addColorStop(1,    '#0d0e2e');
 
-        // Vignette gradient
         this.vigGrad = ctx.createRadialGradient(
             this.dX(W/2), this.dY(H/2), this.dS(H*0.08),
             this.dX(W/2), this.dY(H/2), this.dS(H*0.95)
@@ -164,7 +377,6 @@ class FlappyBird {
         this.vigGrad.addColorStop(0, 'rgba(0,0,0,0)');
         this.vigGrad.addColorStop(1, 'rgba(0,0,0,0.48)');
 
-        // Ground gradient
         const gy = H - this.groundH;
         this.groundGrad = ctx.createLinearGradient(0, this.dY(gy), 0, this.dY(H));
         this.groundGrad.addColorStop(0,   '#1a0935');
@@ -174,7 +386,9 @@ class FlappyBird {
         this._builtFor = W + 'x' + H;
     }
 
-    // TEXT - simplified for speed
+    // ══════════════════════════════════════════
+    // ✅ HD TEXT RENDERER
+    // ══════════════════════════════════════════
     drawText(ctx, text, x, y, opts = {}) {
         const {
             size        = 14,
@@ -193,35 +407,41 @@ class FlappyBird {
         } = opts;
 
         if (opacity <= 0) return;
-        
+
         ctx.save();
-        ctx.globalAlpha  = opacity < 1 ? opacity : 1;
+        ctx.globalAlpha  = Math.min(1, opacity);
         ctx.textAlign    = align;
         ctx.textBaseline = baseline;
-        ctx.font = `${weight} ${Math.round(size * this.dpr)}px ${family || this.FONT_UI}`;
 
-        const px = this.dX(x), py = this.dY(y);
+        // ✅ HD FIX: Use real device DPR for crisp text
+        const tDpr     = this.textDpr;
+        const fontSize = Math.round(size * tDpr);
+        ctx.font = `${weight} ${fontSize}px ${family || this.FONT_UI}`;
+
+        // ✅ HD text coords use textDpr not game dpr
+        const px = this.tX(x);
+        const py = this.tY(y);
+
+        // Always enable smoothing for text
+        ctx.imageSmoothingEnabled = true;
 
         if (stroke) {
             ctx.strokeStyle = strokeColor;
-            ctx.lineWidth   = strokeWidth * this.dpr;
+            ctx.lineWidth   = strokeWidth * tDpr;
             ctx.lineJoin    = 'round';
             ctx.strokeText(text, px, py);
         }
 
-        // Glow only on desktop
+        // Glow - desktop only
         if (glow && glowBlur > 0 && !this.isMobile) {
-            ctx.shadowBlur  = glowBlur * this.dpr;
+            ctx.shadowBlur  = glowBlur * tDpr;
             ctx.shadowColor = glowColor || color;
         }
 
         ctx.fillStyle = color;
         ctx.fillText(text, px, py);
-        
-        if (!this.isMobile) {
-            ctx.shadowBlur  = 0;
-            ctx.shadowColor = 'transparent';
-        }
+        ctx.shadowBlur  = 0;
+        ctx.shadowColor = 'transparent';
         ctx.restore();
     }
 
@@ -235,12 +455,6 @@ class FlappyBird {
         ctx.arcTo(dx,    dy+dh, dx,    dy,    dr);
         ctx.arcTo(dx,    dy,    dx+dw, dy,    dr);
         ctx.closePath();
-    }
-
-    fmtNum(n) {
-        if (n >= 1e6) return (n/1e6).toFixed(1)+'M';
-        if (n >= 1e3) return (n/1e3).toFixed(1)+'K';
-        return ''+n;
     }
 
     // ══════════════════════════════════════════
@@ -308,20 +522,13 @@ class FlappyBird {
     }
 
     // ══════════════════════════════════════════
-    // ✅ PRE-RENDER PIPE SEGMENTS
-    // Cache pipe body for each theme color
+    // PIPE CACHE
     // ══════════════════════════════════════════
-    _getPipeCacheKey(theme, pw, ph, isTop) {
-        return `${theme.body}_${pw}_${ph}_${isTop?1:0}`;
-    }
-
-    _buildPipeCanvas(theme, pw, isTop) {
-        // Build a 1px-height pipe body gradient canvas (tiled vertically)
-        const capH   = 20;
-        const capExt = 5;
+    _buildPipeCanvas(theme, pw) {
+        const capH   = 18;
+        const capExt = 4;
         const totalW = pw + capExt * 2;
-        
-        // Pipe body gradient canvas (reusable width)
+
         const bodyKey = `body_${theme.body}_${pw}`;
         if (!this.pipeCache[bodyKey]) {
             const bc = document.createElement('canvas');
@@ -339,7 +546,6 @@ class FlappyBird {
             this.pipeCache[bodyKey] = bc;
         }
 
-        // Cap gradient canvas
         const capKey = `cap_${theme.body}_${pw}`;
         if (!this.pipeCache[capKey]) {
             const cc = document.createElement('canvas');
@@ -354,21 +560,17 @@ class FlappyBird {
             cg.addColorStop(1,    this.hexToRgba(theme.dark,  0.94));
             cx.fillStyle = cg;
             cx.fillRect(0, 0, cc.width, cc.height);
-            // Border
             cx.strokeStyle = this.hexToRgba(theme.shine, 0.5);
             cx.lineWidth   = Math.max(1, this.dS(1.2));
             cx.strokeRect(0.5, 0.5, cc.width-1, cc.height-1);
             this.pipeCache[capKey] = cc;
         }
 
-        return {
-            body: this.pipeCache[bodyKey],
-            cap:  this.pipeCache[capKey]
-        };
+        return { body: this.pipeCache[bodyKey], cap: this.pipeCache[capKey] };
     }
 
     // ══════════════════════════════════════════
-    // WORLD
+    // WORLD GENERATORS
     // ══════════════════════════════════════════
     makeStars(n) {
         return Array.from({ length: n }, () => ({
@@ -432,15 +634,16 @@ class FlappyBird {
         if (!this.bird.alive) return;
         this.bird.vy       = this.bird.flapPow;
         this.bird.flapAnim = 1;
-        // No particles on mobile flap
         if (!this.isMobile) {
             this.spawnParticles(this.bird.x - 6, this.bird.y + 5, '#00D4FF', 3, { spread: 2, vy: 1.2 });
         }
         this.rings.push({ x: this.bird.x, y: this.bird.y, r: this.bird.r, opacity: 0.45, color: '#00D4FF' });
-        if (window.audioManager) audioManager.play('click');
+        this.playSound('flap');
     }
 
     startGame() {
+        this.playSound('start');
+
         this.gameState  = 'playing';
         this.score      = 0;
         this.pipes      = [];
@@ -451,7 +654,7 @@ class FlappyBird {
         this.particles  = [];
         this.floatTexts = [];
         this.rings      = [];
-        this.pipeCache  = {}; // Clear pipe cache on restart
+        this.pipeCache  = {};
 
         this.bird.y        = this.H * 0.42;
         this.bird.vy       = 0;
@@ -510,7 +713,6 @@ class FlappyBird {
         this.frame++;
         this.bgTime += dt * 0.001;
 
-        // Stars — every 3rd frame on mobile
         const doSlow = !this.isMobile || (this.frame % 3 === 0);
 
         if (doSlow) {
@@ -519,20 +721,18 @@ class FlappyBird {
             }
         }
 
-        // Shake
         if (this.screenShake.timer > 0) {
             const f = this.screenShake.force * (this.screenShake.timer / 14) * (this.isMobile ? 0.4 : 1);
             this.screenShake.x = (Math.random()-0.5)*f;
             this.screenShake.y = (Math.random()-0.5)*f*0.35;
             this.screenShake.timer--;
-        } else { 
-            this.screenShake.x = 0; 
-            this.screenShake.y = 0; 
+        } else {
+            this.screenShake.x = 0;
+            this.screenShake.y = 0;
         }
 
         if (this.flashAlpha > 0) this.flashAlpha = Math.max(0, this.flashAlpha - 0.03);
 
-        // Rings — simplified
         for (let i = this.rings.length-1; i >= 0; i--) {
             const rg = this.rings[i];
             rg.r      += 3.5;
@@ -540,7 +740,6 @@ class FlappyBird {
             if (rg.opacity <= 0) this.rings.splice(i, 1);
         }
 
-        // Clouds — every 3rd frame on mobile
         if (doSlow) {
             const spd = dt / 16.67;
             for (let i = 0; i < this.clouds.length; i++) {
@@ -582,19 +781,16 @@ class FlappyBird {
         // ── PLAYING ──
         const spd = dt / 16.67;
 
-        // Bird physics
         this.bird.vy       += this.bird.gravity * spd;
         this.bird.y        += this.bird.vy * spd;
         this.bird.rotation  = Math.max(-0.42, Math.min(Math.PI * 0.4, this.bird.vy * 0.052));
         this.bird.pulseT   += dt * 0.005;
         if (this.bird.flapAnim > 0) this.bird.flapAnim = Math.max(0, this.bird.flapAnim - dt/160);
 
-        // Trail — very short on mobile
         this.bird.trail.unshift({ x: this.bird.x, y: this.bird.y });
         const maxTrail = this.isMobile ? 4 : 11;
         if (this.bird.trail.length > maxTrail) this.bird.trail.pop();
 
-        // Ground scroll
         this.groundX = ((this.groundX - this.pipeSpeed * 1.4 * spd) % 40 + 40) % 40;
 
         // Pipes
@@ -606,10 +802,15 @@ class FlappyBird {
                 p.scored = true;
                 this.score++;
 
-                if (this.score > this.bestScore) {
+                const isNewBest = this.score > this.bestScore;
+                if (isNewBest) {
                     this.bestScore = this.score;
                     localStorage.setItem('flappy_best', this.bestScore);
+                    this.playSound('best');
+                } else {
+                    this.playSound('score');
                 }
+
                 this.onScore(this.score);
 
                 this.pipeSpeed = Math.min(5.2, 2.0 + this.score * 0.065);
@@ -624,8 +825,9 @@ class FlappyBird {
 
                 this.floatTexts.push({
                     x: this.W * 0.5, y: 80,
-                    text: '+1', color: '#FFD700',
-                    life: 40, maxLife: 40, vy: -0.8, scale: 0.4, opacity: 0
+                    text: isNewBest ? '★ BEST!' : '+1',
+                    color: isNewBest ? '#00FF88' : '#FFD700',
+                    life: 45, maxLife: 45, vy: -0.8, scale: 0.4, opacity: 0
                 });
                 this.rings.push({ x: this.bird.x, y: this.bird.y, r: 10, opacity: 0.6, color: '#FFD700' });
 
@@ -633,7 +835,7 @@ class FlappyBird {
                     this.spawnParticles(this.bird.x, this.bird.y, '#FFD700', 5);
                 }
 
-                if (this.score > 0 && this.score % 5 === 0) {
+                if (this.score % 5 === 0) {
                     this.floatTexts.push({
                         x: this.W/2, y: this.H/2 - 50,
                         text: `${this.score} ★`, color: '#00FF88',
@@ -644,7 +846,6 @@ class FlappyBird {
                         this.screenShake.force = 2;
                     }
                 }
-                if (window.audioManager) audioManager.play('score');
             }
 
             if (p.x + this.pipeW < -20) this.pipes.splice(i, 1);
@@ -671,12 +872,12 @@ class FlappyBird {
         if (b.y + cr > this.H - this.groundH) { this.die(); return; }
 
         for (let i = 0; i < this.pipes.length; i++) {
-            const p     = this.pipes[i];
-            const pLeft = p.x;
-            const pRight= p.x + this.pipeW;
+            const p      = this.pipes[i];
+            const pLeft  = p.x;
+            const pRight = p.x + this.pipeW;
             if (b.x + cr < pLeft || b.x - cr > pRight) continue;
-            if (this.circleRectCollide(b.x, b.y, cr, pLeft, 0,       pRight, p.gapTop)) { this.die(); return; }
-            if (this.circleRectCollide(b.x, b.y, cr, pLeft, p.gapBot,pRight, this.H - this.groundH)) { this.die(); return; }
+            if (this.circleRectCollide(b.x, b.y, cr, pLeft, 0,        pRight, p.gapTop))             { this.die(); return; }
+            if (this.circleRectCollide(b.x, b.y, cr, pLeft, p.gapBot, pRight, this.H - this.groundH)) { this.die(); return; }
         }
     }
 
@@ -693,8 +894,11 @@ class FlappyBird {
         this.gameState  = 'dead';
         this.deathTimer = 0;
 
+        this.playSound('hit');
+        setTimeout(() => this.playSound('die'), 80);
+
         this.spawnParticles(this.bird.x, this.bird.y, '#FF006E', this.isMobile ? 8 : 22, { spread: 5 });
-        this.flashAlpha = 0.4; 
+        this.flashAlpha = 0.4;
         this.flashColor = '#FF0033';
         this.screenShake.timer = this.isMobile ? 6 : 18;
         this.screenShake.force = this.isMobile ? 4 : 9;
@@ -705,18 +909,17 @@ class FlappyBird {
             life: 75, maxLife: 75, vy: -0.45, scale: 0.2, opacity: 0
         });
 
-        if (window.audioManager) audioManager.play('fail');
         this.onScore(this.score, true);
     }
 
     updateParticles() {
         for (let i = this.particles.length-1; i >= 0; i--) {
             const p = this.particles[i];
-            p.x  += p.vx; 
-            p.y  += p.vy; 
-            p.vy += 0.1; 
+            p.x  += p.vx;
+            p.y  += p.vy;
+            p.vy += 0.1;
             p.vx *= 0.97;
-            p.life--; 
+            p.life--;
             p.size *= 0.94;
             if (p.life <= 0 || p.size < 0.4) this.particles.splice(i, 1);
         }
@@ -725,7 +928,7 @@ class FlappyBird {
     updateFloatTexts() {
         for (let i = this.floatTexts.length-1; i >= 0; i--) {
             const t = this.floatTexts[i];
-            t.y   += t.vy; 
+            t.y    += t.vy;
             t.life--;
             t.opacity = t.life < 15 ? t.life/15 : (t.maxLife - t.life < 8 ? (t.maxLife - t.life)/8 : 1);
             t.scale  += (1 - t.scale) * 0.18;
@@ -757,7 +960,6 @@ class FlappyBird {
     draw(timestamp) {
         const ctx = this.ctx;
 
-        // Base fill
         ctx.fillStyle = '#050510';
         ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
@@ -767,10 +969,7 @@ class FlappyBird {
         }
 
         this.drawBackground(ctx);
-        
-        // Clouds every 3rd frame on mobile
         if (!this.isMobile || this.frame % 3 === 0) this.drawClouds(ctx);
-        
         this.drawCityBg(ctx);
         this.drawPipes(ctx);
         this.drawGround(ctx);
@@ -802,18 +1001,13 @@ class FlappyBird {
         ctx.restore();
     }
 
-    // ✅ Optimized background - no recreating gradients
     drawBackground(ctx) {
-        // Rebuild gradients only if size changed
         const sizeKey = this.W + 'x' + this.H;
-        if (this._builtFor !== sizeKey) {
-            this._buildStaticGradients();
-        }
+        if (this._builtFor !== sizeKey) this._buildStaticGradients();
 
         ctx.fillStyle = this.skyGrad;
         ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
-        // Stars — every 3rd frame on mobile
         if (!this.isMobile || this.frame % 3 === 0) {
             for (let i = 0; i < this.stars.length; i++) {
                 const s     = this.stars[i];
@@ -827,7 +1021,6 @@ class FlappyBird {
             ctx.globalAlpha = 1;
         }
 
-        // Moon — desktop only
         if (!this.isMobile) {
             const mx = this.W*0.82, my = this.H*0.1, mr = 27;
             const mg = ctx.createRadialGradient(
@@ -843,7 +1036,6 @@ class FlappyBird {
             ctx.fill();
         }
 
-        // Vignette
         ctx.fillStyle = this.vigGrad;
         ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
     }
@@ -868,49 +1060,39 @@ class FlappyBird {
         }
     }
 
-    // ══════════════════════════════════════════
-    // ✅ PIPES — uses cached canvases, no shadow on mobile
-    // ══════════════════════════════════════════
     drawPipes(ctx) {
         for (let i = 0; i < this.pipes.length; i++) {
             const p  = this.pipes[i];
             const th = p.theme;
             const pw = this.pipeW;
-            
-            if (p.gapTop > 2)  this._drawPipeFast(ctx, p.x, 0,       pw, p.gapTop,                          th, true);
-            if (p.botH   > 2)  this._drawPipeFast(ctx, p.x, p.gapBot,pw, this.H - this.groundH - p.gapBot, th, false);
+            if (p.gapTop > 2) this._drawPipeFast(ctx, p.x, 0,        pw, p.gapTop,                          th, true);
+            if (p.botH   > 2) this._drawPipeFast(ctx, p.x, p.gapBot, pw, this.H - this.groundH - p.gapBot, th, false);
         }
     }
 
-    // ✅ Fast pipe draw using cached gradient canvases
     _drawPipeFast(ctx, px, py, pw, ph, theme, isTop) {
         if (ph < 2) return;
-        
+
         const capH   = 18;
         const capExt = 4;
         const capY   = isTop ? py + ph - capH : py;
+        const cached = this._buildPipeCanvas(theme, pw);
 
-        const cached = this._buildPipeCanvas(theme, pw, isTop);
-
-        // Draw body by stretching 1px gradient canvas
         const bx = this.dX(px), by = this.dY(py);
         const bw = this.dSr(pw), bh = this.dSr(ph);
         ctx.drawImage(cached.body, bx, by, bw, bh);
 
-        // Shine stripe (simple rect, fast)
         ctx.fillStyle = 'rgba(255,255,255,0.07)';
-        ctx.fillRect(bx + (bw*0.2)|0, by, (bw*0.12)|0, bh);
+        ctx.fillRect(bx + ((bw*0.2)|0), by, (bw*0.12)|0, bh);
 
-        // Draw cap
-        const capX = this.dX(px - capExt);
+        const capX   = this.dX(px - capExt);
         const capYpx = this.dY(capY);
-        const capW = this.dSr(pw + capExt*2);
+        const capW   = this.dSr(pw + capExt*2);
         const capHpx = this.dSr(capH);
         ctx.drawImage(cached.cap, capX, capYpx, capW, capHpx);
 
-        // Glow outline on desktop only
         if (!this.isMobile) {
-            ctx.strokeStyle = this.hexToRgba(theme.glow, 0.25);
+            ctx.strokeStyle = this.hexToRgba(theme.glow, 0.22);
             ctx.lineWidth   = this.dS(1.5);
             ctx.shadowBlur  = this.dS(6);
             ctx.shadowColor = theme.glow;
@@ -919,16 +1101,12 @@ class FlappyBird {
         }
     }
 
-    // ══════════════════════════════════════════
-    // GROUND
-    // ══════════════════════════════════════════
     drawGround(ctx) {
         const W = this.W, H = this.H, gh = this.groundH, gy = H - gh;
 
         ctx.fillStyle = this.groundGrad;
         ctx.fillRect(0, this.dY(gy), this.canvas.width, this.dSr(gh));
 
-        // Top neon line
         ctx.strokeStyle = 'rgba(185,71,217,0.82)';
         ctx.lineWidth   = this.dS(2);
         if (!this.isMobile) {
@@ -941,7 +1119,6 @@ class FlappyBird {
         ctx.stroke();
         ctx.shadowBlur = 0;
 
-        // Grid lines — every 3rd frame on mobile
         if (!this.isMobile || this.frame % 3 === 0) {
             ctx.globalAlpha = 0.12;
             ctx.strokeStyle = '#B947D9';
@@ -960,7 +1137,6 @@ class FlappyBird {
 
     drawRingsFX(ctx) {
         if (this.rings.length === 0) return;
-        // No shadow on mobile rings
         for (let i = 0; i < this.rings.length; i++) {
             const rg = this.rings[i];
             ctx.globalAlpha = rg.opacity;
@@ -990,9 +1166,6 @@ class FlappyBird {
         ctx.globalAlpha = 1;
     }
 
-    // ══════════════════════════════════════════
-    // BIRD — pre-rendered + wing overlay
-    // ══════════════════════════════════════════
     _drawBirdAt(ctx, cx, cy, rot, flapAnim, pulseT) {
         const r    = this.bird.r;
         const size = this.birdSize;
@@ -1001,7 +1174,6 @@ class FlappyBird {
         ctx.translate(this.dX(cx), this.dY(cy));
         ctx.rotate(rot);
 
-        // Outer glow ring — desktop only
         if (!this.isMobile) {
             ctx.strokeStyle = 'rgba(0,212,255,0.28)';
             ctx.lineWidth   = this.dS(1.5);
@@ -1010,12 +1182,10 @@ class FlappyBird {
             ctx.stroke();
         }
 
-        // Draw pre-rendered bird
         if (this.birdCanvas) {
             ctx.drawImage(this.birdCanvas, -size/2, -size/2, size, size);
         }
 
-        // Wing
         const dr        = r * this.dpr;
         const wingBaseY = dr * 0.22;
         const wingAng   = flapAnim > 0
@@ -1102,6 +1272,21 @@ class FlappyBird {
             align: 'center', baseline: 'middle', family: this.FONT_UI
         });
 
+        // Sound toggle button
+        const btnX = W - 38, btnY = 14;
+        ctx.fillStyle = this.soundEnabled
+            ? 'rgba(0,212,255,0.18)'
+            : 'rgba(255,0,80,0.18)';
+        this.drawRoundRect(ctx, btnX, btnY, 28, 22, 6);
+        ctx.fill();
+        ctx.strokeStyle = this.soundEnabled ? 'rgba(0,212,255,0.5)' : 'rgba(255,0,80,0.5)';
+        ctx.lineWidth   = this.dS(1);
+        this.drawRoundRect(ctx, btnX, btnY, 28, 22, 6);
+        ctx.stroke();
+        this.drawText(ctx, this.soundEnabled ? '🔊' : '🔇', btnX + 14, btnY + 11, {
+            size: 10, align: 'center', baseline: 'middle'
+        });
+
         const tips = ['Tap to flap wings', 'Fly through the gaps', "Don't touch the pipes!"];
         for (let i = 0; i < tips.length; i++) {
             this.drawText(ctx, tips[i], W/2, H*0.84 + i*17, {
@@ -1151,9 +1336,8 @@ class FlappyBird {
             stroke: true, strokeColor: 'rgba(0,0,0,0.65)', strokeWidth: 4,
             family: this.FONT_TITLE
         });
-
         this.drawText(ctx, `BEST:${this.bestScore}`, W - 8, 18, {
-            size: 10, weight: '700', color: 'rgba(255,215,0,0.5)',
+            size: 10, weight: '700', color: 'rgba(255,215,0,0.55)',
             align: 'right', baseline: 'middle', family: this.FONT_UI
         });
 
@@ -1162,6 +1346,11 @@ class FlappyBird {
         this.drawText(ctx, `${this.pipeSpeed.toFixed(1)}x`, 8, 18, {
             size: 10, weight: '700', color: speedCol,
             baseline: 'middle', family: this.FONT_UI
+        });
+
+        // Sound icon in HUD
+        this.drawText(ctx, this.soundEnabled ? '🔊' : '🔇', W - 8, 40, {
+            size: 9, align: 'right', baseline: 'middle'
         });
     }
 
@@ -1243,7 +1432,7 @@ class FlappyBird {
     }
 
     // ══════════════════════════════════════════
-    // LOOP — Smart frame skip for mobile
+    // GAME LOOP
     // ══════════════════════════════════════════
     loop(timestamp) {
         if (this.destroyed) return;
@@ -1251,24 +1440,19 @@ class FlappyBird {
         this.lastTime = timestamp;
 
         if (this.isMobile) {
-            // Track FPS
             this.fpsHistory.push(dt);
             if (this.fpsHistory.length > 30) this.fpsHistory.shift();
             if (this.fpsHistory.length === 30) {
                 const avg = this.fpsHistory.reduce((a,b)=>a+b,0)/30;
-                // If avg frame time > 25ms (~<40fps), enable adaptive mode
                 this.adaptiveMode = avg > 25;
             }
 
-            // Adaptive: always update physics, skip every other DRAW
             if (!this.paused) this.update(dt);
-            
+
             if (this.adaptiveMode && (this.frame % 2 === 1)) {
-                // Skip draw this frame
                 this.animId = requestAnimationFrame(t => this.loop(t));
                 return;
             }
-            
             this.draw(timestamp);
         } else {
             if (!this.paused) this.update(dt);
@@ -1284,8 +1468,15 @@ class FlappyBird {
         return this.paused;
     }
 
+    // ✅ Sound toggle method
+    toggleSound() {
+        this.soundEnabled = !this.soundEnabled;
+        return this.soundEnabled;
+    }
+
     resize() {
-        this.dpr = this.isMobile ? 1 : Math.min(window.devicePixelRatio||1, 2);
+        this.dpr     = this.isMobile ? 1 : Math.min(window.devicePixelRatio||1, 2);
+        this.textDpr = window.devicePixelRatio || 1;
         this.setupHDCanvas();
         this.W = this.canvas.width  / this.dpr;
         this.H = this.canvas.height / this.dpr;
@@ -1294,7 +1485,8 @@ class FlappyBird {
         this.stars    = this.makeStars(this.isMobile ? 20 : 70);
         this.clouds   = this.makeClouds();
         this.bgLayers = this.makeBgLayers();
-        this.pipeCache = {};
+        this.pipeCache  = {};
+        this.colorCache = {};
         this._buildStaticGradients();
         this.prebuildBird();
     }
@@ -1305,7 +1497,10 @@ class FlappyBird {
         this.canvas.removeEventListener('click',      this.boundClick);
         this.canvas.removeEventListener('touchstart', this.boundTouch);
         document.removeEventListener('keydown',       this.boundKey);
-        // Clear caches
+        if (this.audioCtx) {
+            this.audioCtx.close();
+            this.audioCtx = null;
+        }
         this.pipeCache  = {};
         this.colorCache = {};
         this.birdCanvas = null;
