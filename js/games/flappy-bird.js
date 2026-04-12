@@ -5,11 +5,10 @@ class FlappyBird {
         this.canvas  = canvas;
         this.onScore = onScore;
 
-        // ✅ MOBILE FIX: DPR cap
         this.isMobile = ('ontouchstart' in window) || window.innerWidth < 768;
-        this.dpr = this.isMobile
-            ? Math.min(window.devicePixelRatio || 1, 1.5)
-            : Math.min(window.devicePixelRatio || 1, 2);
+        
+        // Mobile: force DPR=1 for maximum performance
+        this.dpr = this.isMobile ? 1 : Math.min(window.devicePixelRatio || 1, 2);
 
         this.setupHDCanvas();
 
@@ -19,14 +18,13 @@ class FlappyBird {
             willReadFrequently: false
         });
 
-        // ✅ MOBILE FIX: No smoothing on mobile
-        this.ctx.imageSmoothingEnabled = !this.isMobile;
+        this.ctx.imageSmoothingEnabled = false; // Always off = faster
 
         this.W = canvas.width  / this.dpr;
         this.H = canvas.height / this.dpr;
 
-        this.FONT_TITLE = '"Segoe UI", monospace';
-        this.FONT_UI    = '"Segoe UI", sans-serif';
+        this.FONT_TITLE = 'monospace';
+        this.FONT_UI    = 'sans-serif';
         this.loadFonts();
 
         this.gameState = 'menu';
@@ -38,7 +36,7 @@ class FlappyBird {
         this.bird = {
             x:        this.W * 0.25,
             y:        this.H * 0.45,
-            r:        this.isMobile ? 15 : 17,
+            r:        this.isMobile ? 14 : 17,
             vy:       0,
             gravity:  0.38,
             flapPow:  -7.2,
@@ -50,29 +48,31 @@ class FlappyBird {
         };
 
         this.pipes        = [];
-        this.pipeW        = this.isMobile ? 55 : 64;
+        this.pipeW        = this.isMobile ? 52 : 64;
         this.pipeGap      = this.isMobile ? 165 : 180;
         this.pipeSpeed    = 2.0;
         this.pipeDist     = this.isMobile ? 230 : 260;
         this.nextPipeX    = 0;
         this.pipeCount    = 0;
 
-        this.groundH  = this.isMobile ? 60 : 68;
+        this.groundH  = this.isMobile ? 55 : 68;
         this.groundX  = 0;
 
-        // ✅ MOBILE FIX: Reduced counts
         this.particles  = [];
         this.floatTexts = [];
         this.rings      = [];
-        this.MAX_PARTICLES = this.isMobile ? 30 : 80;
+        
+        // Mobile: very low particle limit
+        this.MAX_PARTICLES = this.isMobile ? 15 : 80;
 
-        this.stars     = this.makeStars(this.isMobile ? 30 : 70);
+        this.stars     = this.makeStars(this.isMobile ? 20 : 70);
         this.clouds    = this.makeClouds();
         this.bgLayers  = this.makeBgLayers();
 
-        // ✅ Pre-render bird canvas
-        this.birdCanvas = null;
-        this.birdCi     = -1;
+        // Pre-render caches
+        this.birdCanvas  = null;
+        this.birdCi      = -1;
+        this.pipeCache   = {}; // Cache pipe canvases
         this.prebuildBird();
 
         this.screenShake = { x: 0, y: 0, timer: 0, force: 0 };
@@ -80,18 +80,17 @@ class FlappyBird {
         this.flashColor  = '#fff';
         this.bgTime      = 0;
 
-        // ✅ Cached static bg
-        this.bgCache      = null;
-        this.bgCacheValid = false;
+        // Pre-computed color cache
+        this.colorCache = {};
 
         this.deathTimer = 0;
         this.menuBirdY  = this.H * 0.4;
         this.menuBirdT  = 0;
 
-        // ✅ FPS tracking
         this.frame        = 0;
         this.fpsHistory   = [];
         this.adaptiveMode = false;
+        this.skipDraw     = false;
 
         this.boundClick = this.handleInput.bind(this);
         this.boundKey   = this.handleKey.bind(this);
@@ -100,6 +99,9 @@ class FlappyBird {
         canvas.addEventListener('click',      this.boundClick);
         canvas.addEventListener('touchstart', this.boundTouch, { passive: false });
         document.addEventListener('keydown',  this.boundKey);
+
+        // Pre-build static gradients
+        this._buildStaticGradients();
 
         this.lastTime = 0;
         this.animId   = requestAnimationFrame(t => this.loop(t));
@@ -124,15 +126,55 @@ class FlappyBird {
         }
     }
 
-    // ✅ Fast integer math
-    dX(x)  { return x * this.dpr | 0; }
-    dY(y)  { return y * this.dpr | 0; }
+    // Fast pixel math
+    dX(x)  { return (x * this.dpr + 0.5) | 0; }
+    dY(y)  { return (y * this.dpr + 0.5) | 0; }
     dS(s)  { return s * this.dpr; }
-    dSr(s) { return s * this.dpr | 0; }
+    dSr(s) { return (s * this.dpr + 0.5) | 0; }
 
-    // ══════════════════════════════════════════
-    // TEXT
-    // ══════════════════════════════════════════
+    // ✅ Cached color conversion - no repeated parsing
+    hexToRgba(hex, a) {
+        const key = hex + a;
+        if (this.colorCache[key]) return this.colorCache[key];
+        if (!hex || hex[0] !== '#') return hex;
+        const r = parseInt(hex.slice(1,3),16);
+        const g = parseInt(hex.slice(3,5),16);
+        const b = parseInt(hex.slice(5,7),16);
+        const result = `rgba(${r},${g},${b},${Math.max(0,Math.min(1,a)).toFixed(2)})`;
+        this.colorCache[key] = result;
+        return result;
+    }
+
+    // ✅ Build all gradients once upfront
+    _buildStaticGradients() {
+        const ctx = this.ctx;
+        const W = this.W, H = this.H;
+
+        // Sky gradient
+        this.skyGrad = ctx.createLinearGradient(0, 0, 0, this.dY(H * 0.78));
+        this.skyGrad.addColorStop(0,    '#050215');
+        this.skyGrad.addColorStop(0.45, '#090420');
+        this.skyGrad.addColorStop(1,    '#0d0e2e');
+
+        // Vignette gradient
+        this.vigGrad = ctx.createRadialGradient(
+            this.dX(W/2), this.dY(H/2), this.dS(H*0.08),
+            this.dX(W/2), this.dY(H/2), this.dS(H*0.95)
+        );
+        this.vigGrad.addColorStop(0, 'rgba(0,0,0,0)');
+        this.vigGrad.addColorStop(1, 'rgba(0,0,0,0.48)');
+
+        // Ground gradient
+        const gy = H - this.groundH;
+        this.groundGrad = ctx.createLinearGradient(0, this.dY(gy), 0, this.dY(H));
+        this.groundGrad.addColorStop(0,   '#1a0935');
+        this.groundGrad.addColorStop(0.2, '#110720');
+        this.groundGrad.addColorStop(1,   '#080410');
+
+        this._builtFor = W + 'x' + H;
+    }
+
+    // TEXT - simplified for speed
     drawText(ctx, text, x, y, opts = {}) {
         const {
             size        = 14,
@@ -151,8 +193,9 @@ class FlappyBird {
         } = opts;
 
         if (opacity <= 0) return;
+        
         ctx.save();
-        ctx.globalAlpha  = Math.min(1, opacity);
+        ctx.globalAlpha  = opacity < 1 ? opacity : 1;
         ctx.textAlign    = align;
         ctx.textBaseline = baseline;
         ctx.font = `${weight} ${Math.round(size * this.dpr)}px ${family || this.FONT_UI}`;
@@ -166,16 +209,19 @@ class FlappyBird {
             ctx.strokeText(text, px, py);
         }
 
-        // ✅ Glow only on desktop
+        // Glow only on desktop
         if (glow && glowBlur > 0 && !this.isMobile) {
-            ctx.shadowBlur  = glowBlur * this.dpr * 1.5;
+            ctx.shadowBlur  = glowBlur * this.dpr;
             ctx.shadowColor = glowColor || color;
         }
 
         ctx.fillStyle = color;
         ctx.fillText(text, px, py);
-        ctx.shadowBlur  = 0;
-        ctx.shadowColor = 'transparent';
+        
+        if (!this.isMobile) {
+            ctx.shadowBlur  = 0;
+            ctx.shadowColor = 'transparent';
+        }
         ctx.restore();
     }
 
@@ -191,11 +237,6 @@ class FlappyBird {
         ctx.closePath();
     }
 
-    hexToRgba(hex, a) {
-        if (!hex || hex[0] !== '#') return hex;
-        return `rgba(${parseInt(hex.slice(1,3),16)},${parseInt(hex.slice(3,5),16)},${parseInt(hex.slice(5,7),16)},${Math.max(0,Math.min(1,a))})`;
-    }
-
     fmtNum(n) {
         if (n >= 1e6) return (n/1e6).toFixed(1)+'M';
         if (n >= 1e3) return (n/1e3).toFixed(1)+'K';
@@ -203,11 +244,11 @@ class FlappyBird {
     }
 
     // ══════════════════════════════════════════
-    // ✅ PRE-RENDER BIRD
+    // PRE-RENDER BIRD
     // ══════════════════════════════════════════
     prebuildBird() {
         const r    = this.bird.r;
-        const pad  = 12;
+        const pad  = 10;
         const size = Math.ceil((r + pad) * 2 * this.dpr);
         const bc   = document.createElement('canvas');
         bc.width = bc.height = size;
@@ -215,7 +256,6 @@ class FlappyBird {
         const cx = size / 2, cy = size / 2;
         const dr = r * this.dpr;
 
-        // Body gradient
         const bg = bx.createRadialGradient(
             cx - dr*0.3, cy - dr*0.3, dr*0.05,
             cx, cy, dr
@@ -228,31 +268,26 @@ class FlappyBird {
         bx.arc(cx, cy, dr, 0, Math.PI*2);
         bx.fill();
 
-        // Border
         bx.strokeStyle = 'rgba(255,255,255,0.6)';
         bx.lineWidth   = 1.5 * this.dpr;
         bx.stroke();
 
-        // Eye white
         const ex = cx + dr*0.3, ey = cy - dr*0.2;
         bx.fillStyle = '#fff';
         bx.beginPath();
         bx.arc(ex, ey, dr*0.27, 0, Math.PI*2);
         bx.fill();
 
-        // Pupil
         bx.fillStyle = '#001830';
         bx.beginPath();
         bx.arc(ex + 1.5*this.dpr, ey, dr*0.13, 0, Math.PI*2);
         bx.fill();
 
-        // Eye shine
         bx.fillStyle = 'rgba(255,255,255,0.85)';
         bx.beginPath();
         bx.arc(ex + 2*this.dpr, ey - 2*this.dpr, dr*0.065, 0, Math.PI*2);
         bx.fill();
 
-        // Beak
         bx.fillStyle   = '#FFB820';
         bx.strokeStyle = '#BB8800';
         bx.lineWidth   = 0.7 * this.dpr;
@@ -263,7 +298,6 @@ class FlappyBird {
         bx.closePath();
         bx.fill(); bx.stroke();
 
-        // Body shine
         bx.fillStyle = 'rgba(255,255,255,0.18)';
         bx.beginPath();
         bx.arc(cx - dr*0.2, cy - dr*0.23, dr*0.3, 0, Math.PI*2);
@@ -274,13 +308,73 @@ class FlappyBird {
     }
 
     // ══════════════════════════════════════════
+    // ✅ PRE-RENDER PIPE SEGMENTS
+    // Cache pipe body for each theme color
+    // ══════════════════════════════════════════
+    _getPipeCacheKey(theme, pw, ph, isTop) {
+        return `${theme.body}_${pw}_${ph}_${isTop?1:0}`;
+    }
+
+    _buildPipeCanvas(theme, pw, isTop) {
+        // Build a 1px-height pipe body gradient canvas (tiled vertically)
+        const capH   = 20;
+        const capExt = 5;
+        const totalW = pw + capExt * 2;
+        
+        // Pipe body gradient canvas (reusable width)
+        const bodyKey = `body_${theme.body}_${pw}`;
+        if (!this.pipeCache[bodyKey]) {
+            const bc = document.createElement('canvas');
+            bc.width  = this.dSr(pw);
+            bc.height = 1;
+            const bx  = bc.getContext('2d');
+            const bg  = bx.createLinearGradient(0, 0, bc.width, 0);
+            bg.addColorStop(0,    this.hexToRgba(theme.dark,  0.9));
+            bg.addColorStop(0.25, this.hexToRgba(theme.body,  0.95));
+            bg.addColorStop(0.5,  this.hexToRgba(theme.shine, 0.8));
+            bg.addColorStop(0.75, this.hexToRgba(theme.body,  0.92));
+            bg.addColorStop(1,    this.hexToRgba(theme.dark,  0.86));
+            bx.fillStyle = bg;
+            bx.fillRect(0, 0, bc.width, 1);
+            this.pipeCache[bodyKey] = bc;
+        }
+
+        // Cap gradient canvas
+        const capKey = `cap_${theme.body}_${pw}`;
+        if (!this.pipeCache[capKey]) {
+            const cc = document.createElement('canvas');
+            cc.width  = this.dSr(totalW);
+            cc.height = this.dSr(capH);
+            const cx  = cc.getContext('2d');
+            const cg  = cx.createLinearGradient(0, 0, cc.width, 0);
+            cg.addColorStop(0,    this.hexToRgba(theme.dark,  0.94));
+            cg.addColorStop(0.25, this.hexToRgba(theme.body,  1));
+            cg.addColorStop(0.5,  this.hexToRgba(theme.shine, 0.9));
+            cg.addColorStop(0.75, this.hexToRgba(theme.body,  1));
+            cg.addColorStop(1,    this.hexToRgba(theme.dark,  0.94));
+            cx.fillStyle = cg;
+            cx.fillRect(0, 0, cc.width, cc.height);
+            // Border
+            cx.strokeStyle = this.hexToRgba(theme.shine, 0.5);
+            cx.lineWidth   = Math.max(1, this.dS(1.2));
+            cx.strokeRect(0.5, 0.5, cc.width-1, cc.height-1);
+            this.pipeCache[capKey] = cc;
+        }
+
+        return {
+            body: this.pipeCache[bodyKey],
+            cap:  this.pipeCache[capKey]
+        };
+    }
+
+    // ══════════════════════════════════════════
     // WORLD
     // ══════════════════════════════════════════
     makeStars(n) {
         return Array.from({ length: n }, () => ({
             x:     Math.random() * (this.W || 400),
             y:     Math.random() * (this.H || 700) * 0.75,
-            r:     Math.random() * 1.4 + 0.2,
+            r:     Math.random() * 1.2 + 0.3,
             phase: Math.random() * Math.PI * 2,
             speed: Math.random() * 0.012 + 0.003,
             color: Math.random() > 0.7 ? '#B947D9' : '#fff'
@@ -288,13 +382,14 @@ class FlappyBird {
     }
 
     makeClouds() {
-        return Array.from({ length: this.isMobile ? 5 : 7 }, (_, i) => ({
-            x:     (this.W || 400) * (i / 7) + Math.random() * 60,
+        const count = this.isMobile ? 4 : 7;
+        return Array.from({ length: count }, (_, i) => ({
+            x:     (this.W || 400) * (i / count) + Math.random() * 60,
             y:     Math.random() * (this.H || 700) * 0.45 + 30,
             w:     Math.random() * 65 + 45,
             h:     Math.random() * 20 + 12,
             speed: Math.random() * 0.25 + 0.1,
-            alpha: Math.random() * 0.1 + 0.04,
+            alpha: Math.random() * 0.08 + 0.03,
             color: Math.random() > 0.5 ? '#B947D9' : '#00D4FF'
         }));
     }
@@ -302,14 +397,14 @@ class FlappyBird {
     makeBgLayers() {
         const W = this.W || 400, H = this.H || 700;
         const groundY = H - (this.groundH || 64);
-        const count = this.isMobile ? 12 : 18;
+        const count = this.isMobile ? 8 : 18;
         return Array.from({ length: count }, (_, i) => ({
             x:     (W / count) * i + Math.random() * 10,
-            w:     Math.random() * 20 + 10,
-            h:     Math.random() * 75 + 28,
+            w:     Math.random() * 18 + 8,
+            h:     Math.random() * 70 + 25,
             color: Math.random() > 0.5
-                ? `rgba(185,71,217,${(Math.random()*0.07+0.02).toFixed(3)})`
-                : `rgba(0,212,255,${(Math.random()*0.06+0.02).toFixed(3)})`,
+                ? `rgba(185,71,217,${(Math.random()*0.06+0.02).toFixed(3)})`
+                : `rgba(0,212,255,${(Math.random()*0.05+0.02).toFixed(3)})`,
             speed: Math.random() * 0.3 + 0.12,
             baseY: groundY
         }));
@@ -337,7 +432,7 @@ class FlappyBird {
         if (!this.bird.alive) return;
         this.bird.vy       = this.bird.flapPow;
         this.bird.flapAnim = 1;
-        // ✅ Fewer particles on mobile
+        // No particles on mobile flap
         if (!this.isMobile) {
             this.spawnParticles(this.bird.x - 6, this.bird.y + 5, '#00D4FF', 3, { spread: 2, vy: 1.2 });
         }
@@ -356,6 +451,7 @@ class FlappyBird {
         this.particles  = [];
         this.floatTexts = [];
         this.rings      = [];
+        this.pipeCache  = {}; // Clear pipe cache on restart
 
         this.bird.y        = this.H * 0.42;
         this.bird.vy       = 0;
@@ -365,7 +461,6 @@ class FlappyBird {
         this.bird.flapAnim = 0;
 
         this.nextPipeX = this.W + 80;
-        this.bgCacheValid = false;
         this.onScore(0);
     }
 
@@ -398,12 +493,11 @@ class FlappyBird {
             passed: false,
             scored: false,
             theme,
-            // ✅ Pre-cache pipe canvas
             topH:   gapTop,
             botH:   this.H - this.groundH - (gapTop + this.pipeGap)
         });
 
-        this.nextPipeX = this.nextPipeX + this.pipeDist;
+        this.nextPipeX += this.pipeDist;
         this.pipeCount++;
     }
 
@@ -416,39 +510,49 @@ class FlappyBird {
         this.frame++;
         this.bgTime += dt * 0.001;
 
-        // Stars — every 2nd frame on mobile
-        if (!this.isMobile || this.frame % 2 === 0) {
-            this.stars.forEach(s => s.phase += s.speed);
+        // Stars — every 3rd frame on mobile
+        const doSlow = !this.isMobile || (this.frame % 3 === 0);
+
+        if (doSlow) {
+            for (let i = 0; i < this.stars.length; i++) {
+                this.stars[i].phase += this.stars[i].speed;
+            }
         }
 
         // Shake
         if (this.screenShake.timer > 0) {
-            const f = this.screenShake.force * (this.screenShake.timer / 14) * (this.isMobile ? 0.55 : 1);
+            const f = this.screenShake.force * (this.screenShake.timer / 14) * (this.isMobile ? 0.4 : 1);
             this.screenShake.x = (Math.random()-0.5)*f;
             this.screenShake.y = (Math.random()-0.5)*f*0.35;
             this.screenShake.timer--;
-        } else { this.screenShake.x = 0; this.screenShake.y = 0; }
+        } else { 
+            this.screenShake.x = 0; 
+            this.screenShake.y = 0; 
+        }
 
-        if (this.flashAlpha > 0) this.flashAlpha = Math.max(0, this.flashAlpha - 0.025);
+        if (this.flashAlpha > 0) this.flashAlpha = Math.max(0, this.flashAlpha - 0.03);
 
-        // Rings
+        // Rings — simplified
         for (let i = this.rings.length-1; i >= 0; i--) {
             const rg = this.rings[i];
-            rg.r      += this.isMobile ? 3.5 : 3;
-            rg.opacity -= 0.05;
+            rg.r      += 3.5;
+            rg.opacity -= 0.06;
             if (rg.opacity <= 0) this.rings.splice(i, 1);
         }
 
-        // Clouds — every 2nd frame on mobile
-        if (!this.isMobile || this.frame % 2 === 0) {
-            this.clouds.forEach(c => {
-                c.x -= c.speed * (dt/16.67);
+        // Clouds — every 3rd frame on mobile
+        if (doSlow) {
+            const spd = dt / 16.67;
+            for (let i = 0; i < this.clouds.length; i++) {
+                const c = this.clouds[i];
+                c.x -= c.speed * spd;
                 if (c.x + c.w < 0) c.x = this.W + c.w;
-            });
-            this.bgLayers.forEach(b => {
-                b.x -= b.speed * (dt/16.67);
+            }
+            for (let i = 0; i < this.bgLayers.length; i++) {
+                const b = this.bgLayers[i];
+                b.x -= b.speed * spd;
                 if (b.x + b.w < 0) b.x = this.W + b.w;
-            });
+            }
         }
 
         if (this.gameState === 'menu') {
@@ -462,15 +566,12 @@ class FlappyBird {
             this.deathTimer += dt;
             const groundTop = this.H - this.groundH - this.bird.r;
             if (this.bird.y < groundTop) {
-                this.bird.vy  += this.bird.gravity * (dt/16.67);
-                this.bird.y   += this.bird.vy * (dt/16.67);
-                this.bird.rotation = Math.min(Math.PI * 0.75, this.bird.rotation + 0.07);
+                this.bird.vy       += this.bird.gravity * (dt/16.67);
+                this.bird.y        += this.bird.vy * (dt/16.67);
+                this.bird.rotation  = Math.min(Math.PI * 0.75, this.bird.rotation + 0.07);
                 if (this.bird.y >= groundTop) {
                     this.bird.y  = groundTop;
                     this.bird.vy = 0;
-                    if (!this.isMobile) {
-                        this.spawnParticles(this.bird.x, this.bird.y, '#FF006E', 6, { spread: 3, vy: -2 });
-                    }
                 }
             }
             this.updateParticles();
@@ -488,9 +589,9 @@ class FlappyBird {
         this.bird.pulseT   += dt * 0.005;
         if (this.bird.flapAnim > 0) this.bird.flapAnim = Math.max(0, this.bird.flapAnim - dt/160);
 
-        // Trail — shorter on mobile
+        // Trail — very short on mobile
         this.bird.trail.unshift({ x: this.bird.x, y: this.bird.y });
-        const maxTrail = this.isMobile ? 6 : 11;
+        const maxTrail = this.isMobile ? 4 : 11;
         if (this.bird.trail.length > maxTrail) this.bird.trail.pop();
 
         // Ground scroll
@@ -538,8 +639,10 @@ class FlappyBird {
                         text: `${this.score} ★`, color: '#00FF88',
                         life: 65, maxLife: 65, vy: -0.5, scale: 0.3, opacity: 0
                     });
-                    this.screenShake.timer = this.isMobile ? 3 : 5;
-                    this.screenShake.force = this.isMobile ? 1.8 : 2.5;
+                    if (!this.isMobile) {
+                        this.screenShake.timer = 4;
+                        this.screenShake.force = 2;
+                    }
                 }
                 if (window.audioManager) audioManager.play('score');
             }
@@ -564,22 +667,22 @@ class FlappyBird {
         const b  = this.bird;
         const cr = b.r * 0.72;
 
-        if (b.y - cr < 0)                    { this.die(); return; }
+        if (b.y - cr < 0)                     { this.die(); return; }
         if (b.y + cr > this.H - this.groundH) { this.die(); return; }
 
-        for (const p of this.pipes) {
-            const pLeft  = p.x;
-            const pRight = p.x + this.pipeW;
+        for (let i = 0; i < this.pipes.length; i++) {
+            const p     = this.pipes[i];
+            const pLeft = p.x;
+            const pRight= p.x + this.pipeW;
             if (b.x + cr < pLeft || b.x - cr > pRight) continue;
-
-            if (this.circleRectCollide(b.x, b.y, cr, pLeft, 0,          pRight, p.gapTop)) { this.die(); return; }
-            if (this.circleRectCollide(b.x, b.y, cr, pLeft, p.gapBot,   pRight, this.H - this.groundH)) { this.die(); return; }
+            if (this.circleRectCollide(b.x, b.y, cr, pLeft, 0,       pRight, p.gapTop)) { this.die(); return; }
+            if (this.circleRectCollide(b.x, b.y, cr, pLeft, p.gapBot,pRight, this.H - this.groundH)) { this.die(); return; }
         }
     }
 
     circleRectCollide(cx, cy, r, x1, y1, x2, y2) {
-        const nearX = Math.max(x1, Math.min(cx, x2));
-        const nearY = Math.max(y1, Math.min(cy, y2));
+        const nearX = cx < x1 ? x1 : cx > x2 ? x2 : cx;
+        const nearY = cy < y1 ? y1 : cy > y2 ? y2 : cy;
         const dx = cx - nearX, dy = cy - nearY;
         return (dx*dx + dy*dy) < (r*r);
     }
@@ -590,10 +693,11 @@ class FlappyBird {
         this.gameState  = 'dead';
         this.deathTimer = 0;
 
-        this.spawnParticles(this.bird.x, this.bird.y, '#FF006E', this.isMobile ? 12 : 22, { spread: 6 });
-        this.flashAlpha = 0.45; this.flashColor = '#FF0033';
-        this.screenShake.timer = this.isMobile ? 10 : 18;
-        this.screenShake.force = this.isMobile ? 5  : 9;
+        this.spawnParticles(this.bird.x, this.bird.y, '#FF006E', this.isMobile ? 8 : 22, { spread: 5 });
+        this.flashAlpha = 0.4; 
+        this.flashColor = '#FF0033';
+        this.screenShake.timer = this.isMobile ? 6 : 18;
+        this.screenShake.force = this.isMobile ? 4 : 9;
 
         this.floatTexts.push({
             x: this.W/2, y: this.H/2 - 55,
@@ -608,16 +712,21 @@ class FlappyBird {
     updateParticles() {
         for (let i = this.particles.length-1; i >= 0; i--) {
             const p = this.particles[i];
-            p.x += p.vx; p.y += p.vy; p.vy += 0.1; p.vx *= 0.97;
-            p.life--; p.size *= 0.95;
-            if (p.life <= 0 || p.size < 0.3) this.particles.splice(i, 1);
+            p.x  += p.vx; 
+            p.y  += p.vy; 
+            p.vy += 0.1; 
+            p.vx *= 0.97;
+            p.life--; 
+            p.size *= 0.94;
+            if (p.life <= 0 || p.size < 0.4) this.particles.splice(i, 1);
         }
     }
 
     updateFloatTexts() {
         for (let i = this.floatTexts.length-1; i >= 0; i--) {
             const t = this.floatTexts[i];
-            t.y += t.vy; t.life--;
+            t.y   += t.vy; 
+            t.life--;
             t.opacity = t.life < 15 ? t.life/15 : (t.maxLife - t.life < 8 ? (t.maxLife - t.life)/8 : 1);
             t.scale  += (1 - t.scale) * 0.18;
             if (t.life <= 0) this.floatTexts.splice(i, 1);
@@ -633,9 +742,11 @@ class FlappyBird {
             const sp = Math.random() * spread + 1;
             this.particles.push({
                 x, y,
-                vx: Math.cos(a)*sp, vy: Math.sin(a)*sp*0.5 + baseVY,
-                color, size: Math.random()*4+1.5,
-                life: Math.floor(Math.random()*16+10)
+                vx:   Math.cos(a)*sp,
+                vy:   Math.sin(a)*sp*0.5 + baseVY,
+                color,
+                size: Math.random()*3+1.5,
+                life: Math.floor(Math.random()*14+8)
             });
         }
     }
@@ -646,16 +757,20 @@ class FlappyBird {
     draw(timestamp) {
         const ctx = this.ctx;
 
-        // ✅ Fill base
+        // Base fill
         ctx.fillStyle = '#050510';
         ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
         ctx.save();
-        if (this.screenShake.x || this.screenShake.y)
+        if (this.screenShake.x || this.screenShake.y) {
             ctx.translate(this.dS(this.screenShake.x), this.dS(this.screenShake.y));
+        }
 
         this.drawBackground(ctx);
-        if (!this.isMobile || this.frame % 2 === 0) this.drawClouds(ctx);
+        
+        // Clouds every 3rd frame on mobile
+        if (!this.isMobile || this.frame % 3 === 0) this.drawClouds(ctx);
+        
         this.drawCityBg(ctx);
         this.drawPipes(ctx);
         this.drawGround(ctx);
@@ -665,7 +780,7 @@ class FlappyBird {
             this.drawMenuBird(ctx);
             this.drawMenu(ctx);
         } else {
-            this.drawBirdTrail(ctx);
+            if (!this.isMobile) this.drawBirdTrail(ctx);
             this.drawBird(ctx);
             this.drawParticles(ctx);
             this.drawFloatTexts(ctx);
@@ -687,37 +802,34 @@ class FlappyBird {
         ctx.restore();
     }
 
-    // ✅ Simplified BG for mobile
+    // ✅ Optimized background - no recreating gradients
     drawBackground(ctx) {
-        const W = this.W, H = this.H;
-
-        // Static sky — recreate only when needed
-        if (!this.skyGrad || this._skyW !== W) {
-            this.skyGrad = ctx.createLinearGradient(0, 0, 0, this.dY(H * 0.78));
-            this.skyGrad.addColorStop(0,    '#050215');
-            this.skyGrad.addColorStop(0.45, '#090420');
-            this.skyGrad.addColorStop(1,    '#0d0e2e');
-            this._skyW = W;
+        // Rebuild gradients only if size changed
+        const sizeKey = this.W + 'x' + this.H;
+        if (this._builtFor !== sizeKey) {
+            this._buildStaticGradients();
         }
+
         ctx.fillStyle = this.skyGrad;
         ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
-        // Stars — skip every other frame on mobile
-        if (!this.isMobile || this.frame % 2 === 0) {
-            for (const s of this.stars) {
-                const alpha = 0.12 + ((Math.sin(s.phase)+1)/2)*0.5;
+        // Stars — every 3rd frame on mobile
+        if (!this.isMobile || this.frame % 3 === 0) {
+            for (let i = 0; i < this.stars.length; i++) {
+                const s     = this.stars[i];
+                const alpha = 0.15 + ((Math.sin(s.phase)+1)*0.5)*0.45;
                 ctx.globalAlpha = alpha;
                 ctx.fillStyle   = s.color;
                 ctx.beginPath();
-                ctx.arc(this.dX(s.x), this.dY(s.y), Math.max(0.4, this.dS(s.r)), 0, Math.PI*2);
+                ctx.arc(this.dX(s.x), this.dY(s.y), Math.max(0.5, this.dS(s.r)), 0, Math.PI*2);
                 ctx.fill();
             }
             ctx.globalAlpha = 1;
         }
 
-        // Moon — desktop only or every 3rd frame
+        // Moon — desktop only
         if (!this.isMobile) {
-            const mx = W*0.82, my = H*0.1, mr = 27;
+            const mx = this.W*0.82, my = this.H*0.1, mr = 27;
             const mg = ctx.createRadialGradient(
                 this.dX(mx - mr*0.3), this.dY(my - mr*0.3), this.dS(mr*0.08),
                 this.dX(mx), this.dY(my), this.dS(mr)
@@ -731,24 +843,16 @@ class FlappyBird {
             ctx.fill();
         }
 
-        // Vignette — simplified
-        if (!this.vigGrad || this._vigW !== W) {
-            this.vigGrad = ctx.createRadialGradient(
-                this.dX(W/2), this.dY(H/2), this.dS(H*0.08),
-                this.dX(W/2), this.dY(H/2), this.dS(H*0.95)
-            );
-            this.vigGrad.addColorStop(0, 'rgba(0,0,0,0)');
-            this.vigGrad.addColorStop(1, 'rgba(0,0,0,0.48)');
-            this._vigW = W;
-        }
+        // Vignette
         ctx.fillStyle = this.vigGrad;
         ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
     }
 
     drawClouds(ctx) {
-        for (const c of this.clouds) {
+        for (let i = 0; i < this.clouds.length; i++) {
+            const c = this.clouds[i];
             ctx.globalAlpha = c.alpha;
-            ctx.fillStyle   = c.color + '22';
+            ctx.fillStyle   = c.color;
             ctx.beginPath();
             ctx.ellipse(this.dX(c.x), this.dY(c.y), this.dS(c.w*0.55), this.dS(c.h*0.7), 0, 0, Math.PI*2);
             ctx.fill();
@@ -757,72 +861,62 @@ class FlappyBird {
     }
 
     drawCityBg(ctx) {
-        for (const b of this.bgLayers) {
+        for (let i = 0; i < this.bgLayers.length; i++) {
+            const b = this.bgLayers[i];
             ctx.fillStyle = b.color;
             ctx.fillRect(this.dX(b.x), this.dY(b.baseY - b.h), this.dSr(b.w), this.dSr(b.h));
         }
     }
 
     // ══════════════════════════════════════════
-    // PIPES — ✅ No shadow on mobile
+    // ✅ PIPES — uses cached canvases, no shadow on mobile
     // ══════════════════════════════════════════
     drawPipes(ctx) {
-        this.pipes.forEach(p => {
+        for (let i = 0; i < this.pipes.length; i++) {
+            const p  = this.pipes[i];
             const th = p.theme;
-            const pW = this.pipeW;
-            this.drawOnePipe(ctx, p.x, 0,       pW, p.gapTop,                          th, 'top');
-            this.drawOnePipe(ctx, p.x, p.gapBot, pW, this.H - this.groundH - p.gapBot, th, 'bot');
-        });
+            const pw = this.pipeW;
+            
+            if (p.gapTop > 2)  this._drawPipeFast(ctx, p.x, 0,       pw, p.gapTop,                          th, true);
+            if (p.botH   > 2)  this._drawPipeFast(ctx, p.x, p.gapBot,pw, this.H - this.groundH - p.gapBot, th, false);
+        }
     }
 
-    drawOnePipe(ctx, px, py, pw, ph, theme, side) {
-        if (ph <= 2) return;
-        const capH   = 20;
-        const capExt = 5;
-        const isTop  = side === 'top';
+    // ✅ Fast pipe draw using cached gradient canvases
+    _drawPipeFast(ctx, px, py, pw, ph, theme, isTop) {
+        if (ph < 2) return;
+        
+        const capH   = 18;
+        const capExt = 4;
         const capY   = isTop ? py + ph - capH : py;
 
-        // ✅ Body — no shadow on mobile
-        const bg = ctx.createLinearGradient(this.dX(px), 0, this.dX(px+pw), 0);
-        bg.addColorStop(0,    this.hexToRgba(theme.dark,  0.9));
-        bg.addColorStop(0.25, this.hexToRgba(theme.body,  0.95));
-        bg.addColorStop(0.5,  this.hexToRgba(theme.shine, 0.8));
-        bg.addColorStop(0.75, this.hexToRgba(theme.body,  0.92));
-        bg.addColorStop(1,    this.hexToRgba(theme.dark,  0.86));
+        const cached = this._buildPipeCanvas(theme, pw, isTop);
 
+        // Draw body by stretching 1px gradient canvas
+        const bx = this.dX(px), by = this.dY(py);
+        const bw = this.dSr(pw), bh = this.dSr(ph);
+        ctx.drawImage(cached.body, bx, by, bw, bh);
+
+        // Shine stripe (simple rect, fast)
+        ctx.fillStyle = 'rgba(255,255,255,0.07)';
+        ctx.fillRect(bx + (bw*0.2)|0, by, (bw*0.12)|0, bh);
+
+        // Draw cap
+        const capX = this.dX(px - capExt);
+        const capYpx = this.dY(capY);
+        const capW = this.dSr(pw + capExt*2);
+        const capHpx = this.dSr(capH);
+        ctx.drawImage(cached.cap, capX, capYpx, capW, capHpx);
+
+        // Glow outline on desktop only
         if (!this.isMobile) {
-            ctx.shadowBlur  = this.dS(8);
+            ctx.strokeStyle = this.hexToRgba(theme.glow, 0.25);
+            ctx.lineWidth   = this.dS(1.5);
+            ctx.shadowBlur  = this.dS(6);
             ctx.shadowColor = theme.glow;
+            ctx.strokeRect(bx, by, bw, bh);
+            ctx.shadowBlur  = 0;
         }
-        ctx.fillStyle = bg;
-        ctx.fillRect(this.dX(px), this.dY(py), this.dSr(pw), this.dSr(ph));
-        ctx.shadowBlur = 0;
-
-        // Shine stripe
-        ctx.fillStyle = 'rgba(255,255,255,0.08)';
-        ctx.fillRect(this.dX(px + pw*0.2), this.dY(py), this.dSr(pw*0.14), this.dSr(ph));
-
-        // Cap
-        const cg = ctx.createLinearGradient(this.dX(px-capExt), 0, this.dX(px+pw+capExt), 0);
-        cg.addColorStop(0,   this.hexToRgba(theme.dark,  0.94));
-        cg.addColorStop(0.25,this.hexToRgba(theme.body,  1));
-        cg.addColorStop(0.5, this.hexToRgba(theme.shine, 0.9));
-        cg.addColorStop(0.75,this.hexToRgba(theme.body,  1));
-        cg.addColorStop(1,   this.hexToRgba(theme.dark,  0.94));
-
-        if (!this.isMobile) {
-            ctx.shadowBlur  = this.dS(11);
-            ctx.shadowColor = theme.glow;
-        }
-        ctx.fillStyle = cg;
-        this.drawRoundRect(ctx, px-capExt, capY, pw+capExt*2, capH, 5);
-        ctx.fill();
-        ctx.shadowBlur = 0;
-
-        ctx.strokeStyle = this.hexToRgba(theme.shine, 0.5);
-        ctx.lineWidth   = this.dS(1.2);
-        this.drawRoundRect(ctx, px-capExt, capY, pw+capExt*2, capH, 5);
-        ctx.stroke();
     }
 
     // ══════════════════════════════════════════
@@ -831,37 +925,32 @@ class FlappyBird {
     drawGround(ctx) {
         const W = this.W, H = this.H, gh = this.groundH, gy = H - gh;
 
-        if (!this.groundGrad || this._groundH !== H) {
-            this.groundGrad = ctx.createLinearGradient(0, this.dY(gy), 0, this.dY(H));
-            this.groundGrad.addColorStop(0,   '#1a0935');
-            this.groundGrad.addColorStop(0.2, '#110720');
-            this.groundGrad.addColorStop(1,   '#080410');
-            this._groundH = H;
-        }
         ctx.fillStyle = this.groundGrad;
         ctx.fillRect(0, this.dY(gy), this.canvas.width, this.dSr(gh));
 
         // Top neon line
-        if (!this.isMobile) ctx.shadowBlur = this.dS(10);
-        ctx.shadowColor = '#B947D9';
         ctx.strokeStyle = 'rgba(185,71,217,0.82)';
         ctx.lineWidth   = this.dS(2);
+        if (!this.isMobile) {
+            ctx.shadowBlur  = this.dS(8);
+            ctx.shadowColor = '#B947D9';
+        }
         ctx.beginPath();
         ctx.moveTo(0, this.dY(gy));
         ctx.lineTo(this.canvas.width, this.dY(gy));
         ctx.stroke();
         ctx.shadowBlur = 0;
 
-        // Grid lines — every 2nd frame on mobile
-        if (!this.isMobile || this.frame % 2 === 0) {
-            ctx.globalAlpha = 0.14;
+        // Grid lines — every 3rd frame on mobile
+        if (!this.isMobile || this.frame % 3 === 0) {
+            ctx.globalAlpha = 0.12;
             ctx.strokeStyle = '#B947D9';
             ctx.lineWidth   = this.dS(0.6);
-            const tW = 38;
+            const tW  = 38;
             const off = this.groundX % tW;
             for (let x = -tW + off; x < W + tW; x += tW) {
                 ctx.beginPath();
-                ctx.moveTo(this.dX(x), this.dY(gy + 5));
+                ctx.moveTo(this.dX(x), this.dY(gy + 4));
                 ctx.lineTo(this.dX(x), this.dY(H));
                 ctx.stroke();
             }
@@ -870,20 +959,18 @@ class FlappyBird {
     }
 
     drawRingsFX(ctx) {
-        for (const rg of this.rings) {
+        if (this.rings.length === 0) return;
+        // No shadow on mobile rings
+        for (let i = 0; i < this.rings.length; i++) {
+            const rg = this.rings[i];
             ctx.globalAlpha = rg.opacity;
             ctx.strokeStyle = rg.color;
-            ctx.lineWidth   = this.dS(2 * rg.opacity);
-            if (!this.isMobile) {
-                ctx.shadowBlur  = this.dS(7);
-                ctx.shadowColor = rg.color;
-            }
+            ctx.lineWidth   = this.dS(1.5 * rg.opacity + 0.5);
             ctx.beginPath();
             ctx.arc(this.dX(rg.x), this.dY(rg.y), this.dS(rg.r), 0, Math.PI*2);
             ctx.stroke();
-            ctx.shadowBlur  = 0;
-            ctx.globalAlpha = 1;
         }
+        ctx.globalAlpha = 1;
     }
 
     drawBirdTrail(ctx) {
@@ -891,60 +978,59 @@ class FlappyBird {
         const len   = trail.length;
         for (let i = 0; i < len; i++) {
             const pt    = trail[i];
-            const alpha = (1 - i/len) * 0.22;
-            const r     = this.bird.r * (1 - i/len) * 0.55;
+            const alpha = (1 - i/len) * 0.2;
+            const r     = this.bird.r * (1 - i/len) * 0.5;
             if (r < 0.5 || alpha < 0.02) continue;
             ctx.globalAlpha = alpha;
             ctx.fillStyle   = '#00D4FF';
             ctx.beginPath();
-            ctx.arc(this.dX(pt.x), this.dY(pt.y), Math.max(0.4, this.dS(r)), 0, Math.PI*2);
+            ctx.arc(this.dX(pt.x), this.dY(pt.y), Math.max(0.5, this.dS(r)), 0, Math.PI*2);
             ctx.fill();
         }
         ctx.globalAlpha = 1;
     }
 
     // ══════════════════════════════════════════
-    // ✅ BIRD — uses pre-rendered canvas + wing overlay
+    // BIRD — pre-rendered + wing overlay
     // ══════════════════════════════════════════
     _drawBirdAt(ctx, cx, cy, rot, flapAnim, pulseT) {
         const r    = this.bird.r;
-        const pad  = 12;
         const size = this.birdSize;
 
         ctx.save();
         ctx.translate(this.dX(cx), this.dY(cy));
         ctx.rotate(rot);
 
-        // Outer ring — desktop only
+        // Outer glow ring — desktop only
         if (!this.isMobile) {
-            ctx.strokeStyle = 'rgba(0,212,255,0.32)';
-            ctx.lineWidth   = this.dS(2);
+            ctx.strokeStyle = 'rgba(0,212,255,0.28)';
+            ctx.lineWidth   = this.dS(1.5);
             ctx.beginPath();
-            ctx.arc(0, 0, this.dS(r + 6), 0, Math.PI*2);
+            ctx.arc(0, 0, this.dS(r + 5), 0, Math.PI*2);
             ctx.stroke();
         }
 
-        // Draw pre-rendered bird body
+        // Draw pre-rendered bird
         if (this.birdCanvas) {
             ctx.drawImage(this.birdCanvas, -size/2, -size/2, size, size);
         }
 
-        // Wing — drawn live (animated)
+        // Wing
         const dr        = r * this.dpr;
         const wingBaseY = dr * 0.22;
         const wingAng   = flapAnim > 0
             ? -Math.PI * 0.48 * flapAnim
             : Math.PI * 0.1 * Math.sin(pulseT * 2.8);
-        const wingLen   = dr * 1.02;
+        const wingLen   = dr * 1.0;
         const wingEX    = Math.cos(wingAng + Math.PI*0.18) * wingLen;
         const wingEY    = wingBaseY + Math.sin(wingAng + Math.PI*0.18) * wingLen;
 
-        ctx.strokeStyle = 'rgba(0,195,235,0.88)';
-        ctx.lineWidth   = dr * 0.23;
+        ctx.strokeStyle = 'rgba(0,195,235,0.85)';
+        ctx.lineWidth   = dr * 0.22;
         ctx.lineCap     = 'round';
         ctx.beginPath();
         ctx.moveTo(-dr*0.12, wingBaseY);
-        ctx.quadraticCurveTo(-dr*0.52, wingBaseY + dr*0.26, wingEX, wingEY);
+        ctx.quadraticCurveTo(-dr*0.5, wingBaseY + dr*0.24, wingEX, wingEY);
         ctx.stroke();
         ctx.lineCap = 'butt';
 
@@ -968,31 +1054,30 @@ class FlappyBird {
     drawMenu(ctx) {
         const W = this.W, H = this.H, t = this.bgTime;
 
-        // Title card
         ctx.fillStyle = 'rgba(4,1,16,0.86)';
         this.drawRoundRect(ctx, W/2-155, H*0.12, 310, 105, 16);
         ctx.fill();
-        ctx.strokeStyle = 'rgba(0,212,255,0.22)';
-        ctx.lineWidth   = this.dS(1.2);
+        ctx.strokeStyle = 'rgba(0,212,255,0.2)';
+        ctx.lineWidth   = this.dS(1);
         this.drawRoundRect(ctx, W/2-155, H*0.12, 310, 105, 16);
         ctx.stroke();
 
         this.drawText(ctx, 'FLAPPY', W/2, H*0.14 + 26, {
             size: 28, weight: '900', color: '#00D4FF',
             align: 'center', baseline: 'middle',
-            glow: true, glowColor: '#00D4FF', glowBlur: 12,
+            glow: !this.isMobile, glowColor: '#00D4FF', glowBlur: 10,
             stroke: true, strokeColor: 'rgba(0,0,0,0.88)', strokeWidth: 4,
             family: this.FONT_TITLE
         });
         this.drawText(ctx, 'NEON BIRD', W/2, H*0.14 + 60, {
             size: 17, weight: '900', color: '#B947D9',
             align: 'center', baseline: 'middle',
-            glow: true, glowColor: '#B947D9', glowBlur: 8,
+            glow: !this.isMobile, glowColor: '#B947D9', glowBlur: 7,
             stroke: true, strokeColor: 'rgba(0,0,0,0.88)', strokeWidth: 3,
             family: this.FONT_TITLE
         });
         this.drawText(ctx, 'CINEMATIC EDITION', W/2, H*0.14 + 84, {
-            size: 8, weight: '600', color: 'rgba(180,180,220,0.42)',
+            size: 8, weight: '600', color: 'rgba(180,180,220,0.4)',
             align: 'center', baseline: 'middle', family: this.FONT_UI
         });
 
@@ -1000,7 +1085,7 @@ class FlappyBird {
             this.drawText(ctx, `BEST: ${this.bestScore}`, W/2, H*0.60, {
                 size: 13, weight: '800', color: '#FFD700',
                 align: 'center', baseline: 'middle',
-                glow: true, glowColor: '#FFD700', glowBlur: 6,
+                glow: !this.isMobile, glowColor: '#FFD700', glowBlur: 5,
                 family: this.FONT_TITLE
             });
         }
@@ -1009,42 +1094,45 @@ class FlappyBird {
         this.drawText(ctx, '▶  TAP  TO  FLY', W/2, H*0.70, {
             size: 13, weight: '800', color: '#00FF88',
             align: 'center', baseline: 'middle',
-            glow: true, glowColor: '#00FF88', glowBlur: 7,
+            glow: !this.isMobile, glowColor: '#00FF88', glowBlur: 6,
             family: this.FONT_TITLE, opacity: pulse
         });
         this.drawText(ctx, 'SPACE / CLICK / TAP', W/2, H*0.76, {
-            size: 9, color: 'rgba(180,180,220,0.35)',
+            size: 9, color: 'rgba(180,180,220,0.3)',
             align: 'center', baseline: 'middle', family: this.FONT_UI
         });
 
         const tips = ['Tap to flap wings', 'Fly through the gaps', "Don't touch the pipes!"];
-        tips.forEach((tip, i) => {
-            this.drawText(ctx, tip, W/2, H*0.84 + i*17, {
-                size: 9, color: 'rgba(155,155,200,0.38)',
+        for (let i = 0; i < tips.length; i++) {
+            this.drawText(ctx, tips[i], W/2, H*0.84 + i*17, {
+                size: 9, color: 'rgba(155,155,200,0.35)',
                 align: 'center', baseline: 'middle', family: this.FONT_UI
             });
-        });
+        }
     }
 
     drawParticles(ctx) {
-        for (const p of this.particles) {
+        if (this.particles.length === 0) return;
+        for (let i = 0; i < this.particles.length; i++) {
+            const p = this.particles[i];
             ctx.globalAlpha = Math.min(1, p.life / 10);
             ctx.fillStyle   = p.color;
             ctx.beginPath();
-            ctx.arc(this.dX(p.x), this.dY(p.y), Math.max(0.4, this.dS(p.size)), 0, Math.PI*2);
+            ctx.arc(this.dX(p.x), this.dY(p.y), Math.max(0.5, this.dS(p.size)), 0, Math.PI*2);
             ctx.fill();
         }
         ctx.globalAlpha = 1;
     }
 
     drawFloatTexts(ctx) {
-        for (const t of this.floatTexts) {
+        for (let i = 0; i < this.floatTexts.length; i++) {
+            const t  = this.floatTexts[i];
             const sc = Math.min(1, t.scale);
             this.drawText(ctx, t.text, t.x, t.y, {
                 size: 12 * sc, weight: '900', color: t.color,
                 align: 'center', baseline: 'middle', opacity: t.opacity,
-                stroke: true, strokeColor: 'rgba(0,0,0,0.65)', strokeWidth: 2.5,
-                glow: !this.isMobile, glowColor: t.color, glowBlur: 7,
+                stroke: true, strokeColor: 'rgba(0,0,0,0.65)', strokeWidth: 2,
+                glow: !this.isMobile, glowColor: t.color, glowBlur: 6,
                 family: this.FONT_TITLE
             });
         }
@@ -1059,19 +1147,19 @@ class FlappyBird {
         this.drawText(ctx, String(this.score), W/2, 50, {
             size: 32, weight: '900', color: '#fff',
             align: 'center', baseline: 'middle',
-            glow: !this.isMobile, glowColor: '#00D4FF', glowBlur: 9,
+            glow: !this.isMobile, glowColor: '#00D4FF', glowBlur: 8,
             stroke: true, strokeColor: 'rgba(0,0,0,0.65)', strokeWidth: 4,
             family: this.FONT_TITLE
         });
 
-        this.drawText(ctx, `BEST: ${this.bestScore}`, W - 10, 20, {
+        this.drawText(ctx, `BEST:${this.bestScore}`, W - 8, 18, {
             size: 10, weight: '700', color: 'rgba(255,215,0,0.5)',
             align: 'right', baseline: 'middle', family: this.FONT_UI
         });
 
-        const sc = Math.min(1, (this.pipeSpeed - 2.0) / 3.2);
+        const sc       = Math.min(1, (this.pipeSpeed - 2.0) / 3.2);
         const speedCol = sc < 0.4 ? '#00FF88' : sc < 0.75 ? '#FFD700' : '#FF006E';
-        this.drawText(ctx, `${this.pipeSpeed.toFixed(1)}x`, 10, 20, {
+        this.drawText(ctx, `${this.pipeSpeed.toFixed(1)}x`, 8, 18, {
             size: 10, weight: '700', color: speedCol,
             baseline: 'middle', family: this.FONT_UI
         });
@@ -1085,7 +1173,7 @@ class FlappyBird {
         const elapsed = this.deathTimer;
         const alpha   = Math.min(1, elapsed / 400);
 
-        ctx.fillStyle = `rgba(0,0,0,${(alpha * 0.68).toFixed(3)})`;
+        ctx.fillStyle = `rgba(0,0,0,${(alpha * 0.65).toFixed(2)})`;
         ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
         if (alpha < 0.25) return;
@@ -1096,7 +1184,7 @@ class FlappyBird {
         ctx.fillStyle   = 'rgba(3,1,16,0.94)';
         this.drawRoundRect(ctx, cx-155, cy-112, 310, 224, 20);
         ctx.fill();
-        ctx.strokeStyle = 'rgba(255,0,60,0.3)';
+        ctx.strokeStyle = 'rgba(255,0,60,0.28)';
         ctx.lineWidth   = this.dS(1.5);
         this.drawRoundRect(ctx, cx-155, cy-112, 310, 224, 20);
         ctx.stroke();
@@ -1105,23 +1193,20 @@ class FlappyBird {
         this.drawText(ctx, 'GAME OVER', cx, cy - 74, {
             size: 23, weight: '900', color: '#FF006E',
             align: 'center', baseline: 'middle',
-            glow: !this.isMobile, glowColor: '#FF006E', glowBlur: 10,
+            glow: !this.isMobile, glowColor: '#FF006E', glowBlur: 9,
             family: this.FONT_TITLE, opacity: cA
         });
-
         this.drawText(ctx, 'SCORE', cx, cy - 33, {
             size: 9, weight: '700', color: 'rgba(180,180,220,0.5)',
             align: 'center', baseline: 'middle', family: this.FONT_UI, opacity: cA
         });
-
         this.drawText(ctx, String(this.score), cx, cy + 5, {
             size: 38, weight: '900', color: '#fff',
             align: 'center', baseline: 'middle',
-            glow: !this.isMobile, glowColor: '#00D4FF', glowBlur: 9,
+            glow: !this.isMobile, glowColor: '#00D4FF', glowBlur: 8,
             stroke: true, strokeColor: 'rgba(0,0,0,0.6)', strokeWidth: 5,
             family: this.FONT_TITLE, opacity: cA
         });
-
         this.drawText(ctx, `BEST:  ${this.bestScore}`, cx, cy + 45, {
             size: 13, weight: '800', color: '#FFD700',
             align: 'center', baseline: 'middle',
@@ -1133,7 +1218,7 @@ class FlappyBird {
             this.drawText(ctx, '★  NEW BEST!  ★', cx, cy + 72, {
                 size: 11, weight: '900', color: '#00FF88',
                 align: 'center', baseline: 'middle',
-                glow: !this.isMobile, glowColor: '#00FF88', glowBlur: 7,
+                glow: !this.isMobile, glowColor: '#00FF88', glowBlur: 6,
                 family: this.FONT_TITLE, opacity: cA
             });
         }
@@ -1144,13 +1229,13 @@ class FlappyBird {
                 this.drawText(ctx, '▶  TAP TO RESTART', cx, cy + 100, {
                     size: 12, weight: '800', color: '#00FF88',
                     align: 'center', baseline: 'middle',
-                    glow: !this.isMobile, glowColor: '#00FF88', glowBlur: 7,
+                    glow: !this.isMobile, glowColor: '#00FF88', glowBlur: 6,
                     family: this.FONT_TITLE, opacity: cA * 0.9
                 });
             }
         } else {
             this.drawText(ctx, 'Wait...', cx, cy + 100, {
-                size: 9, color: 'rgba(160,160,200,0.25)',
+                size: 9, color: 'rgba(160,160,200,0.22)',
                 align: 'center', baseline: 'middle',
                 family: this.FONT_UI, opacity: cA
             });
@@ -1158,30 +1243,38 @@ class FlappyBird {
     }
 
     // ══════════════════════════════════════════
-    // LOOP — ✅ Adaptive frame skip
+    // LOOP — Smart frame skip for mobile
     // ══════════════════════════════════════════
     loop(timestamp) {
         if (this.destroyed) return;
         const dt = Math.min(timestamp - (this.lastTime || timestamp), 50);
         this.lastTime = timestamp;
 
-        // ✅ Adaptive: skip draw on weak mobile
         if (this.isMobile) {
+            // Track FPS
             this.fpsHistory.push(dt);
-            if (this.fpsHistory.length > 20) this.fpsHistory.shift();
-            if (this.fpsHistory.length === 20) {
-                const avg = this.fpsHistory.reduce((a,b)=>a+b,0)/20;
-                this.adaptiveMode = avg > 22;
+            if (this.fpsHistory.length > 30) this.fpsHistory.shift();
+            if (this.fpsHistory.length === 30) {
+                const avg = this.fpsHistory.reduce((a,b)=>a+b,0)/30;
+                // If avg frame time > 25ms (~<40fps), enable adaptive mode
+                this.adaptiveMode = avg > 25;
             }
-            if (this.adaptiveMode && this.frame % 2 === 1) {
-                if (!this.paused) this.update(dt);
+
+            // Adaptive: always update physics, skip every other DRAW
+            if (!this.paused) this.update(dt);
+            
+            if (this.adaptiveMode && (this.frame % 2 === 1)) {
+                // Skip draw this frame
                 this.animId = requestAnimationFrame(t => this.loop(t));
                 return;
             }
+            
+            this.draw(timestamp);
+        } else {
+            if (!this.paused) this.update(dt);
+            this.draw(timestamp);
         }
 
-        if (!this.paused) this.update(dt);
-        this.draw(timestamp);
         this.animId = requestAnimationFrame(t => this.loop(t));
     }
 
@@ -1192,21 +1285,17 @@ class FlappyBird {
     }
 
     resize() {
-        this.dpr = this.isMobile
-            ? Math.min(window.devicePixelRatio||1, 1.5)
-            : Math.min(window.devicePixelRatio||1, 2);
+        this.dpr = this.isMobile ? 1 : Math.min(window.devicePixelRatio||1, 2);
         this.setupHDCanvas();
         this.W = this.canvas.width  / this.dpr;
         this.H = this.canvas.height / this.dpr;
         this.bird.x  = this.W * 0.25;
-        this.groundH = this.isMobile ? 60 : 68;
-        this.stars    = this.makeStars(this.isMobile ? 30 : 70);
+        this.groundH = this.isMobile ? 55 : 68;
+        this.stars    = this.makeStars(this.isMobile ? 20 : 70);
         this.clouds   = this.makeClouds();
         this.bgLayers = this.makeBgLayers();
-        // Reset cached gradients
-        this.skyGrad  = null;
-        this.vigGrad  = null;
-        this.groundGrad = null;
+        this.pipeCache = {};
+        this._buildStaticGradients();
         this.prebuildBird();
     }
 
@@ -1216,5 +1305,9 @@ class FlappyBird {
         this.canvas.removeEventListener('click',      this.boundClick);
         this.canvas.removeEventListener('touchstart', this.boundTouch);
         document.removeEventListener('keydown',       this.boundKey);
+        // Clear caches
+        this.pipeCache  = {};
+        this.colorCache = {};
+        this.birdCanvas = null;
     }
 }
