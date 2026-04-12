@@ -1,1572 +1,1078 @@
 /* ============================================================
-   COLOR BUMP v2.0 - ULTRA HD MOBILE EDITION
-   Crystal Clear Text | DPR Scaled | Zero Blur
-   Premium Feel | Real Game Mechanics | Mobile-First
+   COLOR BUMP v3.0 — ULTRA HD ZERO-BLUR EDITION
+   Crystal Clear | DPR Scaled | No shadowBlur on text
+   Fullscreen Button | Mobile-First | Premium Quality
    ============================================================ */
 
 'use strict';
 
 class ColorBump {
-    constructor(canvas, onScore, options = {}) {
-        this.canvas  = canvas;
-        this.onScore = onScore;
-        this.options = options;
+    constructor(canvas, onScore) {
+        this.canvas    = canvas;
+        this.onScore   = onScore;
         this.destroyed = false;
         this.paused    = false;
+        this.isPaused  = false;
         this.gameOver  = false;
 
-        // ============================================
-        // HD RESOLUTION FIX - CRITICAL
-        // ============================================
-        this.dpr = Math.min(window.devicePixelRatio || 1, 3);
-        this.setupHDCanvas();
+        // HD setup
+        this.dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+        this._setupHD();
+        this.ctx = this.canvas.getContext('2d', { alpha: false });
 
-        this.ctx = this.canvas.getContext('2d', {
-            alpha: false,
-            desynchronized: true
-        });
-
-        // Logical dimensions
         this.W = this.canvas.width  / this.dpr;
         this.H = this.canvas.height / this.dpr;
 
-        // ============================================
-        // MOBILE DETECTION
-        // ============================================
-        this.isMobile = /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
-            || ('ontouchstart' in window)
-            || (window.innerWidth < 768);
-        this.isSmallScreen = this.W < 380;
+        this.isMobile = ('ontouchstart' in window) || window.innerWidth < 768;
 
-        // ============================================
-        // FONT SYSTEM
-        // ============================================
-        this.FONT_TITLE = '"Orbitron", "Rajdhani", "Segoe UI", monospace';
-        this.FONT_UI    = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-        this.FONT_MONO  = '"Rajdhani", "Segoe UI", Roboto, sans-serif';
-        this.loadFonts();
+        // Fonts
+        this.FT = '"Orbitron", "Segoe UI", monospace';
+        this.FU = '"Rajdhani", -apple-system, sans-serif';
 
-        // ============================================
-        // GAME STATES
-        // ============================================
-        this.STATE   = { WAITING: 0, PLAYING: 1, DEAD: 2 };
-        this.state   = this.STATE.WAITING;
+        // States
+        this.STATE = { WAITING: 0, PLAYING: 1, DEAD: 2 };
+        this.state = this.STATE.WAITING;
 
-        // ============================================
-        // SCORE
-        // ============================================
+        // Score
         this.score     = 0;
-        this.bestScore = parseInt(localStorage.getItem('colorbump_best_v2') || '0');
+        this.bestScore = parseInt(localStorage.getItem('cb_best') || '0');
 
-        // ============================================
-        // COLOR PALETTE
-        // ============================================
+        // Colors
         this.COLORS = [
-            { fill: '#FF006E', glow: '#ff4499', light: '#FF66AA', dark: '#CC0055', name: 'Pink'   },
-            { fill: '#00D4FF', glow: '#66eaff', light: '#66EAFF', dark: '#0099CC', name: 'Cyan'   },
-            { fill: '#00FF88', glow: '#66ffb8', light: '#66FFB8', dark: '#00CC66', name: 'Green'  },
-            { fill: '#FFD700', glow: '#ffe866', light: '#FFE866', dark: '#CCA800', name: 'Gold'   },
-            { fill: '#B94FE3', glow: '#d488f0', light: '#D488F0', dark: '#8833AA', name: 'Purple' },
-            { fill: '#FF8C00', glow: '#ffb04d', light: '#FFB04D', dark: '#CC6600', name: 'Orange' }
+            { fill:'#FF006E', light:'#FF66AA', dark:'#CC0055', name:'Pink'   },
+            { fill:'#00D4FF', light:'#66EAFF', dark:'#0099CC', name:'Cyan'   },
+            { fill:'#00FF88', light:'#66FFB8', dark:'#00CC66', name:'Green'  },
+            { fill:'#FFD700', light:'#FFE866', dark:'#CCA800', name:'Gold'   },
+            { fill:'#B94FE3', light:'#D488F0', dark:'#8833AA', name:'Purple' },
+            { fill:'#FF8C00', light:'#FFB04D', dark:'#CC6600', name:'Orange' }
         ];
 
-        // ============================================
-        // PLAYER
-        // ============================================
-        this.playerColorIdx = 0;
+        // Player
+        this.pci = 0; // player color index
         this.player = {
-            x: this.W / 2, y: this.H / 2,
-            r: this.isMobile ? 20 : 24,
-            targetX: this.W / 2, targetY: this.H / 2,
-            vx: 0, vy: 0,
+            x: this.W/2, y: this.H*0.65,
+            tx: this.W/2, ty: this.H*0.65,
+            vx:0, vy:0,
+            r: this.isMobile ? 20 : 22,
             trail: [],
             scale: 1,
-            pulseAnim: 0,
-            invincible: 0,
-            colorChangeAnim: 0
+            pulse: 0,
+            inv: 0,
+            ccAnim: 0
         };
 
-        // ============================================
-        // BALLS
-        // ============================================
-        this.balls            = [];
-        this.ballSpawnTimer   = 0;
-        this.ballSpawnInterval = 2000;
+        // Balls
+        this.balls = [];
+        this.spawnTimer    = 0;
+        this.spawnInterval = 2200;
 
-        // ============================================
-        // LEVEL
-        // ============================================
-        this.level        = 1;
-        this.ballsPopped  = 0;
-        this.ballsPerLevel = 10;
-        this.combo        = 0;
-        this.comboTimer   = 0;
-        this.maxCombo     = 0;
+        // Level / combo
+        this.level      = 1;
+        this.popped     = 0;
+        this.popPerLvl  = 10;
+        this.combo      = 0;
+        this.comboTimer = 0;
+        this.maxCombo   = 0;
 
-        // ============================================
-        // POWER-UPS
-        // ============================================
-        this.activeEffects = {
-            rainbow: { active: false, timer: 0, duration: 5000 },
-            magnet:  { active: false, timer: 0, duration: 4000 },
-            shield:  { active: false, timer: 0, duration: 6000 },
-            slow:    { active: false, timer: 0, duration: 5000 }
+        // Effects
+        this.effects = {
+            rainbow: { on:false, t:0, dur:5000 },
+            magnet:  { on:false, t:0, dur:4000 },
+            shield:  { on:false, t:0, dur:6000 },
+            slow:    { on:false, t:0, dur:5000 }
         };
 
-        // ============================================
-        // VISUAL FX
-        // ============================================
-        this.particles   = [];
-        this.explosions  = [];
-        this.scorePopups = [];
-        this.floatingTexts = [];
-        this.ripples     = [];
-        this.popRings    = [];
+        // Particles
+        this.parts   = [];
+        this.pops    = []; // score text popups
+        this.rings   = []; // expanding rings
+        this.exps    = []; // explosions
+        this.banners = []; // level up text
 
-        // Max pool for mobile
-        this.MAX_PARTICLES = this.isMobile ? 60 : 120;
-        this.MAX_POP_RINGS = 12;
+        this.MAX_PARTS = this.isMobile ? 50 : 100;
 
-        // Screen effects
-        this.shakeX = 0; this.shakeY = 0;
-        this.shakeTimer = 0; this.shakeForce = 0;
-        this.flashAlpha = 0; this.flashColor = '#fff';
-        this.deathOverlayAlpha = 0;
+        // Screen FX
+        this.shakeX=0; this.shakeY=0; this.shakeT=0; this.shakeF=0;
+        this.flashA=0; this.flashC='#fff';
+        this.deathA=0;
 
         // Timing
-        this.time  = 0;
-        this.frame = 0;
-        this.bgTime = 0;
+        this.time=0; this.bgT=0;
 
-        // ============================================
-        // BACKGROUND
-        // ============================================
-        this.stars   = this.makeStars(this.isMobile ? 40 : 65);
-        this.hexGrid = this.generateHexGrid();
+        // BG
+        this.stars   = this._mkStars(this.isMobile ? 35 : 55);
+        this.hexGrid = this._mkHex();
 
-        // ============================================
-        // INPUT
-        // ============================================
-        this.mousePos = { x: this.W / 2, y: this.H / 2 };
+        // Fullscreen btn
+        this.fsRect = { x:0, y:0, w:46, h:46 };
 
-        this.spawnInitialBalls();
-        this.bindEvents();
+        // Input
+        this.mouse = { x:this.W/2, y:this.H/2 };
+
+        this._spawnInit();
+        this._bind();
 
         this.lastTime = 0;
-        this.animId   = requestAnimationFrame(t => this.loop(t));
+        this.animId = requestAnimationFrame(t => this._loop(t));
     }
 
-    // ============================================================
-    // HD CANVAS SETUP
-    // ============================================================
-    setupHDCanvas() {
-        const rect = this.canvas.getBoundingClientRect();
-        const w = rect.width  || this.canvas.clientWidth  || 400;
-        const h = rect.height || this.canvas.clientHeight || 700;
+    // ─── HD Canvas ───
+    _setupHD() {
+        const r = this.canvas.getBoundingClientRect();
+        const w = r.width  || this.canvas.clientWidth  || 400;
+        const h = r.height || this.canvas.clientHeight || 700;
         this.canvas.width  = Math.round(w * this.dpr);
         this.canvas.height = Math.round(h * this.dpr);
         this.canvas.style.width  = w + 'px';
         this.canvas.style.height = h + 'px';
     }
 
-    // ============================================================
-    // FONT LOADING
-    // ============================================================
-    loadFonts() {
-        if (document.fonts) {
-            document.fonts.ready.then(() => {
-                if (document.fonts.check('12px Orbitron')) this.FONT_TITLE = 'Orbitron, monospace';
-                if (document.fonts.check('12px Rajdhani')) this.FONT_MONO  = 'Rajdhani, sans-serif';
-            });
-        }
-    }
+    // ─── Scaled helpers ───
+    S(v) { return v * this.dpr; }
+    X(v) { return Math.round(v * this.dpr); }
 
-    // ============================================================
-    // DPR HELPERS
-    // ============================================================
-    dX(x)  { return Math.round(x * this.dpr); }
-    dY(y)  { return Math.round(y * this.dpr); }
-    dS(s)  { return s * this.dpr; }
-    dSr(s) { return Math.round(s * this.dpr); }
-
-    // ============================================================
-    // CRISP TEXT — Two-pass: glow then sharp
-    // ============================================================
-    drawText(ctx, text, x, y, opts = {}) {
+    // ─── Crisp text — ZERO shadowBlur ───
+    _txt(text, x, y, opts={}) {
+        const ctx = this.ctx;
         const {
-            size        = 14,
-            weight      = 'bold',
-            color       = '#FFFFFF',
-            align       = 'left',
-            baseline    = 'alphabetic',
-            family      = null,
-            glow        = false,
-            glowColor   = null,
-            glowBlur    = 0,
-            stroke      = false,
-            strokeColor = 'rgba(0,0,0,0.7)',
-            strokeWidth = 3,
-            opacity     = 1,
-            maxWidth    = 0
+            sz=14, wt='bold', col='#fff', al='left', bl='alphabetic',
+            ff=null, op=1, stroke=false, sc='rgba(0,0,0,0.6)', sw=3,
+            maxW=0
         } = opts;
 
         ctx.save();
-        ctx.globalAlpha  = opacity;
-        ctx.textAlign    = align;
-        ctx.textBaseline = baseline;
-        ctx.font = `${weight} ${Math.round(size * this.dpr)}px ${family || (size > 16 ? this.FONT_TITLE : this.FONT_UI)}`;
+        ctx.globalAlpha  = op;
+        ctx.textAlign    = al;
+        ctx.textBaseline = bl;
+        ctx.font = `${wt} ${Math.round(sz * this.dpr)}px ${ff || (sz > 15 ? this.FT : this.FU)}`;
 
-        const px = this.dX(x);
-        const py = this.dY(y);
-        const mw = maxWidth ? this.dS(maxWidth) : undefined;
+        const px = this.X(x), py = this.X(y);
+        const mw = maxW ? this.S(maxW) : undefined;
 
+        // Stroke outline for readability
         if (stroke) {
-            ctx.strokeStyle = strokeColor;
-            ctx.lineWidth   = strokeWidth * this.dpr;
+            ctx.strokeStyle = sc;
+            ctx.lineWidth   = sw * this.dpr;
             ctx.lineJoin    = 'round';
             ctx.miterLimit  = 2;
             ctx.strokeText(text, px, py, mw);
         }
 
-        // Glow pass (blurred, low opacity)
-        if (glow && glowBlur > 0) {
-            ctx.shadowBlur  = glowBlur * this.dpr;
-            ctx.shadowColor = glowColor || color;
-            ctx.fillStyle   = glowColor || color;
-            ctx.globalAlpha = opacity * 0.45;
-            ctx.fillText(text, px, py, mw);
-        }
-
-        // Sharp pass — zero blur
+        // Fill — sharp, no shadow
         ctx.shadowBlur  = 0;
-        ctx.shadowColor = 'transparent';
-        ctx.globalAlpha = opacity;
-        ctx.fillStyle   = color;
+        ctx.fillStyle   = col;
         ctx.fillText(text, px, py, mw);
-
         ctx.restore();
     }
 
-    // ============================================================
-    // SHAPE HELPERS
-    // ============================================================
-    fillRect(ctx, x, y, w, h) {
-        ctx.fillRect(this.dX(x), this.dY(y), this.dSr(w), this.dSr(h));
+    // ─── Shape helpers ───
+    _circle(x, y, r) {
+        this.ctx.beginPath();
+        this.ctx.arc(this.X(x), this.X(y), this.S(r), 0, Math.PI*2);
     }
 
-    drawCircle(ctx, x, y, r) {
+    _rrect(x, y, w, h, r) {
+        const ctx = this.ctx;
+        const dx=this.X(x), dy=this.X(y), dw=this.X(w), dh=this.X(h), dr=this.S(r);
         ctx.beginPath();
-        ctx.arc(this.dX(x), this.dY(y), this.dS(r), 0, Math.PI * 2);
-    }
-
-    drawRoundRect(ctx, x, y, w, h, r) {
-        const dx = this.dX(x), dy = this.dY(y);
-        const dw = this.dSr(w), dh = this.dSr(h);
-        const dr = this.dS(r);
-        ctx.beginPath();
-        ctx.moveTo(dx + dr, dy);
-        ctx.arcTo(dx + dw, dy,      dx + dw, dy + dh, dr);
-        ctx.arcTo(dx + dw, dy + dh, dx,      dy + dh, dr);
-        ctx.arcTo(dx,      dy + dh, dx,      dy,      dr);
-        ctx.arcTo(dx,      dy,      dx + dw, dy,      dr);
+        ctx.moveTo(dx+dr, dy);
+        ctx.arcTo(dx+dw,dy,   dx+dw,dy+dh, dr);
+        ctx.arcTo(dx+dw,dy+dh, dx,  dy+dh, dr);
+        ctx.arcTo(dx,   dy+dh, dx,  dy,    dr);
+        ctx.arcTo(dx,   dy,    dx+dw,dy,   dr);
         ctx.closePath();
     }
 
-    drawLine(ctx, x1, y1, x2, y2) {
-        ctx.beginPath();
-        ctx.moveTo(this.dX(x1), this.dY(y1));
-        ctx.lineTo(this.dX(x2), this.dY(y2));
-    }
-
-    // ============================================================
-    // BACKGROUND GENERATION
-    // ============================================================
-    generateHexGrid() {
-        const hexes = [];
-        const size  = 40;
-        const cols  = Math.ceil(this.W / (size * 1.5)) + 2;
-        const rows  = Math.ceil(this.H / (size * Math.sqrt(3))) + 2;
-        for (let r = 0; r < rows; r++) {
-            for (let c = 0; c < cols; c++) {
-                const x = c * size * 1.5 - size;
-                const y = r * size * Math.sqrt(3) + (c % 2 === 1 ? size * Math.sqrt(3) / 2 : 0) - size;
-                hexes.push({ x, y, size: size * 0.92, alpha: Math.random() * 0.035 + 0.008 });
-            }
-        }
-        return hexes;
-    }
-
-    makeStars(count) {
-        return Array.from({ length: count }, () => ({
-            x:     Math.random() * this.W,
-            y:     Math.random() * this.H,
-            size:  Math.random() * 1.5 + 0.3,
-            phase: Math.random() * 6.28,
-            speed: Math.random() * 0.015 + 0.005,
-            color: Math.random() > 0.8 ? '#B94FE3' : Math.random() > 0.6 ? '#00D4FF' : '#ffffff'
+    // ─── BG generators ───
+    _mkStars(n) {
+        return Array.from({length:n}, () => ({
+            x: Math.random()*this.W, y: Math.random()*this.H,
+            r: Math.random()*1.3+0.3, ph: Math.random()*6.28,
+            sp: Math.random()*0.014+0.004,
+            col: Math.random()>0.8 ? '#B94FE3' : Math.random()>0.6 ? '#00D4FF' : '#dde8ff'
         }));
     }
 
-    // ============================================================
-    // BALL SPAWN
-    // ============================================================
-    spawnInitialBalls() {
-        for (let i = 0; i < 12; i++) this.spawnBall();
-    }
-
-    spawnBall() {
-        const margin   = 50;
-        const colorIdx = Math.floor(Math.random() * this.COLORS.length);
-        const r        = Math.random() * 10 + (this.isMobile ? 12 : 14);
-        let x, y;
-        do {
-            x = margin + Math.random() * (this.W - margin * 2);
-            y = margin + Math.random() * (this.H - margin * 2);
-        } while (Math.sqrt((x - this.player.x)**2 + (y - this.player.y)**2) < 100);
-
-        const speed = (0.8 + this.level * 0.15) * (Math.random() * 0.5 + 0.75);
-        const angle = Math.random() * Math.PI * 2;
-        const type  = Math.random() < 0.1 ? 'bomb'
-                    : Math.random() < 0.08 ? 'powerup' : 'normal';
-
-        const puTypes = ['rainbow', 'magnet', 'shield', 'slow'];
-        this.balls.push({
-            x, y, r,
-            colorIdx,
-            color:       this.COLORS[colorIdx].fill,
-            glow:        this.COLORS[colorIdx].glow,
-            light:       this.COLORS[colorIdx].light,
-            dark:        this.COLORS[colorIdx].dark,
-            vx:          Math.cos(angle) * speed,
-            vy:          Math.sin(angle) * speed,
-            pulse:       Math.random() * Math.PI * 2,
-            scale:       0,
-            type,
-            powerupType: type === 'powerup' ? puTypes[Math.floor(Math.random() * puTypes.length)] : null,
-            wobble:      0,
-            wobbleSpeed: Math.random() * 0.08 + 0.04
-        });
-    }
-
-    // ============================================================
-    // EVENTS
-    // ============================================================
-    bindEvents() {
-        this.boundMouseMove = (e) => {
-            const rect = this.canvas.getBoundingClientRect();
-            this.mousePos.x = (e.clientX - rect.left) * (this.W / rect.width);
-            this.mousePos.y = (e.clientY - rect.top)  * (this.H / rect.height);
-            if (this.state === this.STATE.PLAYING) {
-                this.player.targetX = this.mousePos.x;
-                this.player.targetY = this.mousePos.y;
-            }
-        };
-        this.boundClick = (e) => {
-            if (this.state === this.STATE.WAITING)                                   { this.state = this.STATE.PLAYING; return; }
-            if (this.state === this.STATE.DEAD && this.deathOverlayAlpha > 0.8)     { this.restartGame(); return; }
-            this.changeColor();
-        };
-        this.boundTouchStart = (e) => {
-            e.preventDefault();
-            const rect = this.canvas.getBoundingClientRect();
-            const tx = (e.touches[0].clientX - rect.left) * (this.W / rect.width);
-            const ty = (e.touches[0].clientY - rect.top)  * (this.H / rect.height);
-            if (this.state === this.STATE.WAITING)                               { this.state = this.STATE.PLAYING; return; }
-            if (this.state === this.STATE.DEAD && this.deathOverlayAlpha > 0.8) { this.restartGame(); return; }
-            this.player.targetX = tx;
-            this.player.targetY = ty;
-        };
-        this.boundTouchMove = (e) => {
-            e.preventDefault();
-            const rect = this.canvas.getBoundingClientRect();
-            this.player.targetX = (e.touches[0].clientX - rect.left) * (this.W / rect.width);
-            this.player.targetY = (e.touches[0].clientY - rect.top)  * (this.H / rect.height);
-        };
-        this.boundTouchEnd = (e) => {
-            e.preventDefault();
-            if (this.state === this.STATE.PLAYING) this.changeColor();
-        };
-
-        this.canvas.addEventListener('mousemove',  this.boundMouseMove);
-        this.canvas.addEventListener('click',      this.boundClick);
-        this.canvas.addEventListener('touchstart', this.boundTouchStart, { passive: false });
-        this.canvas.addEventListener('touchmove',  this.boundTouchMove,  { passive: false });
-        this.canvas.addEventListener('touchend',   this.boundTouchEnd,   { passive: false });
-    }
-
-    changeColor() {
-        if (this.activeEffects.rainbow.active) return;
-        this.playerColorIdx = (this.playerColorIdx + 1) % this.COLORS.length;
-        this.player.colorChangeAnim = 1;
-        this.player.scale = 0.8;
-        this.spawnColorChangeParticles();
-        if (window.audioManager) audioManager.play('click');
-    }
-
-    spawnColorChangeParticles() {
-        const c = this.COLORS[this.playerColorIdx];
-        for (let i = 0; i < 8 && this.particles.length < this.MAX_PARTICLES; i++) {
-            const angle = (Math.PI * 2 * i) / 8;
-            this.particles.push({
-                x: this.player.x, y: this.player.y,
-                vx: Math.cos(angle) * 4, vy: Math.sin(angle) * 4,
-                size: Math.random() * 4 + 2,
-                life: 1, decay: 0.05,
-                color: c.fill, grav: 0
+    _mkHex() {
+        const out=[]; const sz=42;
+        const cols = Math.ceil(this.W/(sz*1.5))+2;
+        const rows = Math.ceil(this.H/(sz*1.732))+2;
+        for (let r=0;r<rows;r++) for (let c=0;c<cols;c++) {
+            out.push({
+                x: c*sz*1.5-sz,
+                y: r*sz*1.732+(c%2?sz*0.866:0)-sz,
+                sz: sz*0.9, a: Math.random()*0.03+0.007
             });
         }
+        return out;
     }
 
-    restartGame() {
-        this.score    = 0;
-        this.onScore(0);
-        this.state    = this.STATE.WAITING;
-        this.gameOver = false;
-        this.level    = 1;
-        this.ballsPopped = 0;
-        this.combo    = 0;
-        this.comboTimer = 0;
-        this.deathOverlayAlpha = 0;
-        this.flashAlpha = 0;
-        this.balls         = [];
-        this.particles     = [];
-        this.ripples       = [];
-        this.popRings      = [];
-        this.explosions    = [];
-        this.scorePopups   = [];
-        this.floatingTexts = [];
-        this.player.x      = this.W / 2;
-        this.player.y      = this.H / 2;
-        this.player.vx     = 0;
-        this.player.vy     = 0;
-        this.player.invincible    = 0;
-        this.player.trail         = [];
-        this.player.colorChangeAnim = 0;
-        this.player.scale = 1;
-        Object.keys(this.activeEffects).forEach(k => {
-            this.activeEffects[k].active = false;
-            this.activeEffects[k].timer  = 0;
-        });
-        this.spawnInitialBalls();
-    }
-
-    // ============================================================
-    // UPDATE
-    // ============================================================
-    update(timestamp, dt) {
-        if (this.paused || this.gameOver) return;
-
-        this.time   += dt;
-        this.frame++;
-        this.bgTime += dt * 0.001;
-
-        this.stars.forEach(s => { s.phase += s.speed; });
-
-        // Shake
-        if (this.shakeTimer > 0) {
-            const f = this.shakeForce * (this.shakeTimer / 15);
-            this.shakeX = (Math.random() - 0.5) * f;
-            this.shakeY = (Math.random() - 0.5) * f * 0.5;
-            this.shakeTimer--;
-        } else { this.shakeX = 0; this.shakeY = 0; }
-
-        if (this.flashAlpha > 0) this.flashAlpha = Math.max(0, this.flashAlpha - 0.035);
-
-        if (this.state === this.STATE.WAITING) {
-            this.updateBalls(dt, true);
-            return;
-        }
-
-        if (this.state === this.STATE.DEAD) {
-            this.deathOverlayAlpha = Math.min(1, this.deathOverlayAlpha + 0.014);
-            this.updateParticles(dt);
-            return;
-        }
-
-        // Active effects decay
-        Object.keys(this.activeEffects).forEach(key => {
-            const ef = this.activeEffects[key];
-            if (ef.active && ef.duration > 0) {
-                ef.timer -= dt;
-                if (ef.timer <= 0) { ef.active = false; ef.timer = 0; }
-            }
-        });
-
-        // Rainbow color cycle
-        if (this.activeEffects.rainbow.active) {
-            this.playerColorIdx = Math.floor(timestamp / 150) % this.COLORS.length;
-        }
-
-        this.updatePlayer(dt);
-        this.updateBalls(dt, false);
-
-        // Spawn balls
-        this.ballSpawnTimer += dt;
-        if (this.ballSpawnTimer >= this.ballSpawnInterval && this.balls.length < 20 + this.level * 3) {
-            this.spawnBall();
-            this.ballSpawnTimer    = 0;
-            this.ballSpawnInterval = Math.max(800, 2000 - this.level * 100);
-        }
-
-        // Combo timer
-        if (this.comboTimer > 0) {
-            this.comboTimer -= dt;
-            if (this.comboTimer <= 0) this.combo = 0;
-        }
-
-        // Magnet
-        if (this.activeEffects.magnet.active) {
-            this.balls.forEach(b => {
-                if (b.colorIdx !== this.playerColorIdx && !this.activeEffects.rainbow.active) return;
-                const dx = this.player.x - b.x;
-                const dy = this.player.y - b.y;
-                const dist = Math.sqrt(dx*dx + dy*dy);
-                if (dist < 180 && dist > 5) {
-                    b.vx += (dx / dist) * 0.3;
-                    b.vy += (dy / dist) * 0.3;
-                }
-            });
-        }
-
-        // Ripples
-        for (let i = this.ripples.length - 1; i >= 0; i--) {
-            const r = this.ripples[i];
-            r.radius  += 3;
-            r.opacity -= 0.025;
-            if (r.opacity <= 0) this.ripples.splice(i, 1);
-        }
-
-        // Pop rings
-        for (let i = this.popRings.length - 1; i >= 0; i--) {
-            const r = this.popRings[i];
-            r.radius  += 2.5;
-            r.opacity -= 0.04;
-            if (r.opacity <= 0) this.popRings.splice(i, 1);
-        }
-
-        this.updateParticles(dt);
-
-        // Score popups
-        this.scorePopups = this.scorePopups.filter(p => {
-            p.y -= 1.2; p.life -= dt;
-            p.opacity = Math.min(1, p.life / 500);
-            return p.life > 0;
-        });
-
-        // Floating texts
-        for (let i = this.floatingTexts.length - 1; i >= 0; i--) {
-            const t = this.floatingTexts[i];
-            t.y -= 0.6; t.life -= 1;
-            t.opacity = Math.min(1, t.life / 30);
-            t.scale  += (1 - t.scale) * 0.12;
-            if (t.life <= 0) this.floatingTexts.splice(i, 1);
-        }
-
-        if (this.player.invincible > 0) this.player.invincible -= dt;
-        if (this.player.scale < 1) this.player.scale = Math.min(1, this.player.scale + 0.05);
-        if (this.player.colorChangeAnim > 0) this.player.colorChangeAnim -= 0.07;
-        this.player.pulseAnim += 0.05;
-    }
-
-    updatePlayer(dt) {
-        const p          = this.player;
-        const slowFactor = this.activeEffects.slow.active ? 0.6 : 1;
-        const dx = p.targetX - p.x;
-        const dy = p.targetY - p.y;
-        p.vx += dx * 0.08;
-        p.vy += dy * 0.08;
-        p.vx *= 0.82;
-        p.vy *= 0.82;
-        p.x  += p.vx * slowFactor;
-        p.y  += p.vy * slowFactor;
-        p.x   = Math.max(p.r, Math.min(this.W - p.r, p.x));
-        p.y   = Math.max(p.r, Math.min(this.H - p.r, p.y));
-
-        p.trail.push({ x: p.x, y: p.y, color: this.COLORS[this.playerColorIdx].fill });
-        if (p.trail.length > 15) p.trail.shift();
-    }
-
-    updateBalls(dt, idleMode) {
-        const slowFactor = this.activeEffects.slow.active ? 0.5 : 1;
-
-        for (let i = this.balls.length - 1; i >= 0; i--) {
-            const b = this.balls[i];
-            b.scale = Math.min(1, b.scale + 0.05);
-            b.pulse += b.wobbleSpeed;
-            b.wobble = Math.sin(b.pulse) * 0.07;
-
-            // Ball-to-ball collision
-            for (let j = i + 1; j < this.balls.length; j++) {
-                const b2   = this.balls[j];
-                const dx   = b2.x - b.x;
-                const dy   = b2.y - b.y;
-                const dist = Math.sqrt(dx*dx + dy*dy);
-                const minD = b.r + b2.r;
-                if (dist < minD && dist > 0) {
-                    const nx  = dx / dist, ny = dy / dist;
-                    const ov  = minD - dist;
-                    b.x  -= nx * ov * 0.5;
-                    b.y  -= ny * ov * 0.5;
-                    b2.x += nx * ov * 0.5;
-                    b2.y += ny * ov * 0.5;
-                    const relVx = b.vx - b2.vx;
-                    const relVy = b.vy - b2.vy;
-                    const dot   = relVx * nx + relVy * ny;
-                    if (dot > 0) {
-                        b.vx  -= dot * nx; b.vy  -= dot * ny;
-                        b2.vx += dot * nx; b2.vy += dot * ny;
-                    }
-                }
-            }
-
-            b.x += b.vx * slowFactor;
-            b.y += b.vy * slowFactor;
-
-            if (b.x - b.r <= 0)       { b.x = b.r;          b.vx =  Math.abs(b.vx); }
-            if (b.x + b.r >= this.W)  { b.x = this.W - b.r; b.vx = -Math.abs(b.vx); }
-            if (b.y - b.r <= 0)       { b.y = b.r;          b.vy =  Math.abs(b.vy); }
-            if (b.y + b.r >= this.H)  { b.y = this.H - b.r; b.vy = -Math.abs(b.vy); }
-
-            if (idleMode) continue;
-
-            // Player collision
-            const pdx  = this.player.x - b.x;
-            const pdy  = this.player.y - b.y;
-            const pdist = Math.sqrt(pdx*pdx + pdy*pdy);
-
-            if (pdist < this.player.r + b.r) {
-                const colorMatch = this.activeEffects.rainbow.active || b.colorIdx === this.playerColorIdx;
-
-                if (b.type === 'powerup') {
-                    this.collectPowerup(b, i);
-                    continue;
-                }
-
-                if (b.type === 'bomb') {
-                    if (colorMatch) { this.triggerBomb(b, i); continue; }
-                    if (this.player.invincible > 0 || this.activeEffects.shield.active) continue;
-                    this.playerDie(b);
-                    return;
-                }
-
-                if (colorMatch) {
-                    this.popBall(b, i);
-                } else {
-                    if (this.player.invincible > 0 || this.activeEffects.shield.active) {
-                        if (pdist > 0) { b.vx = -(pdx / pdist) * 5; b.vy = -(pdy / pdist) * 5; }
-                    } else {
-                        this.playerDie(b);
-                        return;
-                    }
-                }
-            }
-        }
-    }
-
-    popBall(ball, idx) {
-        this.combo++;
-        this.comboTimer = 2000;
-        this.maxCombo   = Math.max(this.maxCombo, this.combo);
-
-        const mult       = this.activeEffects.rainbow.active ? 2 : 1;
-        const comboBonus = Math.min(this.combo - 1, 8) * 5;
-        const gained     = (10 + comboBonus) * mult;
-        this.score      += gained;
-        if (this.score > this.bestScore) {
-            this.bestScore = this.score;
-            localStorage.setItem('colorbump_best_v2', this.bestScore);
-        }
-        this.onScore(this.score);
-
-        this.spawnPopParticles(ball.x, ball.y, ball.color, 12);
-        this.ripples.push({ x: ball.x, y: ball.y, radius: ball.r, opacity: 0.75, color: ball.color });
-        if (this.popRings.length < this.MAX_POP_RINGS)
-            this.popRings.push({ x: ball.x, y: ball.y, radius: ball.r * 0.5, opacity: 0.6, color: ball.color });
-
-        this.scorePopups.push({
-            x: ball.x, y: ball.y - 20,
-            text: this.combo > 1 ? `+${gained} x${this.combo}!` : `+${gained}`,
-            color: this.combo > 3 ? '#FFD700' : ball.color,
-            life: 1000, opacity: 1
-        });
-
-        this.balls.splice(idx, 1);
-        this.ballsPopped++;
-        if (this.ballsPopped % this.ballsPerLevel === 0) this.levelUp();
-
-        if (window.audioManager) audioManager.play('pop');
-        this.player.scale = 1.15;
-    }
-
-    triggerBomb(ball, idx) {
-        const cx = ball.x, cy = ball.y;
-        const radius = 100;
-        let killed = 0;
-
-        for (let i = this.balls.length - 1; i >= 0; i--) {
-            if (i === idx) continue;
-            const b    = this.balls[i];
-            const dist = Math.sqrt((b.x - cx)**2 + (b.y - cy)**2);
-            if (dist < radius) {
-                this.spawnPopParticles(b.x, b.y, b.color, 6);
-                this.balls.splice(i, 1);
-                killed++;
-                if (idx > i) idx--;
-            }
-        }
-
-        this.balls.splice(idx, 1);
-        this.spawnPopParticles(cx, cy, '#FFD700', 20);
-
-        const bonus = (killed + 1) * 20;
-        this.score += bonus;
-        this.onScore(this.score);
-
-        this.explosions.push({ x: cx, y: cy, radius: 5, maxRadius: radius,       opacity: 1,   color: '#FFD700' });
-        this.explosions.push({ x: cx, y: cy, radius: 5, maxRadius: radius * 0.7, opacity: 0.75, color: '#FF8C00' });
-
-        this.scorePopups.push({
-            x: cx, y: cy - 30,
-            text: `BOMB! +${bonus}`,
-            color: '#FFD700', life: 1500, opacity: 1
-        });
-
-        this.shake(15, 10);
-        this.flashAlpha = 0.28; this.flashColor = '#FFD700';
-        if (window.audioManager) audioManager.play('levelUp');
-    }
-
-    collectPowerup(ball, idx) {
-        const type = ball.powerupType;
-        const ef   = this.activeEffects[type];
-        if (ef) { ef.active = true; ef.timer = ef.duration; }
-
-        const info = {
-            rainbow: { text: 'RAINBOW!', color: '#FF006E' },
-            magnet:  { text: 'MAGNET!',  color: '#00D4FF' },
-            shield:  { text: 'SHIELD!',  color: '#00FF88' },
-            slow:    { text: 'SLOW!',    color: '#B94FE3' }
-        };
-        const pi = info[type];
-        this.spawnPopParticles(ball.x, ball.y, ball.color, 15);
-        this.scorePopups.push({
-            x: ball.x, y: ball.y - 20,
-            text:  pi ? pi.text : 'BONUS!',
-            color: pi ? pi.color : '#FFD700',
-            life: 1500, opacity: 1
-        });
-
-        this.balls.splice(idx, 1);
-        this.flashAlpha = 0.18; this.flashColor = ball.color;
-        this.player.invincible = 1000;
-        if (window.audioManager) audioManager.play('powerup');
-    }
-
-    levelUp() {
-        this.level++;
-        this.score += 100 * this.level;
-        this.onScore(this.score);
-        this.flashAlpha = 0.28; this.flashColor = '#00FF88';
-        this.shake(8, 5);
-        this.addFloatingText(this.W/2, this.H/2, `LEVEL ${this.level}!`, '#00FF88', 24, 100);
-        if (window.audioManager) audioManager.play('levelUp');
-    }
-
-    playerDie(ball) {
-        if (this.activeEffects.shield.active) {
-            this.activeEffects.shield.active = false;
-            this.activeEffects.shield.timer  = 0;
-            this.player.invincible = 1500;
-            this.spawnPopParticles(this.player.x, this.player.y, '#00FF88', 12);
-            this.flashAlpha = 0.28; this.flashColor = '#00FF88';
-            if (window.audioManager) audioManager.play('powerup');
-            return;
-        }
-
-        this.gameOver = true;
-        this.state    = this.STATE.DEAD;
-
-        for (let i = 0; i < 22 && this.particles.length < this.MAX_PARTICLES; i++) {
-            const angle = (Math.PI * 2 * i) / 22;
-            const speed = Math.random() * 8 + 3;
-            this.particles.push({
-                x: this.player.x, y: this.player.y,
-                vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
-                size: Math.random() * 8 + 3,
-                life: 1, decay: 0.022,
-                color: this.COLORS[this.playerColorIdx].fill, grav: 0.15
-            });
-        }
-
-        this.explosions.push({ x: this.player.x, y: this.player.y, radius: 5, maxRadius: 80, opacity: 1, color: ball.color });
-        this.shake(20, 14);
-        this.flashAlpha = 0.65; this.flashColor = '#FF0055';
-
-        setTimeout(() => this.onScore(this.score, true), 1000);
-        if (window.audioManager) audioManager.play('gameOver');
-    }
-
-    spawnPopParticles(x, y, color, count) {
-        for (let i = 0; i < count && this.particles.length < this.MAX_PARTICLES; i++) {
-            const angle = Math.random() * Math.PI * 2;
-            const speed = Math.random() * 6 + 2;
-            this.particles.push({
-                x, y,
-                vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
-                size: Math.random() * 6 + 2,
-                life: 1, decay: 0.03,
-                color, grav: 0.08
-            });
-        }
-    }
-
-    updateParticles(dt) {
-        for (let i = this.particles.length - 1; i >= 0; i--) {
-            const p = this.particles[i];
-            p.x += p.vx; p.y += p.vy;
-            p.vy += p.grav || 0;
-            p.vx *= 0.97;
-            p.life -= p.decay;
-            p.size *= 0.96;
-            if (p.life <= 0 || p.size < 0.3) this.particles.splice(i, 1);
-        }
-
-        for (let i = this.explosions.length - 1; i >= 0; i--) {
-            const e = this.explosions[i];
-            e.radius  += 4;
-            e.opacity -= 0.04;
-            if (e.opacity <= 0 || e.radius >= e.maxRadius) this.explosions.splice(i, 1);
-        }
-    }
-
-    addFloatingText(x, y, text, color, size = 16, life = 80) {
-        this.floatingTexts.push({ x, y, text, color, size, life, opacity: 1, scale: 0.3 });
-    }
-
-    shake(timer, force) { this.shakeTimer = timer; this.shakeForce = force; }
-
-    fmtNum(n) {
-        if (n >= 1e6) return (n/1e6).toFixed(1) + 'M';
-        if (n >= 1e3) return (n/1e3).toFixed(1) + 'K';
-        return '' + n;
-    }
-
-    // ============================================================
-    // DRAW — MAIN
-    // ============================================================
-    draw(timestamp) {
-        const ctx = this.ctx;
-
-        ctx.fillStyle = '#050510';
-        ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-
-        ctx.save();
-        if (this.shakeX || this.shakeY) {
-            ctx.translate(this.dS(this.shakeX), this.dS(this.shakeY));
-        }
-
-        this.drawBackground(ctx, timestamp);
-        this.drawRipplesFX(ctx);
-        this.drawPopRingsFX(ctx);
-        this.drawExplosionsFX(ctx);
-        this.drawBalls(ctx, timestamp);
-        this.drawParticlesFX(ctx);
-        this.drawPlayer(ctx, timestamp);
-        this.drawScorePopupsFX(ctx);
-        this.drawFloatingTextsFX(ctx);
-
-        // Flash overlay
-        if (this.flashAlpha > 0) {
-            ctx.fillStyle = this.hexToRgba(this.flashColor, this.flashAlpha);
-            ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-        }
-
-        this.drawHUD(ctx, timestamp);
-
-        if (this.state === this.STATE.WAITING) this.drawWaiting(ctx, timestamp);
-        if (this.state === this.STATE.DEAD)    this.drawDeathScreen(ctx, timestamp);
-
-        ctx.restore();
-    }
-
-    // ============================================================
-    // DRAW: BACKGROUND
-    // ============================================================
-    drawBackground(ctx, timestamp) {
-        const W = this.W, H = this.H;
-
-        const bg = ctx.createRadialGradient(
-            this.dX(W/2), this.dY(H/2), 0,
-            this.dX(W/2), this.dY(H/2), this.dS(H)
-        );
-        bg.addColorStop(0,   '#110825');
-        bg.addColorStop(0.6, '#080518');
-        bg.addColorStop(1,   '#030210');
-        ctx.fillStyle = bg;
-        ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-
-        // Stars
-        for (const s of this.stars) {
-            const alpha = 0.12 + ((Math.sin(s.phase) + 1) / 2) * 0.5;
-            ctx.globalAlpha = alpha;
-            ctx.fillStyle   = s.color;
-            this.drawCircle(ctx, s.x, s.y, s.size);
-            ctx.fill();
-        }
-        ctx.globalAlpha = 1;
-
-        // Hex grid
-        for (const h of this.hexGrid) {
-            ctx.globalAlpha = h.alpha;
-            ctx.strokeStyle = 'rgba(185,79,227,0.28)';
-            ctx.lineWidth   = this.dS(0.5);
-            this.drawHexagon(ctx, h.x, h.y, h.size);
-            ctx.stroke();
-        }
-        ctx.globalAlpha = 1;
-    }
-
-    drawHexagon(ctx, cx, cy, size) {
+    _hexPath(cx, cy, sz) {
+        const ctx=this.ctx;
         ctx.beginPath();
-        for (let i = 0; i < 6; i++) {
-            const angle = (Math.PI / 3) * i;
-            const x = cx + size * Math.cos(angle);
-            const y = cy + size * Math.sin(angle);
-            i === 0 ? ctx.moveTo(this.dX(x), this.dY(y)) : ctx.lineTo(this.dX(x), this.dY(y));
+        for (let i=0;i<6;i++) {
+            const a=Math.PI/3*i;
+            const px=cx+sz*Math.cos(a), py=cy+sz*Math.sin(a);
+            i===0 ? ctx.moveTo(this.X(px),this.X(py)) : ctx.lineTo(this.X(px),this.X(py));
         }
         ctx.closePath();
     }
 
-    // ============================================================
-    // DRAW: FX
-    // ============================================================
-    drawRipplesFX(ctx) {
-        ctx.save();
-        for (const r of this.ripples) {
-            ctx.globalAlpha = r.opacity;
-            ctx.strokeStyle = r.color;
-            ctx.lineWidth   = this.dS(2 * r.opacity);
-            ctx.shadowBlur  = this.dS(7);
-            ctx.shadowColor = r.color;
-            this.drawCircle(ctx, r.x, r.y, r.radius);
-            ctx.stroke();
-            ctx.shadowBlur = 0;
-        }
-        ctx.restore();
+    // ─── Spawn ───
+    _spawnInit() { for (let i=0;i<12;i++) this._spawnBall(); }
+
+    _spawnBall() {
+        const mg=55;
+        let x,y;
+        do {
+            x=mg+Math.random()*(this.W-mg*2);
+            y=mg+Math.random()*(this.H-mg*2);
+        } while (Math.hypot(x-this.player.x, y-this.player.y) < 110);
+
+        const ci  = Math.floor(Math.random()*this.COLORS.length);
+        const r   = Math.random()*10 + (this.isMobile?12:14);
+        const spd = (0.8+this.level*0.14)*(Math.random()*0.5+0.75);
+        const ang = Math.random()*Math.PI*2;
+        const rnd = Math.random();
+        const type = rnd<0.08?'bomb' : rnd<0.15?'powerup' : 'normal';
+        const puT  = ['rainbow','magnet','shield','slow'];
+
+        this.balls.push({
+            x,y,r, ci,
+            col: this.COLORS[ci].fill,
+            vx: Math.cos(ang)*spd, vy: Math.sin(ang)*spd,
+            ph: Math.random()*6.28, sc:0,
+            type,
+            puType: type==='powerup' ? puT[Math.floor(Math.random()*puT.length)] : null,
+            wob: 0, wobSp: Math.random()*0.07+0.04
+        });
     }
 
-    drawPopRingsFX(ctx) {
-        ctx.save();
-        for (const r of this.popRings) {
-            ctx.globalAlpha = r.opacity;
-            ctx.strokeStyle = r.color;
-            ctx.lineWidth   = this.dS(1.5 * r.opacity);
-            this.drawCircle(ctx, r.x, r.y, r.radius);
-            ctx.stroke();
-        }
-        ctx.restore();
+    // ─── Events ───
+    _bind() {
+        this._onMM = e => {
+            const r=this.canvas.getBoundingClientRect();
+            this.mouse.x=(e.clientX-r.left)*(this.W/r.width);
+            this.mouse.y=(e.clientY-r.top)*(this.H/r.height);
+            if (this.state===this.STATE.PLAYING) {
+                this.player.tx=this.mouse.x; this.player.ty=this.mouse.y;
+            }
+        };
+        this._onClick = () => {
+            if (this.state===this.STATE.WAITING) { this.state=this.STATE.PLAYING; return; }
+            if (this.state===this.STATE.DEAD && this.deathA>0.8) { this._restart(); return; }
+            this._changeCol();
+        };
+        this._onTS = e => {
+            e.preventDefault();
+            const r=this.canvas.getBoundingClientRect();
+            const tx=(e.touches[0].clientX-r.left)*(this.W/r.width);
+            const ty=(e.touches[0].clientY-r.top)*(this.H/r.height);
+
+            // FS button check
+            const b=this.fsRect;
+            if (tx>=b.x && tx<=b.x+b.w && ty>=b.y && ty<=b.y+b.h) { this._toggleFS(); return; }
+
+            if (this.state===this.STATE.WAITING) { this.state=this.STATE.PLAYING; return; }
+            if (this.state===this.STATE.DEAD && this.deathA>0.8) { this._restart(); return; }
+            this.player.tx=tx; this.player.ty=ty;
+        };
+        this._onTM = e => {
+            e.preventDefault();
+            const r=this.canvas.getBoundingClientRect();
+            this.player.tx=(e.touches[0].clientX-r.left)*(this.W/r.width);
+            this.player.ty=(e.touches[0].clientY-r.top)*(this.H/r.height);
+        };
+        this._onTE = e => {
+            e.preventDefault();
+            if (this.state===this.STATE.PLAYING) this._changeCol();
+        };
+
+        this.canvas.addEventListener('mousemove', this._onMM);
+        this.canvas.addEventListener('click',     this._onClick);
+        this.canvas.addEventListener('touchstart', this._onTS, {passive:false});
+        this.canvas.addEventListener('touchmove',  this._onTM, {passive:false});
+        this.canvas.addEventListener('touchend',   this._onTE, {passive:false});
     }
 
-    drawExplosionsFX(ctx) {
-        ctx.save();
-        for (const e of this.explosions) {
-            ctx.globalAlpha = e.opacity;
-            ctx.shadowBlur  = this.dS(14);
-            ctx.shadowColor = e.color;
-            ctx.strokeStyle = e.color;
-            ctx.lineWidth   = this.dS(3);
-            this.drawCircle(ctx, e.x, e.y, e.radius);
-            ctx.stroke();
-            ctx.globalAlpha = e.opacity * 0.28;
-            ctx.fillStyle   = e.color;
-            ctx.fill();
-            ctx.shadowBlur = 0;
-        }
-        ctx.restore();
+    _changeCol() {
+        if (this.effects.rainbow.on) return;
+        this.pci = (this.pci+1) % this.COLORS.length;
+        this.player.ccAnim = 1;
+        this.player.scale  = 0.82;
+        this._burstAt(this.player.x, this.player.y, this.COLORS[this.pci].fill, 8);
+        if (window.audioManager) audioManager.play('click');
     }
 
-    drawParticlesFX(ctx) {
-        ctx.save();
-        for (const p of this.particles) {
-            ctx.globalAlpha = Math.min(1, p.life);
-            ctx.shadowBlur  = this.dS(4);
-            ctx.shadowColor = p.color;
-            ctx.fillStyle   = p.color;
-            this.drawCircle(ctx, p.x, p.y, Math.max(0.5, p.size * p.life));
-            ctx.fill();
-            ctx.shadowBlur = 0;
-        }
-        ctx.restore();
+    _restart() {
+        this.score=0; this.onScore(0);
+        this.state=this.STATE.WAITING;
+        this.gameOver=false; this.level=1; this.popped=0;
+        this.combo=0; this.comboTimer=0; this.maxCombo=0;
+        this.deathA=0; this.flashA=0;
+        this.balls=[]; this.parts=[]; this.pops=[];
+        this.rings=[]; this.exps=[]; this.banners=[];
+        this.player.x=this.W/2; this.player.y=this.H*0.65;
+        this.player.vx=0; this.player.vy=0;
+        this.player.inv=0; this.player.trail=[];
+        this.player.ccAnim=0; this.player.scale=1;
+        Object.values(this.effects).forEach(e=>{e.on=false;e.t=0;});
+        this._spawnInit();
     }
 
-    drawScorePopupsFX(ctx) {
-        for (const p of this.scorePopups) {
-            this.drawText(ctx, p.text, p.x, p.y, {
-                size: 13, weight: 'bold', color: p.color,
-                align: 'center', opacity: p.opacity,
-                stroke: true, strokeColor: 'rgba(0,0,0,0.6)', strokeWidth: 2.5,
-                glow: true, glowColor: p.color, glowBlur: 6,
-                family: this.FONT_TITLE
+    _toggleFS() {
+        const el = this.canvas.parentElement || this.canvas;
+        const isFS = !!(document.fullscreenElement||document.webkitFullscreenElement);
+        if (!isFS) {
+            (el.requestFullscreen||el.webkitRequestFullscreen||function(){}).call(el);
+            try{screen.orientation?.lock('portrait');}catch(e){}
+        } else {
+            (document.exitFullscreen||document.webkitExitFullscreen||function(){}).call(document);
+        }
+        setTimeout(()=>this.resize(),200);
+    }
+
+    // ─── Update ───
+    update(ts, dt) {
+        if (this.paused||this.gameOver) return;
+        this.time += dt;
+        this.bgT  += dt*0.001;
+        this.stars.forEach(s=>s.ph+=s.sp);
+
+        // Shake
+        if (this.shakeT>0) {
+            const f=this.shakeF*(this.shakeT/16);
+            this.shakeX=(Math.random()-.5)*f;
+            this.shakeY=(Math.random()-.5)*f*0.5;
+            this.shakeT--;
+        } else { this.shakeX=0;this.shakeY=0; }
+
+        if (this.flashA>0) this.flashA=Math.max(0,this.flashA-0.038);
+
+        if (this.state===this.STATE.WAITING) { this._updateBalls(dt,true); return; }
+        if (this.state===this.STATE.DEAD) {
+            this.deathA=Math.min(1,this.deathA+0.015);
+            this._updateParts(dt); return;
+        }
+
+        // Effects decay
+        Object.values(this.effects).forEach(ef=>{
+            if (ef.on) { ef.t-=dt; if (ef.t<=0){ef.on=false;ef.t=0;} }
+        });
+        if (this.effects.rainbow.on) this.pci=Math.floor(ts/150)%this.COLORS.length;
+
+        this._updatePlayer(dt);
+        this._updateBalls(dt,false);
+
+        // Spawn
+        this.spawnTimer+=dt;
+        if (this.spawnTimer>=this.spawnInterval && this.balls.length<20+this.level*3) {
+            this._spawnBall(); this.spawnTimer=0;
+            this.spawnInterval=Math.max(800,2200-this.level*110);
+        }
+
+        // Combo
+        if (this.comboTimer>0) { this.comboTimer-=dt; if (this.comboTimer<=0) this.combo=0; }
+
+        // Magnet
+        if (this.effects.magnet.on) {
+            this.balls.forEach(b=>{
+                if (b.ci!==this.pci && !this.effects.rainbow.on) return;
+                const dx=this.player.x-b.x, dy=this.player.y-b.y;
+                const d=Math.hypot(dx,dy);
+                if (d<170 && d>5) { b.vx+=dx/d*0.28; b.vy+=dy/d*0.28; }
             });
         }
+
+        // Rings
+        this.rings=this.rings.filter(r=>{ r.r+=2.8; r.a-=0.03; return r.a>0; });
+
+        // Banners
+        this.banners=this.banners.filter(b=>{ b.y-=0.5; b.life--; b.op=Math.min(1,b.life/30); return b.life>0; });
+
+        this._updateParts(dt);
+        this.pops=this.pops.filter(p=>{ p.y-=1.2; p.life-=dt; p.op=Math.min(1,p.life/500); return p.life>0; });
+
+        const p=this.player;
+        if (p.inv>0) p.inv-=dt;
+        if (p.scale<1) p.scale=Math.min(1,p.scale+0.055);
+        if (p.ccAnim>0) p.ccAnim=Math.max(0,p.ccAnim-0.065);
+        p.pulse+=0.05;
     }
 
-    drawFloatingTextsFX(ctx) {
-        for (const t of this.floatingTexts) {
-            const sc = Math.min(1, t.scale || 1);
-            this.drawText(ctx, t.text, t.x, t.y, {
-                size: (t.size || 16) * sc,
-                weight: 'bold', color: t.color,
-                align: 'center', baseline: 'middle',
-                opacity: t.opacity,
-                stroke: true, strokeColor: 'rgba(0,0,0,0.5)', strokeWidth: 3,
-                glow: true, glowColor: t.color, glowBlur: 8,
-                family: this.FONT_TITLE
-            });
+    _updatePlayer(dt) {
+        const p=this.player;
+        const slow=this.effects.slow.on?0.55:1;
+        const dx=p.tx-p.x, dy=p.ty-p.y;
+        p.vx+=dx*0.085; p.vy+=dy*0.085;
+        p.vx*=0.82; p.vy*=0.82;
+        p.x+=p.vx*slow; p.y+=p.vy*slow;
+        p.x=Math.max(p.r, Math.min(this.W-p.r, p.x));
+        p.y=Math.max(p.r, Math.min(this.H-p.r, p.y));
+
+        p.trail.push({x:p.x, y:p.y, col:this.COLORS[this.pci].fill});
+        if (p.trail.length>14) p.trail.shift();
+    }
+
+    _updateBalls(dt, idle) {
+        const slow = this.effects.slow.on?0.5:1;
+
+        for (let i=this.balls.length-1;i>=0;i--) {
+            const b=this.balls[i];
+            b.sc=Math.min(1,b.sc+0.06);
+            b.ph+=b.wobSp;
+            b.wob=Math.sin(b.ph)*0.06;
+
+            // Ball-ball collision
+            for (let j=i+1;j<this.balls.length;j++) {
+                const b2=this.balls[j];
+                const dx=b2.x-b.x, dy=b2.y-b.y;
+                const d=Math.hypot(dx,dy);
+                const md=b.r+b2.r;
+                if (d<md && d>0) {
+                    const nx=dx/d, ny=dy/d, ov=md-d;
+                    b.x-=nx*ov*0.5; b.y-=ny*ov*0.5;
+                    b2.x+=nx*ov*0.5; b2.y+=ny*ov*0.5;
+                    const rv=b.vx-b2.vx, rvy=b.vy-b2.vy;
+                    const dot=rv*nx+rvy*ny;
+                    if (dot>0) { b.vx-=dot*nx; b.vy-=dot*ny; b2.vx+=dot*nx; b2.vy+=dot*ny; }
+                }
+            }
+
+            b.x+=b.vx*slow; b.y+=b.vy*slow;
+            if (b.x-b.r<=0)      {b.x=b.r;        b.vx= Math.abs(b.vx);}
+            if (b.x+b.r>=this.W) {b.x=this.W-b.r; b.vx=-Math.abs(b.vx);}
+            if (b.y-b.r<=0)      {b.y=b.r;        b.vy= Math.abs(b.vy);}
+            if (b.y+b.r>=this.H) {b.y=this.H-b.r; b.vy=-Math.abs(b.vy);}
+
+            if (idle) continue;
+
+            // Player collision
+            const px=this.player.x-b.x, py=this.player.y-b.y;
+            const pd=Math.hypot(px,py);
+            if (pd < this.player.r+b.r) {
+                const match = this.effects.rainbow.on || b.ci===this.pci;
+
+                if (b.type==='powerup') { this._collectPU(b,i); continue; }
+                if (b.type==='bomb') {
+                    if (match) { this._triggerBomb(b,i); continue; }
+                    if (this.player.inv>0||this.effects.shield.on) continue;
+                    this._die(b); return;
+                }
+                if (match) {
+                    this._pop(b,i);
+                } else {
+                    if (this.player.inv>0||this.effects.shield.on) {
+                        if (pd>0){b.vx=-(px/pd)*5; b.vy=-(py/pd)*5;}
+                    } else { this._die(b); return; }
+                }
+            }
         }
     }
 
-    // ============================================================
-    // DRAW: BALLS
-    // ============================================================
-    drawBalls(ctx, timestamp) {
+    _pop(b, idx) {
+        this.combo++; this.comboTimer=2000;
+        this.maxCombo=Math.max(this.maxCombo,this.combo);
+        const mult=this.effects.rainbow.on?2:1;
+        const cb=Math.min(this.combo-1,8)*5;
+        const pts=(10+cb)*mult;
+        this.score+=pts;
+        if (this.score>this.bestScore){this.bestScore=this.score;localStorage.setItem('cb_best',this.bestScore);}
+        this.onScore(this.score);
+        this._burstAt(b.x,b.y,b.col,12);
+        this.rings.push({x:b.x,y:b.y,r:b.r,a:0.7,col:b.col});
+        this.pops.push({
+            x:b.x, y:b.y-18,
+            text: this.combo>1?`+${pts} ×${this.combo}`:`+${pts}`,
+            col: this.combo>3?'#FFD700':b.col, life:1100, op:1
+        });
+        this.balls.splice(idx,1); this.popped++;
+        if (this.popped%this.popPerLvl===0) this._lvlUp();
+        if (window.audioManager) audioManager.play('pop');
+        this.player.scale=1.14;
+    }
+
+    _triggerBomb(b, idx) {
+        const cx=b.x,cy=b.y,rad=105;
+        let killed=0;
+        for (let i=this.balls.length-1;i>=0;i--) {
+            if (i===idx) continue;
+            const b2=this.balls[i];
+            if (Math.hypot(b2.x-cx,b2.y-cy)<rad) {
+                this._burstAt(b2.x,b2.y,b2.col,6);
+                this.balls.splice(i,1); killed++;
+                if (idx>i) idx--;
+            }
+        }
+        this.balls.splice(idx,1);
+        this._burstAt(cx,cy,'#FFD700',22);
+        const pts=(killed+1)*20;
+        this.score+=pts; this.onScore(this.score);
+        this.exps.push({x:cx,y:cy,r:5,mr:rad,a:1,col:'#FFD700'});
+        this.pops.push({x:cx,y:cy-28,text:`💥 BOMB +${pts}`,col:'#FFD700',life:1500,op:1});
+        this._shake(16,11);
+        this.flashA=0.25; this.flashC='#FFD700';
+        if (window.audioManager) audioManager.play('explosion');
+    }
+
+    _collectPU(b, idx) {
+        const ef=this.effects[b.puType];
+        if (ef){ef.on=true;ef.t=ef.dur;}
+        const info={rainbow:{t:'RAINBOW!',c:'#FF006E'},magnet:{t:'MAGNET!',c:'#00D4FF'},shield:{t:'SHIELD!',c:'#00FF88'},slow:{t:'SLOW MO!',c:'#B94FE3'}};
+        const pi=info[b.puType]||{t:'BONUS!',c:'#FFD700'};
+        this._burstAt(b.x,b.y,b.col,16);
+        this.pops.push({x:b.x,y:b.y-20,text:pi.t,col:pi.c,life:1500,op:1});
+        this.balls.splice(idx,1);
+        this.flashA=0.16; this.flashC=b.col;
+        this.player.inv=1000;
+        if (window.audioManager) audioManager.play('powerup');
+    }
+
+    _lvlUp() {
+        this.level++;
+        this.score+=100*this.level; this.onScore(this.score);
+        this.flashA=0.25; this.flashC='#00FF88';
+        this._shake(9,6);
+        this.banners.push({x:this.W/2,y:this.H/2,text:`⬆ LEVEL ${this.level}`,col:'#00FF88',sz:22,life:90,op:1});
+        if (window.audioManager) audioManager.play('levelUp');
+    }
+
+    _die(ball) {
+        if (this.effects.shield.on) {
+            this.effects.shield.on=false; this.effects.shield.t=0;
+            this.player.inv=1500;
+            this._burstAt(this.player.x,this.player.y,'#00FF88',14);
+            this.flashA=0.25; this.flashC='#00FF88';
+            if (window.audioManager) audioManager.play('shield');
+            return;
+        }
+        this.gameOver=true; this.state=this.STATE.DEAD;
+        this._burstAt(this.player.x,this.player.y,this.COLORS[this.pci].fill,24);
+        this.exps.push({x:this.player.x,y:this.player.y,r:5,mr:85,a:1,col:ball.col});
+        this._shake(22,15);
+        this.flashA=0.6; this.flashC='#FF0044';
+        setTimeout(()=>this.onScore(this.score,true),1100);
+        if (window.audioManager) audioManager.play('gameOver');
+    }
+
+    _burstAt(x,y,col,n) {
+        for (let i=0;i<n&&this.parts.length<this.MAX_PARTS;i++) {
+            const a=Math.random()*Math.PI*2, sp=Math.random()*5.5+2;
+            this.parts.push({x,y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,r:Math.random()*5+1.5,life:1,dec:0.035,col,g:0.1});
+        }
+    }
+
+    _updateParts(dt) {
+        this.parts=this.parts.filter(p=>{
+            p.x+=p.vx; p.y+=p.vy; p.vy+=p.g||0; p.vx*=0.965;
+            p.life-=p.dec; p.r*=0.96;
+            return p.life>0 && p.r>0.3;
+        });
+        this.exps=this.exps.filter(e=>{e.r+=4;e.a-=0.04;return e.a>0&&e.r<e.mr;});
+    }
+
+    _shake(t,f) { this.shakeT=t; this.shakeF=f; }
+
+    // ─── Draw ───
+    draw(ts) {
+        const ctx=this.ctx;
+        ctx.fillStyle='#050510';
+        ctx.fillRect(0,0,this.canvas.width,this.canvas.height);
+
+        ctx.save();
+        if (this.shakeX||this.shakeY) ctx.translate(this.S(this.shakeX),this.S(this.shakeY));
+
+        this._drawBG(ts);
+        this._drawRings();
+        this._drawExps();
+        this._drawBalls(ts);
+        this._drawParts();
+        this._drawPlayer(ts);
+        this._drawPops();
+        this._drawBanners();
+
+        if (this.flashA>0) {
+            ctx.globalAlpha=this.flashA;
+            ctx.fillStyle=this.flashC;
+            ctx.fillRect(0,0,this.canvas.width,this.canvas.height);
+            ctx.globalAlpha=1;
+        }
+
+        // Vignette
+        const vg=ctx.createRadialGradient(this.X(this.W/2),this.X(this.H/2),this.S(this.H*0.28),this.X(this.W/2),this.X(this.H/2),this.S(this.H*0.82));
+        vg.addColorStop(0,'transparent');
+        vg.addColorStop(1,'rgba(0,0,5,0.5)');
+        ctx.fillStyle=vg;
+        ctx.fillRect(0,0,this.canvas.width,this.canvas.height);
+
+        ctx.restore();
+
+        this._drawHUD(ts);
+        this._drawFSBtn(ts);
+
+        if (this.state===this.STATE.WAITING) this._drawWait(ts);
+        if (this.state===this.STATE.DEAD)    this._drawDeath(ts);
+    }
+
+    _drawBG(ts) {
+        const ctx=this.ctx;
+        const g=ctx.createRadialGradient(this.X(this.W/2),this.X(this.H/2),0,this.X(this.W/2),this.X(this.H/2),this.S(this.H));
+        g.addColorStop(0,'#110825'); g.addColorStop(0.6,'#080518'); g.addColorStop(1,'#030210');
+        ctx.fillStyle=g;
+        ctx.fillRect(0,0,this.canvas.width,this.canvas.height);
+
+        // Stars
+        this.stars.forEach(s=>{
+            ctx.globalAlpha=0.1+((Math.sin(s.ph)+1)/2)*0.5;
+            ctx.fillStyle=s.col;
+            this._circle(s.x,s.y,s.r); ctx.fill();
+        });
+        ctx.globalAlpha=1;
+
+        // Hex grid
+        this.hexGrid.forEach(h=>{
+            ctx.globalAlpha=h.a;
+            ctx.strokeStyle='rgba(185,79,227,0.25)';
+            ctx.lineWidth=this.S(0.5);
+            this._hexPath(h.x,h.y,h.sz); ctx.stroke();
+        });
+        ctx.globalAlpha=1;
+    }
+
+    _drawRings() {
+        const ctx=this.ctx;
+        this.rings.forEach(r=>{
+            ctx.save(); ctx.globalAlpha=r.a;
+            ctx.strokeStyle=r.col; ctx.lineWidth=this.S(2*r.a);
+            this._circle(r.x,r.y,r.r); ctx.stroke();
+            ctx.restore();
+        });
+    }
+
+    _drawExps() {
+        const ctx=this.ctx;
+        this.exps.forEach(e=>{
+            ctx.save(); ctx.globalAlpha=e.a;
+            ctx.strokeStyle=e.col; ctx.lineWidth=this.S(3);
+            this._circle(e.x,e.y,e.r); ctx.stroke();
+            ctx.globalAlpha=e.a*0.25;
+            ctx.fillStyle=e.col;
+            this._circle(e.x,e.y,e.r); ctx.fill();
+            ctx.restore();
+        });
+    }
+
+    _drawParts() {
+        const ctx=this.ctx;
+        this.parts.forEach(p=>{
+            ctx.save(); ctx.globalAlpha=Math.max(0,p.life);
+            ctx.fillStyle=p.col;
+            this._circle(p.x,p.y,Math.max(0.3,p.r*p.life)); ctx.fill();
+            ctx.restore();
+        });
+    }
+
+    _drawPops() {
+        this.pops.forEach(p=>{
+            this._txt(p.text, p.x, p.y, {
+                sz:13, wt:'bold', col:p.col, al:'center', op:p.op,
+                stroke:true, sc:'rgba(0,0,0,0.55)', sw:2.5, ff:this.FT
+            });
+        });
+    }
+
+    _drawBanners() {
+        this.banners.forEach(b=>{
+            this._txt(b.text, b.x, b.y, {
+                sz:b.sz||20, wt:'bold', col:b.col, al:'center', bl:'middle',
+                op:b.op, stroke:true, sc:'rgba(0,0,0,0.5)', sw:3, ff:this.FT
+            });
+        });
+    }
+
+    // ─── Balls ───
+    _drawBalls(ts) {
+        const ctx=this.ctx;
         for (const b of this.balls) {
-            const pulse = 1 + Math.sin(b.pulse) * 0.055;
-            const r     = b.r * b.scale * pulse;
+            const pulse=1+Math.sin(b.ph)*0.055;
+            const r=b.r*b.sc*pulse;
 
             ctx.save();
-            ctx.translate(this.dX(b.x), this.dY(b.y));
-            ctx.scale(1 + b.wobble, 1 - b.wobble * 0.5);
+            ctx.translate(this.X(b.x),this.X(b.y));
+            ctx.scale(1+b.wob, 1-b.wob*0.5);
 
-            if (b.type === 'bomb') {
-                // Body
-                const bg2 = ctx.createRadialGradient(
-                    this.dS(-r * 0.3), this.dS(-r * 0.3), 0,
-                    0, 0, this.dS(r)
-                );
-                bg2.addColorStop(0, '#555');
-                bg2.addColorStop(0.5, '#2a2a2a');
-                bg2.addColorStop(1, '#111');
-                ctx.fillStyle = bg2;
-                ctx.shadowBlur  = this.dS(10);
-                ctx.shadowColor = '#FF4500';
-                this.drawCircle(ctx, 0, 0, r);
-                ctx.fill();
-                ctx.shadowBlur = 0;
-
+            if (b.type==='bomb') {
+                const bg=ctx.createRadialGradient(this.S(-r*.3),this.S(-r*.3),0,0,0,this.S(r));
+                bg.addColorStop(0,'#555'); bg.addColorStop(0.5,'#2a2a2a'); bg.addColorStop(1,'#111');
+                ctx.fillStyle=bg;
+                this._circle(0,0,r); ctx.fill();
                 // Fuse
-                ctx.strokeStyle = '#FFD700';
-                ctx.lineWidth   = this.dS(2);
+                ctx.strokeStyle='#FFD700'; ctx.lineWidth=this.S(2); ctx.lineCap='round';
                 ctx.beginPath();
-                ctx.moveTo(0, this.dS(-r));
-                ctx.quadraticCurveTo(this.dS(r * 0.3), this.dS(-r * 1.4), this.dS(r * 0.1), this.dS(-r * 1.7));
+                ctx.moveTo(0,this.S(-r));
+                ctx.quadraticCurveTo(this.S(r*.3),this.S(-r*1.4),this.S(r*.1),this.S(-r*1.65));
                 ctx.stroke();
-
                 // Spark
-                if (Math.random() > 0.45) {
-                    ctx.fillStyle  = '#FFD700';
-                    ctx.shadowBlur  = this.dS(5);
-                    ctx.shadowColor = '#FFD700';
-                    this.drawCircle(ctx, r * 0.1, -r * 1.7, 2);
-                    ctx.fill();
-                    ctx.shadowBlur = 0;
+                if (Math.random()>0.45) {
+                    ctx.fillStyle='#FFD700';
+                    this._circle(r*.1,-r*1.65,2.5); ctx.fill();
                 }
+                // X mark
+                this._txt('✕', 0, r*0.15, {sz:r*0.65,col:'rgba(255,255,255,0.5)',al:'center',bl:'middle',ff:this.FU});
 
-                // Skull symbol — crisp
-                ctx.save();
-                ctx.shadowBlur   = 0;
-                ctx.textAlign    = 'center';
-                ctx.textBaseline = 'middle';
-                ctx.font         = `${this.dSr(r)}px serif`;
-                ctx.globalAlpha  = 0.55;
-                ctx.fillStyle    = '#ffffff';
-                ctx.fillText('X', 0, this.dS(r * 0.1));
-                ctx.restore();
-
-            } else if (b.type === 'powerup') {
-                const puColors = {
-                    rainbow: '#FF006E', magnet: '#00D4FF',
-                    shield: '#00FF88', slow: '#B94FE3'
-                };
-                const puColor = puColors[b.powerupType] || '#FFD700';
-                const puGrad  = ctx.createRadialGradient(
-                    this.dS(-r*0.3), this.dS(-r*0.3), 0,
-                    0, 0, this.dS(r)
-                );
-                puGrad.addColorStop(0, this.lightenColor(puColor, 60));
-                puGrad.addColorStop(0.6, puColor);
-                puGrad.addColorStop(1, this.darkenColor(puColor, 40));
-                ctx.fillStyle  = puGrad;
-                ctx.shadowBlur  = this.dS(14);
-                ctx.shadowColor = puColor;
-                this.drawCircle(ctx, 0, 0, r);
-                ctx.fill();
-                ctx.shadowBlur = 0;
-
-                // Pulse ring
-                ctx.strokeStyle = 'rgba(255,255,255,0.4)';
-                ctx.lineWidth   = this.dS(1.5);
-                this.drawCircle(ctx, 0, 0, r + 3 + Math.sin(b.pulse * 2) * 2);
-                ctx.stroke();
-
-                // Name label — crisp
-                const labels = { rainbow: 'R', magnet: 'M', shield: 'S', slow: 'SL' };
-                this.drawText(ctx, labels[b.powerupType] || '?', 0, r * 0.1, {
-                    size: r * 0.7, weight: 'bold', color: '#fff',
-                    align: 'center', baseline: 'middle',
-                    stroke: true, strokeColor: 'rgba(0,0,0,0.4)', strokeWidth: 2,
-                    family: this.FONT_TITLE
-                });
+            } else if (b.type==='powerup') {
+                const puC={rainbow:'#FF006E',magnet:'#00D4FF',shield:'#00FF88',slow:'#B94FE3'};
+                const c=puC[b.puType]||'#FFD700';
+                const pg=ctx.createRadialGradient(this.S(-r*.3),this.S(-r*.3),0,0,0,this.S(r));
+                pg.addColorStop(0,this._lt(c,60)); pg.addColorStop(0.6,c); pg.addColorStop(1,this._dk(c,40));
+                ctx.fillStyle=pg;
+                this._circle(0,0,r); ctx.fill();
+                // Ring
+                ctx.strokeStyle='rgba(255,255,255,0.35)'; ctx.lineWidth=this.S(1.5);
+                this._circle(0,0,r+3+Math.sin(b.ph*2)*2); ctx.stroke();
+                // Label
+                const lb={rainbow:'R',magnet:'M',shield:'S',slow:'SL'};
+                this._txt(lb[b.puType]||'?',0,r*0.12,{sz:r*0.65,wt:'bold',col:'#fff',al:'center',bl:'middle',ff:this.FT});
 
             } else {
                 // Normal ball
-                const ballGrad = ctx.createRadialGradient(
-                    this.dS(-r*0.3), this.dS(-r*0.35), this.dS(r*0.05),
-                    0, 0, this.dS(r)
-                );
-                ballGrad.addColorStop(0,   this.lightenColor(b.color, 70));
-                ballGrad.addColorStop(0.4, b.color);
-                ballGrad.addColorStop(0.8, this.darkenColor(b.color, 30));
-                ballGrad.addColorStop(1,   this.darkenColor(b.color, 60));
-                ctx.fillStyle  = ballGrad;
-                ctx.shadowBlur  = this.dS(12);
-                ctx.shadowColor = b.glow;
-                this.drawCircle(ctx, 0, 0, r);
-                ctx.fill();
-                ctx.shadowBlur = 0;
+                const bg=ctx.createRadialGradient(this.S(-r*.3),this.S(-r*.35),this.S(r*.05),0,0,this.S(r));
+                bg.addColorStop(0,this._lt(b.col,70)); bg.addColorStop(0.4,b.col);
+                bg.addColorStop(0.8,this._dk(b.col,30)); bg.addColorStop(1,this._dk(b.col,60));
+                ctx.fillStyle=bg;
+                this._circle(0,0,r); ctx.fill();
 
-                // Specular
-                ctx.fillStyle = 'rgba(255,255,255,0.48)';
-                ctx.beginPath();
-                ctx.ellipse(
-                    this.dS(-r*0.28), this.dS(-r*0.32),
-                    this.dS(r*0.28), this.dS(r*0.18),
-                    -0.5, 0, Math.PI * 2
-                );
-                ctx.fill();
+                // Outline
+                ctx.strokeStyle='rgba(255,255,255,0.12)'; ctx.lineWidth=this.S(0.8);
+                this._circle(0,0,r); ctx.stroke();
 
-                // Bottom reflection
-                ctx.fillStyle = 'rgba(255,255,255,0.08)';
+                // Shine
+                ctx.fillStyle='rgba(255,255,255,0.46)';
                 ctx.beginPath();
-                ctx.ellipse(
-                    this.dS(r*0.2), this.dS(r*0.5),
-                    this.dS(r*0.2), this.dS(r*0.09),
-                    0.4, 0, Math.PI * 2
-                );
+                ctx.ellipse(this.S(-r*.28),this.S(-r*.32),this.S(r*.28),this.S(r*.18),-0.5,0,Math.PI*2);
                 ctx.fill();
             }
-
             ctx.restore();
         }
     }
 
-    // ============================================================
-    // DRAW: PLAYER
-    // ============================================================
-    drawPlayer(ctx, timestamp) {
-        const p         = this.player;
-        const colorData = this.COLORS[this.playerColorIdx];
-        const rainbow   = this.activeEffects.rainbow.active;
+    // ─── Player ───
+    _drawPlayer(ts) {
+        const ctx=this.ctx;
+        const p=this.player;
+        const cd=this.COLORS[this.pci];
+        const rainbow=this.effects.rainbow.on;
 
         // Trail
-        p.trail.forEach((t, i) => {
-            const ratio = i / p.trail.length;
-            ctx.save();
-            ctx.globalAlpha = ratio * 0.28;
-            ctx.shadowBlur  = this.dS(4);
-            ctx.shadowColor = t.color;
-            ctx.fillStyle   = t.color;
-            this.drawCircle(ctx, t.x, t.y, Math.max(1, p.r * ratio * 0.75));
-            ctx.fill();
-            ctx.shadowBlur = 0;
+        p.trail.forEach((t,i)=>{
+            const ratio=i/p.trail.length;
+            ctx.save(); ctx.globalAlpha=ratio*0.25;
+            ctx.fillStyle=t.col;
+            this._circle(t.x,t.y,Math.max(0.5,p.r*ratio*0.7)); ctx.fill();
             ctx.restore();
         });
 
-        if (this.state === this.STATE.DEAD) return;
+        if (this.state===this.STATE.DEAD) return;
 
-        const r        = p.r * p.scale;
-        const invBlink = p.invincible > 0 && Math.floor(p.invincible / 100) % 2 === 0;
-        if (invBlink) return;
+        const r=p.r*p.scale;
+        if (p.inv>0 && Math.floor(p.inv/100)%2===0) return;
 
         ctx.save();
-        ctx.translate(this.dX(p.x), this.dY(p.y));
+        ctx.translate(this.X(p.x),this.X(p.y));
 
-        // Shield ring — glow pass only (no text near it)
-        if (this.activeEffects.shield.active) {
-            const sp = 0.6 + Math.sin(timestamp / 150) * 0.4;
+        // Shield ring
+        if (this.effects.shield.on) {
+            const sa=0.5+Math.sin(ts/150)*0.35;
             ctx.save();
-            ctx.shadowBlur  = this.dS(14);
-            ctx.shadowColor = '#00FF88';
-            ctx.strokeStyle = `rgba(0,255,136,${sp})`;
-            ctx.lineWidth   = this.dS(3);
-            ctx.setLineDash([this.dS(5), this.dS(5)]);
-            ctx.lineDashOffset = -timestamp / 50;
-            this.drawCircle(ctx, 0, 0, r + 12);
-            ctx.stroke();
+            ctx.strokeStyle=`rgba(0,255,136,${sa})`;
+            ctx.lineWidth=this.S(2.5);
+            ctx.setLineDash([this.S(5),this.S(5)]);
+            ctx.lineDashOffset=-ts/50;
+            this._circle(0,0,r+12); ctx.stroke();
             ctx.setLineDash([]);
-            ctx.shadowBlur = 0;
             ctx.restore();
         }
 
         // Magnet ring
-        if (this.activeEffects.magnet.active) {
-            const ma = 0.3 + Math.sin(timestamp / 200) * 0.18;
+        if (this.effects.magnet.on) {
+            const ma=0.25+Math.sin(ts/200)*0.16;
             ctx.save();
-            ctx.strokeStyle = `rgba(0,212,255,${ma})`;
-            ctx.lineWidth   = this.dS(1.5);
-            ctx.setLineDash([this.dS(3), this.dS(8)]);
-            ctx.lineDashOffset = timestamp / 30;
-            this.drawCircle(ctx, 0, 0, 170);
-            ctx.stroke();
+            ctx.strokeStyle=`rgba(0,212,255,${ma})`;
+            ctx.lineWidth=this.S(1.5);
+            ctx.setLineDash([this.S(4),this.S(7)]);
+            ctx.lineDashOffset=ts/30;
+            this._circle(0,0,170); ctx.stroke();
             ctx.setLineDash([]);
             ctx.restore();
         }
 
         // Color change ring
-        if (p.colorChangeAnim > 0) {
-            ctx.save();
-            ctx.globalAlpha = p.colorChangeAnim * 0.8;
-            ctx.shadowBlur  = this.dS(8);
-            ctx.shadowColor = '#fff';
-            ctx.strokeStyle = '#ffffff';
-            ctx.lineWidth   = this.dS(2.5);
-            this.drawCircle(ctx, 0, 0, r + p.colorChangeAnim * 20);
-            ctx.stroke();
-            ctx.shadowBlur = 0;
+        if (p.ccAnim>0) {
+            ctx.save(); ctx.globalAlpha=p.ccAnim*0.7;
+            ctx.strokeStyle='#fff'; ctx.lineWidth=this.S(2);
+            this._circle(0,0,r+p.ccAnim*18); ctx.stroke();
             ctx.restore();
         }
 
-        // Body gradient
-        const bodyColor = rainbow
-            ? `hsl(${(timestamp / 10) % 360}, 100%, 60%)`
-            : colorData.fill;
-
-        const grad = ctx.createRadialGradient(
-            this.dS(-r*0.3), this.dS(-r*0.35), this.dS(r*0.05),
-            0, 0, this.dS(r)
-        );
-        grad.addColorStop(0,   this.lightenColor(bodyColor, 80));
-        grad.addColorStop(0.35, bodyColor);
-        grad.addColorStop(0.7,  this.darkenColor(bodyColor, 20));
-        grad.addColorStop(1,    this.darkenColor(bodyColor, 50));
-
-        // Glow (separate pass, won't leak to text)
-        ctx.save();
-        ctx.shadowBlur  = this.dS(22);
-        ctx.shadowColor = rainbow ? `hsl(${(timestamp/10) % 360}, 100%, 60%)` : colorData.glow;
-        ctx.fillStyle   = grad;
-        this.drawCircle(ctx, 0, 0, r);
-        ctx.fill();
-        ctx.shadowBlur = 0;
-        ctx.restore();
+        // Body
+        const col = rainbow ? `hsl(${(ts/10)%360},100%,60%)` : cd.fill;
+        const bg=ctx.createRadialGradient(this.S(-r*.3),this.S(-r*.35),this.S(r*.05),0,0,this.S(r));
+        bg.addColorStop(0,this._lt(col,80)); bg.addColorStop(0.35,col);
+        bg.addColorStop(0.7,this._dk(col,20)); bg.addColorStop(1,this._dk(col,50));
+        ctx.fillStyle=bg;
+        this._circle(0,0,r); ctx.fill();
 
         // Outer ring
-        ctx.strokeStyle = rainbow
-            ? `hsl(${((timestamp/10)+60) % 360}, 100%, 80%)`
-            : 'rgba(255,255,255,0.48)';
-        ctx.lineWidth = this.dS(2.5);
-        this.drawCircle(ctx, 0, 0, r);
-        ctx.stroke();
+        ctx.strokeStyle=rainbow?`hsl(${((ts/10)+60)%360},100%,80%)`:'rgba(255,255,255,0.45)';
+        ctx.lineWidth=this.S(2.5);
+        this._circle(0,0,r); ctx.stroke();
 
-        // Inner pulse ring
-        const pulseMod = 0.65 + Math.sin(p.pulseAnim) * 0.05;
-        ctx.strokeStyle = rainbow
-            ? `hsl(${((timestamp/10)+120) % 360}, 100%, 70%)`
-            : 'rgba(255,255,255,0.18)';
-        ctx.lineWidth = this.dS(1);
-        this.drawCircle(ctx, 0, 0, r * pulseMod);
-        ctx.stroke();
+        // Inner pulse
+        const pm=0.65+Math.sin(p.pulse)*0.05;
+        ctx.strokeStyle='rgba(255,255,255,0.16)'; ctx.lineWidth=this.S(1);
+        this._circle(0,0,r*pm); ctx.stroke();
 
         // Shine
-        ctx.fillStyle = 'rgba(255,255,255,0.48)';
+        ctx.fillStyle='rgba(255,255,255,0.46)';
         ctx.beginPath();
-        ctx.ellipse(
-            this.dS(-r*0.28), this.dS(-r*0.32),
-            this.dS(r*0.3), this.dS(r*0.2),
-            -0.5, 0, Math.PI * 2
-        );
+        ctx.ellipse(this.S(-r*.28),this.S(-r*.32),this.S(r*.3),this.S(r*.2),-0.5,0,Math.PI*2);
         ctx.fill();
 
         ctx.restore();
     }
 
-    // ============================================================
-    // DRAW: HUD — fully crisp
-    // ============================================================
-    drawHUD(ctx, timestamp) {
-        const W = this.W;
+    // ─── HUD ───
+    _drawHUD(ts) {
+        const ctx=this.ctx;
+        const W=this.W;
 
         // Top bar
-        const hudGrad = ctx.createLinearGradient(0, 0, 0, this.dY(44));
-        hudGrad.addColorStop(0, 'rgba(0,0,0,0.72)');
-        hudGrad.addColorStop(1, 'rgba(0,0,0,0.12)');
-        ctx.fillStyle = hudGrad;
-        ctx.fillRect(0, 0, this.canvas.width, this.dY(44));
-
-        ctx.strokeStyle = 'rgba(185,79,227,0.15)';
-        ctx.lineWidth   = this.dS(0.5);
-        this.drawLine(ctx, 0, 44, W, 44);
-        ctx.stroke();
+        const hg=ctx.createLinearGradient(0,0,0,this.X(46));
+        hg.addColorStop(0,'rgba(0,0,0,0.72)'); hg.addColorStop(1,'rgba(0,0,0,0.08)');
+        ctx.fillStyle=hg;
+        ctx.fillRect(0,0,this.canvas.width,this.X(46));
 
         // Level
-        this.drawText(ctx, `LVL ${this.level}`, 10, 22, {
-            size: 12, weight: 'bold', color: '#cc66ff',
-            family: this.FONT_TITLE,
-            glow: true, glowColor: '#b347d9', glowBlur: 4
-        });
+        this._txt(`LVL ${this.level}`, 10, 23, {sz:11,wt:'bold',col:'#c070ff',ff:this.FT});
 
-        // Score (center)
-        this.drawText(ctx, this.fmtNum(this.score), W/2, 22, {
-            size: 17, weight: 'bold', color: '#ffffff',
-            align: 'center', family: this.FONT_TITLE,
-            glow: true, glowColor: this.COLORS[this.playerColorIdx].glow, glowBlur: 6
-        });
+        // Score
+        this._txt(this.score.toLocaleString(), W/2, 22, {sz:18,wt:'bold',col:'#fff',al:'center',ff:this.FT});
 
         // Best
-        if (this.bestScore > 0) {
-            this.drawText(ctx, `BEST: ${this.fmtNum(this.bestScore)}`, W/2, 36, {
-                size: 8, color: 'rgba(255,215,0,0.45)',
-                align: 'center', family: this.FONT_MONO
-            });
-        }
+        if (this.bestScore>0)
+            this._txt(`BEST  ${this.bestScore.toLocaleString()}`, W/2, 38, {sz:8,col:'rgba(255,215,0,0.45)',al:'center',ff:this.FU});
 
-        // Current color (right)
-        const c = this.COLORS[this.playerColorIdx];
-        this.drawText(ctx, c.name, W - 12, 22, {
-            size: 11, weight: 'bold', color: c.fill,
-            align: 'right', family: this.FONT_TITLE,
-            glow: true, glowColor: c.glow, glowBlur: 5
-        });
-        this.drawText(ctx, 'TAP = CHANGE', W - 12, 35, {
-            size: 8, color: 'rgba(255,255,255,0.28)',
-            align: 'right', family: this.FONT_MONO
-        });
+        // Color name
+        const c=this.COLORS[this.pci];
+        this._txt(c.name.toUpperCase(), W-12, 20, {sz:10,wt:'bold',col:c.fill,al:'right',ff:this.FT});
+        this._txt('TAP=COLOR', W-12, 34, {sz:7,col:'rgba(255,255,255,0.25)',al:'right',ff:this.FU});
 
         // Combo
-        if (this.combo > 1 && this.comboTimer > 0) {
-            const ca = Math.min(1, this.comboTimer / 500);
-            this.drawText(ctx, `x${this.combo} COMBO!`, W/2, 56, {
-                size: 13, weight: 'bold', color: '#FFD700',
-                align: 'center', opacity: ca,
-                glow: true, glowColor: '#FFD700', glowBlur: 7,
-                family: this.FONT_TITLE
-            });
+        if (this.combo>1 && this.comboTimer>0) {
+            const ca=Math.min(1,this.comboTimer/500);
+            this._txt(`×${this.combo} COMBO`, W/2, 55, {sz:12,wt:'bold',col:'#FFD700',al:'center',op:ca,ff:this.FT});
         }
 
-        // Active effect bars
-        const efInfo = {
-            rainbow: { label: 'RAIN',   color: '#FF006E' },
-            magnet:  { label: 'MAG',    color: '#00D4FF' },
-            shield:  { label: 'SHIELD', color: '#00FF88' },
-            slow:    { label: 'SLOW',   color: '#B94FE3' }
-        };
-        let efX = 8;
-        const efY = 48;
+        // Effect bars
+        const efI={rainbow:{l:'RAIN',c:'#FF006E'},magnet:{l:'MAG',c:'#00D4FF'},shield:{l:'SHD',c:'#00FF88'},slow:{l:'SLOW',c:'#B94FE3'}};
+        let ex=8; const ey=48;
+        Object.entries(this.effects).forEach(([k,ef])=>{
+            if (!ef.on) return;
+            const info=efI[k]; if (!info) return;
+            const pct=ef.t/ef.dur, bw=44;
 
-        Object.entries(this.activeEffects).forEach(([key, ef]) => {
-            if (!ef.active || ef.duration === 0) return;
-            const info = efInfo[key];
-            if (!info) return;
-            const pct  = ef.timer / ef.duration;
-            const barW = 44;
+            ctx.fillStyle='rgba(0,0,0,0.45)';
+            this._rrect(ex,ey,bw,12,3); ctx.fill();
+            ctx.fillStyle=info.c; ctx.globalAlpha=0.35;
+            this._rrect(ex,ey,bw*pct,12,3); ctx.fill();
+            ctx.globalAlpha=1;
+            ctx.strokeStyle=info.c; ctx.lineWidth=this.S(0.8);
+            this._rrect(ex,ey,bw,12,3); ctx.stroke();
+            this._txt(info.l, ex+bw/2, ey+8, {sz:7,wt:'bold',col:'#fff',al:'center',ff:this.FU});
+            ex+=bw+5;
+        });
+    }
 
-            // Bar bg
-            ctx.fillStyle = 'rgba(0,0,0,0.45)';
-            this.drawRoundRect(ctx, efX, efY, barW, 10, 3);
-            ctx.fill();
+    // ─── FS Button ───
+    _drawFSBtn(ts) {
+        const ctx=this.ctx;
+        const bw=46,bh=46,mg=12;
+        const bx=this.W-bw-mg, by=this.H-bh-mg;
+        this.fsRect={x:bx,y:by,w:bw,h:bh};
+        const isFS=!!(document.fullscreenElement||document.webkitFullscreenElement);
+        const pulse=0.48+Math.sin(ts/1300)*0.18;
 
-            // Bar fill
-            ctx.fillStyle = info.color;
-            this.drawRoundRect(ctx, efX, efY, barW * pct, 10, 3);
-            ctx.fill();
+        ctx.save(); ctx.globalAlpha=pulse;
+        ctx.fillStyle='rgba(0,0,10,0.55)';
+        ctx.strokeStyle='rgba(255,255,255,0.2)'; ctx.lineWidth=this.S(1.2);
+        this._rrect(bx,by,bw,bh,10); ctx.fill(); ctx.stroke();
 
-            // Label
-            this.drawText(ctx, info.label, efX + barW/2, efY + 7, {
-                size: 6, weight: 'bold', color: '#ffffff',
-                align: 'center', family: this.FONT_MONO
+        const cx=bx+bw/2, cy=by+bh/2, ic=7;
+        ctx.strokeStyle='#fff'; ctx.lineWidth=this.S(2);
+        ctx.lineCap='round'; ctx.lineJoin='round';
+
+        if (!isFS) {
+            [[cx-ic+3,cy-ic,cx-ic,cy-ic,cx-ic,cy-ic+3],
+             [cx+ic-3,cy-ic,cx+ic,cy-ic,cx+ic,cy-ic+3],
+             [cx-ic+3,cy+ic,cx-ic,cy+ic,cx-ic,cy+ic-3],
+             [cx+ic-3,cy+ic,cx+ic,cy+ic,cx+ic,cy+ic-3]
+            ].forEach(([x1,y1,x2,y2,x3,y3])=>{
+                ctx.beginPath();
+                ctx.moveTo(this.X(x1),this.X(y1));
+                ctx.lineTo(this.X(x2),this.X(y2));
+                ctx.lineTo(this.X(x3),this.X(y3));
+                ctx.stroke();
             });
+        } else {
+            [[cx-ic+4,cy-ic,cx-ic+4,cy-ic+4,cx-ic,cy-ic+4],
+             [cx+ic-4,cy-ic,cx+ic-4,cy-ic+4,cx+ic,cy-ic+4],
+             [cx-ic+4,cy+ic,cx-ic+4,cy+ic-4,cx-ic,cy+ic-4],
+             [cx+ic-4,cy+ic,cx+ic-4,cy+ic-4,cx+ic,cy+ic-4]
+            ].forEach(([x1,y1,x2,y2,x3,y3])=>{
+                ctx.beginPath();
+                ctx.moveTo(this.X(x1),this.X(y1));
+                ctx.lineTo(this.X(x2),this.X(y2));
+                ctx.lineTo(this.X(x3),this.X(y3));
+                ctx.stroke();
+            });
+        }
+        ctx.restore();
+    }
 
-            efX += barW + 5;
+    // ─── Waiting ───
+    _drawWait(ts) {
+        const cx=this.W/2, cy=this.H/2;
+        const cw=Math.min(this.W-40,300), ch=105;
+
+        this.ctx.fillStyle='rgba(4,2,14,0.86)';
+        this._rrect(cx-cw/2,cy-ch/2,cw,ch,16); this.ctx.fill();
+        this.ctx.strokeStyle='rgba(185,79,227,0.35)'; this.ctx.lineWidth=this.S(1.5);
+        this._rrect(cx-cw/2,cy-ch/2,cw,ch,16); this.ctx.stroke();
+
+        this._txt('COLOR BUMP', cx, cy-18, {sz:22,wt:'bold',col:'#FF006E',al:'center',ff:this.FT});
+
+        this.ctx.fillStyle='rgba(255,255,255,0.08)'; this.ctx.lineWidth=0;
+        this.ctx.fillRect(this.X(cx-cw*0.38),this.X(cy-3),this.X(cw*0.76),this.S(1));
+
+        this._txt('Drag to move · Tap to change color', cx, cy+12, {sz:11,col:'rgba(180,180,200,0.65)',al:'center',ff:this.FU});
+
+        const bob=Math.sin(this.time/440)*4;
+        this._txt('Tap anywhere to start', cx, cy+ch/2-10+bob, {
+            sz:10,col:`rgba(150,150,180,${0.4+Math.sin(this.time/440)*0.4})`,al:'center',ff:this.FU
         });
     }
 
-    // ============================================================
-    // DRAW: WAITING SCREEN
-    // ============================================================
-    drawWaiting(ctx, timestamp) {
-        const cx = this.W / 2;
-        const cy = this.H / 2;
+    // ─── Death ───
+    _drawDeath(ts) {
+        const ctx=this.ctx;
+        const cx=this.W/2, cy=this.H/2, a=this.deathA;
 
-        // Card bg
-        ctx.fillStyle = 'rgba(4,2,14,0.88)';
-        this.drawRoundRect(ctx, cx - 155, cy - 55, 310, 106, 18);
-        ctx.fill();
-        ctx.strokeStyle = 'rgba(185,79,227,0.35)';
-        ctx.lineWidth   = this.dS(1.5);
-        ctx.stroke();
+        ctx.fillStyle=`rgba(0,0,0,${a*0.76})`;
+        ctx.fillRect(0,0,this.canvas.width,this.canvas.height);
 
-        // Title glow pass
-        this.drawText(ctx, 'COLOR BUMP', cx, cy - 18, {
-            size: 22, weight: 'bold', color: '#FF006E',
-            align: 'center', family: this.FONT_TITLE,
-            glow: true, glowColor: '#FF006E', glowBlur: 10
-        });
+        if (a<0.5) return;
+        const pa=Math.min(1,(a-0.5)/0.5);
 
-        this.drawText(ctx, 'Move / drag to control', cx, cy + 10, {
-            size: 12, color: 'rgba(180,180,200,0.7)',
-            align: 'center', family: this.FONT_MONO
-        });
+        const pw=Math.min(this.W-32,300), ph=270;
+        const px=cx-pw/2, py=cy-ph/2;
 
-        const bob = Math.sin(this.time / 400) * 3;
-        this.drawText(ctx, 'Tap / Click to change color & start', cx, cy + 32 + bob, {
-            size: 10, color: 'rgba(140,140,160,0.6)',
-            align: 'center', family: this.FONT_MONO
-        });
-    }
+        ctx.save(); ctx.globalAlpha=pa;
 
-    // ============================================================
-    // DRAW: DEATH SCREEN
-    // ============================================================
-    drawDeathScreen(ctx, timestamp) {
-        const cx    = this.W / 2;
-        const cy    = this.H / 2;
-        const alpha = this.deathOverlayAlpha;
-
-        // Overlay
-        ctx.fillStyle = `rgba(0,0,0,${alpha * 0.78})`;
-        ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-
-        if (alpha < 0.5) return;
-        const pa = (alpha - 0.5) / 0.5;
-
-        const pw = Math.min(this.W - 36, 302);
-        const ph = 282;
-        const px = cx - pw/2;
-        const py = cy - ph/2;
-
-        // Card
-        ctx.globalAlpha = pa;
-        ctx.fillStyle   = 'rgba(6,3,16,0.97)';
-        this.drawRoundRect(ctx, px, py, pw, ph, 18);
-        ctx.fill();
-
-        ctx.strokeStyle = 'rgba(255,0,110,0.45)';
-        ctx.lineWidth   = this.dS(1.5);
-        this.drawRoundRect(ctx, px, py, pw, ph, 18);
-        ctx.stroke();
+        // Panel
+        ctx.fillStyle='rgba(6,2,18,0.97)';
+        this._rrect(px,py,pw,ph,18); ctx.fill();
+        ctx.strokeStyle='rgba(255,0,90,0.5)'; ctx.lineWidth=this.S(1.5);
+        this._rrect(px,py,pw,ph,18); ctx.stroke();
 
         // Top accent
-        ctx.fillStyle = 'rgba(255,0,110,0.1)';
-        this.fillRect(ctx, px, py, pw, 3);
+        ctx.fillStyle='rgba(255,0,90,0.12)';
+        ctx.fillRect(this.X(px),this.X(py),this.X(pw),this.S(3));
 
-        ctx.globalAlpha = 1;
+        ctx.globalAlpha=1;
 
-        // Title
-        this.drawText(ctx, 'GAME OVER', cx, py + 46, {
-            size: 24, weight: 'bold', color: '#FF006E',
-            align: 'center', family: this.FONT_TITLE,
-            glow: true, glowColor: '#FF006E', glowBlur: 12,
-            opacity: pa
-        });
+        this._txt('GAME OVER', cx, py+44, {sz:24,wt:'bold',col:'#FF006E',al:'center',op:pa,ff:this.FT});
 
         // Divider
-        ctx.fillStyle = `rgba(255,255,255,${0.07 * pa})`;
-        this.fillRect(ctx, px + 18, py + 60, pw - 36, 1);
+        ctx.fillStyle=`rgba(255,255,255,${0.07*pa})`;
+        ctx.fillRect(this.X(px+20),this.X(py+60),this.X(pw-40),this.S(1));
 
         // Stats
-        const rows = [
-            { label: 'SCORE',        val: this.fmtNum(this.score),    color: '#ffffff' },
-            { label: 'BEST',         val: this.fmtNum(this.bestScore), color: this.score >= this.bestScore ? '#FFD700' : '#ffffff' },
-            { label: 'LEVEL',        val: String(this.level),          color: '#cc66ff' },
-            { label: 'BEST COMBO',   val: `x${this.maxCombo}`,         color: '#FFD700' },
-            { label: 'BALLS POPPED', val: String(this.ballsPopped),    color: '#00FF88' }
+        const rows=[
+            {l:'SCORE',      v:this.score.toLocaleString(), c:this.score>=this.bestScore?'#00fff5':'#fff'},
+            {l:'BEST',       v:this.bestScore.toLocaleString(), c:this.score>=this.bestScore?'#FFD700':'#aaa'},
+            {l:'LEVEL',      v:String(this.level), c:'#c070ff'},
+            {l:'BEST COMBO', v:`×${this.maxCombo}`, c:'#FFD700'},
+            {l:'POPPED',     v:String(this.popped), c:'#00FF88'}
         ];
 
-        rows.forEach((r, i) => {
-            const ry = py + 82 + i * 28;
-            this.drawText(ctx, r.label, px + 22, ry, {
-                size: 10, weight: '600', color: `rgba(100,110,140,${pa})`,
-                family: this.FONT_TITLE
-            });
-            this.drawText(ctx, r.val, px + pw - 22, ry, {
-                size: 12, weight: 'bold', color: r.color,
-                align: 'right', family: this.FONT_TITLE,
-                opacity: pa
-            });
+        rows.forEach((r,i)=>{
+            const ry=py+84+i*30;
+            this._txt(r.l, px+22, ry, {sz:10,wt:'600',col:`rgba(130,130,160,${pa})`,ff:this.FU});
+            this._txt(r.v, px+pw-22, ry, {sz:i===0?16:13,wt:'bold',col:r.c,al:'right',op:pa,ff:this.FT});
         });
+
+        // New best badge
+        if (this.score>0 && this.score>=this.bestScore) {
+            ctx.fillStyle='rgba(255,215,0,0.1)'; ctx.strokeStyle='rgba(255,215,0,0.4)'; ctx.lineWidth=this.S(1);
+            this._rrect(cx-52,py+72,104,18,6); ctx.fill(); ctx.stroke();
+            this._txt('✦ NEW BEST ✦', cx, py+83, {sz:9,wt:'bold',col:'#FFD700',al:'center',bl:'middle',op:pa,ff:this.FT});
+        }
 
         // Divider
-        ctx.fillStyle = `rgba(255,255,255,${0.07 * pa})`;
-        this.fillRect(ctx, px + 18, py + ph - 50, pw - 36, 1);
+        ctx.fillStyle=`rgba(255,255,255,${0.07*pa})`;
+        ctx.fillRect(this.X(px+20),this.X(py+ph-48),this.X(pw-40),this.S(1));
 
-        // Blink restart
-        const blink = 0.45 + Math.sin(this.time / 400) * 0.45;
-        this.drawText(ctx, 'TAP TO PLAY AGAIN', cx, py + ph - 18, {
-            size: 11, color: 'rgba(180,180,220,1)',
-            align: 'center', family: this.FONT_MONO,
-            opacity: blink * pa
+        // Tap to restart
+        const blink=0.4+Math.sin(this.time/380)*0.45;
+        this._txt('● TAP TO PLAY AGAIN ●', cx, py+ph-18, {
+            sz:11,col:'rgba(190,190,220,0.85)',al:'center',op:blink*pa,ff:this.FU
         });
+
+        ctx.restore();
     }
 
-    // ============================================================
-    // UTILS
-    // ============================================================
-    lightenColor(color, amt) {
-        if (!color.startsWith('#')) return color;
-        const r = Math.min(255, parseInt(color.slice(1,3),16) + amt);
-        const g = Math.min(255, parseInt(color.slice(3,5),16) + amt);
-        const b = Math.min(255, parseInt(color.slice(5,7),16) + amt);
-        return `rgb(${r},${g},${b})`;
+    // ─── Utils ───
+    _lt(c, a) {
+        if (!c.startsWith('#')) return c;
+        return `rgb(${Math.min(255,parseInt(c.slice(1,3),16)+a)},${Math.min(255,parseInt(c.slice(3,5),16)+a)},${Math.min(255,parseInt(c.slice(5,7),16)+a)})`;
+    }
+    _dk(c, a) {
+        if (!c.startsWith('#')) return c;
+        return `rgb(${Math.max(0,parseInt(c.slice(1,3),16)-a)},${Math.max(0,parseInt(c.slice(3,5),16)-a)},${Math.max(0,parseInt(c.slice(5,7),16)-a)})`;
     }
 
-    darkenColor(color, amt) {
-        if (!color.startsWith('#')) return color;
-        const r = Math.max(0, parseInt(color.slice(1,3),16) - amt);
-        const g = Math.max(0, parseInt(color.slice(3,5),16) - amt);
-        const b = Math.max(0, parseInt(color.slice(5,7),16) - amt);
-        return `rgb(${r},${g},${b})`;
-    }
-
-    hexToRgba(hex, alpha) {
-        if (!hex || !hex.startsWith('#')) return hex;
-        return `rgba(${parseInt(hex.slice(1,3),16)},${parseInt(hex.slice(3,5),16)},${parseInt(hex.slice(5,7),16)},${Math.max(0,Math.min(1,alpha))})`;
-    }
-
-    // ============================================================
-    // GAME LOOP
-    // ============================================================
-    loop(timestamp) {
+    // ─── Loop ───
+    _loop(ts) {
         if (this.destroyed) return;
-        const dt = Math.min(timestamp - (this.lastTime || timestamp), 50);
-        this.lastTime = timestamp;
-        this.update(timestamp, dt);
-        this.draw(timestamp);
-        this.animId = requestAnimationFrame(t => this.loop(t));
+        const dt=Math.min(ts-(this.lastTime||ts),50);
+        this.lastTime=ts;
+        this.update(ts,dt);
+        this.draw(ts);
+        this.animId=requestAnimationFrame(t=>this._loop(t));
     }
 
     togglePause() {
-        this.paused = !this.paused;
-        if (!this.paused) this.lastTime = performance.now();
+        this.paused=this.isPaused=!this.paused;
+        if (!this.paused) this.lastTime=performance.now();
         return this.paused;
     }
 
     resize() {
-        this.setupHDCanvas();
-        this.W = this.canvas.width  / this.dpr;
-        this.H = this.canvas.height / this.dpr;
-        this.isMobile      = this.W < 768 || ('ontouchstart' in window);
-        this.isSmallScreen = this.W < 380;
-        this.stars   = this.makeStars(this.isMobile ? 40 : 65);
-        this.hexGrid = this.generateHexGrid();
+        this._setupHD();
+        this.W=this.canvas.width/this.dpr;
+        this.H=this.canvas.height/this.dpr;
+        this.isMobile=('ontouchstart' in window)||this.W<768;
+        this.stars=this._mkStars(this.isMobile?35:55);
+        this.hexGrid=this._mkHex();
     }
 
     destroy() {
-        this.destroyed = true;
+        this.destroyed=true;
         cancelAnimationFrame(this.animId);
-        this.canvas.removeEventListener('mousemove',  this.boundMouseMove);
-        this.canvas.removeEventListener('click',      this.boundClick);
-        this.canvas.removeEventListener('touchstart', this.boundTouchStart);
-        this.canvas.removeEventListener('touchmove',  this.boundTouchMove);
-        this.canvas.removeEventListener('touchend',   this.boundTouchEnd);
+        this.canvas.removeEventListener('mousemove',  this._onMM);
+        this.canvas.removeEventListener('click',      this._onClick);
+        this.canvas.removeEventListener('touchstart', this._onTS);
+        this.canvas.removeEventListener('touchmove',  this._onTM);
+        this.canvas.removeEventListener('touchend',   this._onTE);
     }
 }
