@@ -1,10 +1,111 @@
-/**
- * Angry Birds - Elevated Edition v5
- * UPDATED: Structures farther + Sound Effects added
- */
-
 window.initAngryBirds = function (canvas) {
     'use strict';
+
+    // ═══════════════════════════════════════════
+    // ROTATE SCREEN OVERLAY
+    // ═══════════════════════════════════════════
+    let rotateOverlay = null;
+    let gameStarted = false;
+
+    function createRotateOverlay() {
+        if (rotateOverlay) return;
+        rotateOverlay = document.createElement('div');
+        rotateOverlay.id = 'ab-rotate-overlay';
+        rotateOverlay.style.cssText = `
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0,0,0,0.92);
+            z-index: 99999;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Rajdhani', Arial, sans-serif;
+        `;
+        rotateOverlay.innerHTML = `
+            <div style="
+                background: rgba(20,30,60,0.95);
+                border: 2px solid #FFD700;
+                border-radius: 20px;
+                padding: 40px 30px;
+                text-align: center;
+                max-width: 320px;
+            ">
+                <div id="ab-rotate-icon" style="
+                    font-size: 72px;
+                    margin-bottom: 20px;
+                    display: inline-block;
+                    animation: abRotateAnim 1.8s ease-in-out infinite;
+                ">📱</div>
+                <div style="
+                    font-size: 22px;
+                    font-weight: bold;
+                    color: #FFE040;
+                    margin-bottom: 10px;
+                    letter-spacing: 1px;
+                ">ROTATE YOUR PHONE</div>
+                <div style="
+                    font-size: 14px;
+                    color: #AAEEFF;
+                    margin-bottom: 8px;
+                ">For the best Angry Birds experience</div>
+                <div style="
+                    font-size: 13px;
+                    color: rgba(255,255,255,0.5);
+                ">Please rotate to landscape mode 🔄</div>
+            </div>
+            <style>
+                @keyframes abRotateAnim {
+                    0%   { transform: rotate(0deg);   }
+                    30%  { transform: rotate(0deg);   }
+                    60%  { transform: rotate(-90deg); }
+                    90%  { transform: rotate(-90deg); }
+                    100% { transform: rotate(0deg);   }
+                }
+            </style>
+        `;
+        document.body.appendChild(rotateOverlay);
+    }
+
+    function removeRotateOverlay() {
+        if (rotateOverlay) {
+            rotateOverlay.remove();
+            rotateOverlay = null;
+        }
+    }
+
+    function isPortrait() {
+        if (screen.orientation && screen.orientation.type) {
+            return screen.orientation.type.includes('portrait');
+        }
+        return window.innerHeight > window.innerWidth;
+    }
+
+    function checkOrientation() {
+        if (isPortrait()) {
+            // Portrait — show overlay, pause game
+            createRotateOverlay();
+            gameStarted = false;
+        } else {
+            // Landscape — hide overlay, start/resume game
+            removeRotateOverlay();
+            if (!gameStarted) {
+                gameStarted = true;
+                resize();
+                loadLevel(1);
+            } else {
+                resize();
+            }
+        }
+    }
+
+    window.addEventListener('orientationchange', () => {
+        setTimeout(checkOrientation, 300);
+    });
+    window.addEventListener('resize', () => {
+        setTimeout(checkOrientation, 300);
+    });
 
     const ctx = canvas.getContext('2d', { alpha: false });
     const isMobile = ('ontouchstart' in window) || window.innerWidth < 768;
@@ -79,101 +180,70 @@ window.initAngryBirds = function (canvas) {
 
     // Sound presets
     const SFX = {
-        // Sling pull — rubber band tension sound
         slingPull() {
             playTone(80 + Math.hypot(pullX, pullY) * 2, 'sawtooth', 0.08, 0.06, 0.01);
         },
-
-        // Launch whoosh
         launch() {
             playTone(400, 'sine', 0.25, 0.25, 0.01, 0.05, 900);
             playNoise(0.18, 0.15, 600);
         },
-
-        // Bird flying through air
         whoosh() {
             playTone(200, 'sine', 0.12, 0.08, 0.01, 0.05, 350);
         },
-
-        // Hit block — wood
         hitWood() {
             playTone(180, 'sawtooth', 0.18, 0.3, 0.005, 0.02, 280);
             playNoise(0.15, 0.2, 400);
         },
-
-        // Hit block — stone
         hitStone() {
             playTone(100, 'square', 0.22, 0.35, 0.005, 0.03, 150);
             playNoise(0.2, 0.25, 300);
         },
-
-        // Hit block — glass
         hitGlass() {
             playTone(1200, 'sine', 0.15, 0.2, 0.002, 0.02, 1600);
             playTone(900, 'sine', 0.12, 0.15, 0.002, 0.02);
         },
-
-        // Hit block — metal
         hitMetal() {
             playTone(280, 'square', 0.3, 0.4, 0.002, 0.04, 500);
             playTone(140, 'sawtooth', 0.25, 0.3, 0.005, 0.03);
         },
-
-        // Pig squeal when hit
         pigHit() {
             playTone(600, 'sine', 0.2, 0.25, 0.01, 0.05, 400);
             playTone(500, 'sine', 0.15, 0.15, 0.02, 0.05, 700);
         },
-
-        // Pig death pop
         pigDie() {
             playTone(800, 'sine', 0.12, 0.3, 0.005, 0.02, 500);
             playTone(400, 'sine', 0.25, 0.2, 0.01, 0.05, 600);
             playNoise(0.2, 0.25, 1000);
         },
-
-        // Explosion — bomb bird
         explosion() {
             playNoise(0.5, 0.6, 150);
             playTone(60, 'sawtooth', 0.5, 0.5, 0.005, 0.1, 120);
             playTone(40, 'sine', 0.6, 0.4, 0.01, 0.15, 80);
         },
-
-        // Bird land on ground
         birdLand() {
             playNoise(0.12, 0.2, 350);
             playTone(150, 'sine', 0.1, 0.2, 0.005, 0.02, 200);
         },
-
-        // Win fanfare
         win() {
             const notes = [523, 659, 784, 1047];
             notes.forEach((f, i) => {
                 setTimeout(() => playTone(f, 'sine', 0.35, 0.3, 0.02, 0.05), i * 120);
             });
         },
-
-        // Lose sound
         lose() {
             playTone(400, 'sawtooth', 0.4, 0.3, 0.02, 0.1, 600);
             setTimeout(() => playTone(250, 'sawtooth', 0.5, 0.3, 0.02, 0.1, 350), 200);
             setTimeout(() => playTone(150, 'sawtooth', 0.6, 0.3, 0.02, 0.15, 220), 450);
         },
-
-        // Level start
         levelStart() {
             playTone(440, 'sine', 0.2, 0.2, 0.02, 0.04);
             setTimeout(() => playTone(550, 'sine', 0.2, 0.2, 0.02, 0.04), 150);
             setTimeout(() => playTone(660, 'sine', 0.3, 0.25, 0.02, 0.05), 300);
         },
-
-        // Special bird ability
         special() {
             playTone(900, 'sine', 0.2, 0.3, 0.01, 0.04, 600);
             playTone(1200, 'sine', 0.15, 0.2, 0.02, 0.04, 800);
         },
-
-        // Sling snap
         snap() {
             playTone(300, 'sawtooth', 0.08, 0.2, 0.002, 0.02, 500);
         }
@@ -190,7 +260,7 @@ window.initAngryBirds = function (canvas) {
     let SEAT_X = 0, SEAT_Y = 0;
 
     let pullX = 0, pullY = 0, isPulling = false;
-    let lastPullD = 0; // for sling pull sound trigger
+    let lastPullD = 0;
     const MAX_PULL = isMobile ? 85 : 75;
     const POWER = 0.28;
 
@@ -207,7 +277,6 @@ window.initAngryBirds = function (canvas) {
     let settleTimer = 0, introTimer = 0;
     let winButtons = [], loseButtons = [], confetti = [];
 
-    // Launch animation state
     let launchAnim = {
         active: false,
         timer: 0,
@@ -246,7 +315,7 @@ window.initAngryBirds = function (canvas) {
     };
 
     // ═══════════════════════════════════════════
-    // LEVELS — structures farther from slingshot
+    // LEVELS
     // ═══════════════════════════════════════════
     const LEVELS = [
         {
@@ -259,7 +328,6 @@ window.initAngryBirds = function (canvas) {
                 addBlock(x1, gY, 22, 120, 'wood');
                 addBlock(x1, gY - 120, 60, 14, 'wood');
                 addPig(x1, gY - 120 - 14, 'small');
-
                 const x2 = x1 + 120;
                 addBlock(x2, gY, 18, 80, 'wood');
                 addBlock(x2, gY - 80, 50, 13, 'wood');
@@ -278,7 +346,6 @@ window.initAngryBirds = function (canvas) {
                 addBlock(x1, gY - 100, 64, 10, 'glass');
                 addBlock(x1, gY - 110, 50, 12, 'wood');
                 addPig(x1, gY - 100, 'medium');
-
                 const x2 = x1 + 140;
                 addBlock(x2, gY, 16, 130, 'wood');
                 addBlock(x2, gY - 130, 55, 14, 'wood');
@@ -298,7 +365,6 @@ window.initAngryBirds = function (canvas) {
                 addBlock(x1, gY - 140, 70, 18, 'stone');
                 addPig(x1 - 15, gY - 140 - 18, 'small');
                 addPig(x1 + 15, gY - 140 - 18, 'small');
-
                 const x2 = x1 + 160;
                 addBlock(x2, gY, 20, 90, 'wood');
                 addBlock(x2, gY - 90, 60, 13, 'stone');
@@ -480,16 +546,16 @@ window.initAngryBirds = function (canvas) {
         if (!wrap) return;
         const r = wrap.getBoundingClientRect();
         W = r.width  || window.innerWidth;
-        H = r.height || (window.innerHeight-56);
-        canvas.width  = Math.round(W*dpr);
-        canvas.height = Math.round(H*dpr);
-        canvas.style.width  = W+'px';
-        canvas.style.height = H+'px';
-        GROUND = H*0.78;
-        SX=W*0.17; SY=GROUND;
-        SF1X=SX-14; SF1Y=SY-68;
-        SF2X=SX+14; SF2Y=SY-68;
-        SEAT_X=SX; SEAT_Y=SF1Y+10;
+        H = r.height || (window.innerHeight - 56);
+        canvas.width  = Math.round(W * dpr);
+        canvas.height = Math.round(H * dpr);
+        canvas.style.width  = W + 'px';
+        canvas.style.height = H + 'px';
+        GROUND = H * 0.78;
+        SX = W * 0.17; SY = GROUND;
+        SF1X = SX - 14; SF1Y = SY - 68;
+        SF2X = SX + 14; SF2Y = SY - 68;
+        SEAT_X = SX; SEAT_Y = SF1Y + 10;
     }
 
     // ═══════════════════════════════════════════
@@ -572,7 +638,6 @@ window.initAngryBirds = function (canvas) {
             bird.stretch=clamp(1+spd*0.012,1,1.35);
             bird.squash=clamp(1/bird.stretch,0.7,1);
 
-            // Whoosh sound periodically during flight
             if(birdFlightTime%25===0) SFX.whoosh();
 
             const last=bird.trail[bird.trail.length-1];
@@ -642,7 +707,6 @@ window.initAngryBirds = function (canvas) {
         });
     }
 
-    // Sound cooldown for block hits
     let lastHitSfx = 0;
 
     function hitWorld(b) {
@@ -673,15 +737,12 @@ window.initAngryBirds = function (canvas) {
                 b.vx*=0.45;b.vy*=0.45;
                 burst(bl.cx,bl.cy,MAT[bl.mat].mid,4,1,4);
                 shakeScreen(3);
-
-                // Play material-specific hit sound (with cooldown)
                 const now = Date.now();
                 if(now-lastHitSfx>80 && spd>3){
                     lastHitSfx=now;
                     const sfxName = MAT[bl.mat]?.sfx || 'hitWood';
                     if(SFX[sfxName]) SFX[sfxName]();
                 }
-
                 if(bl.hp<=0) killBlock(bl);
             }
         });
@@ -878,9 +939,7 @@ window.initAngryBirds = function (canvas) {
     }
 
     function onDown(e){
-        // Resume audio context on user gesture
         getAudio();
-
         if(state===ST.INTRO){state=ST.READY;spawnBird();return;}
         if(state===ST.WIN||state===ST.LOSE){
             const pos=getPos(e);
@@ -915,8 +974,6 @@ window.initAngryBirds = function (canvas) {
         bird.cx=SEAT_X+dx;
         bird.cy=SEAT_Y-bird.r+dy;
         calcTrajectory();
-
-        // Sling pull sound — only when pull distance changes significantly
         const curD = Math.hypot(pullX, pullY);
         if(Math.abs(curD-lastPullD) > 6){
             lastPullD = curD;
@@ -957,8 +1014,11 @@ window.initAngryBirds = function (canvas) {
     // UPDATE
     // ═══════════════════════════════════════════
     function update(){
+        // Agar portrait mein hai toh game update mat karo
+        if (isPortrait()) return;
+
         clouds.forEach(c=>{c.x-=c.sp;if(c.x+c.w<-200){c.x=W+camX+rng(0,200);c.y=rng(18,H*0.26);}});
-        bgBirds.forEach(b=>{b.x+=b.sp;b.wp+=0.09;if(b.x>W+camX+100){b.x=camX-80;b.y=rng(35,H*0.23);}});
+        bgBirds.forEach(b=>{b.x+=b.sp;b.wp+=0.09;if(b.x>W+camX+100){b.x=camX-80;b.y=rng(35,H*0.23);        }});
 
         if(shakeMag>0){
             shakeX=(Math.random()-0.5)*shakeMag*1.4;
@@ -1048,6 +1108,17 @@ window.initAngryBirds = function (canvas) {
     // DRAW
     // ═══════════════════════════════════════════
     function draw(){
+        // Portrait mein sirf overlay draw karo, game nahi
+        if (isPortrait()) {
+            const c = ctx;
+            c.save();
+            c.scale(dpr, dpr);
+            c.fillStyle = '#000';
+            c.fillRect(0, 0, W || canvas.width, H || canvas.height);
+            c.restore();
+            return;
+        }
+
         const c=ctx;
         c.save();c.scale(dpr,dpr);
         const th=LEVELS[level-1]?.theme||{};
@@ -1640,13 +1711,27 @@ window.initAngryBirds = function (canvas) {
     function loop(now){
         if(destroyed)return;
         lastTime=now;
-        update();draw();
+        update();
+        draw();
         requestAnimationFrame(loop);
     }
 
+    // ═══════════════════════════════════════════
+    // INIT — Pehle orientation check karo
+    // ═══════════════════════════════════════════
     resize();
-    loadLevel(1);
-    requestAnimationFrame(loop);
+
+    // Portrait mein hai toh overlay dikhao, landscape mein seedha load karo
+    if (isPortrait()) {
+        createRotateOverlay();
+        gameStarted = false;
+        // Game loop start karo taaki canvas black rahe
+        requestAnimationFrame(loop);
+    } else {
+        gameStarted = true;
+        loadLevel(1);
+        requestAnimationFrame(loop);
+    }
 
     const titleEl=document.getElementById('current-game-title');
     if(titleEl)titleEl.textContent='Angry Birds';
@@ -1662,6 +1747,7 @@ window.initAngryBirds = function (canvas) {
         },
         destroy(){
             destroyed=true;
+            removeRotateOverlay();
             pigs=[];blocks=[];bird=null;splitBirds=[];particles=[];
             if(audioCtx){try{audioCtx.close();}catch(e){}}
         },
