@@ -26,11 +26,9 @@ class BubbleShooter {
 
         this.isMobile = window.innerWidth < 768 || ('ontouchstart' in window);
 
-        // ── DPR FIX: game objects use 1x on mobile, text always uses real DPR ──
         this.DPR     = this.isMobile ? 1 : Math.min(window.devicePixelRatio || 1, 2);
         this.textDPR = Math.min(window.devicePixelRatio || 1, 3);
 
-        // Game state
         this.grid          = [];
         this.currentLevel  = 0;
         this.score         = 0;
@@ -44,7 +42,6 @@ class BubbleShooter {
         this.timerInterval = null;
         this.history       = [];
 
-        // Shooter state
         this.shooterAngle  = -Math.PI / 2;
         this.targetAngle   = -Math.PI / 2;
         this.currentBubble = 0;
@@ -55,13 +52,11 @@ class BubbleShooter {
         this.colorsInPlay  = [];
         this.aimDots       = [];
 
-        // Color change feature
         this.colorChangesLeft    = 3;
         this.colorChangeCooldown = 0;
         this.colorChangeAnim     = 0;
         this.colorChangeFlash    = 0;
 
-        // Layout
         this.COLS     = 10;
         this.ROWS     = 14;
         this.BUBBLE_R = 18;
@@ -72,7 +67,6 @@ class BubbleShooter {
         this.HUD_H    = 0;
         this.BOTTOM_H = 0;
 
-        // FX
         this.particles     = [];
         this.fallingBubbles= [];
         this.popRings      = [];
@@ -80,7 +74,6 @@ class BubbleShooter {
         this.floatingTexts = [];
         this.MAX_PARTICLES = this.isMobile ? 30 : 100;
 
-        // Anim & render
         this.globalTime    = 0;
         this.frame         = 0;
         this._lastFrameTime= 0;
@@ -98,21 +91,17 @@ class BubbleShooter {
         this.animationFrameId = null;
         this.swapAnim      = 0;
 
-        // Level complete overlay
         this.showLevelComplete  = false;
         this.levelCompleteTimer = 0;
         this.starRating         = 0;
 
-        // Player data
         this.saveKey    = 'neonBubble_v12';
         this.playerData = this._loadPlayerData();
 
-        // FPS tracking
         this.fpsHistory   = [];
         this.adaptiveMode = false;
         this.lastFpsCheck = 0;
 
-        // Sound
         this.audioCtx    = null;
         this.soundEnabled= true;
         this._initAudio();
@@ -277,14 +266,12 @@ class BubbleShooter {
         });
     }
 
-    // ══════════════════ CANVAS SETUP — FIXED ══════════════════
+    // ══════════════════ CANVAS SETUP ══════════════════
 
     _setupCanvas() {
         const parent = this.canvas.parentElement;
         let w, h;
-
         if (parent) {
-            // Use getBoundingClientRect for accurate size
             const rect = parent.getBoundingClientRect();
             w = rect.width  || parent.clientWidth  || window.innerWidth;
             h = rect.height || parent.clientHeight || window.innerHeight;
@@ -292,7 +279,6 @@ class BubbleShooter {
             w = window.innerWidth;
             h = window.innerHeight;
         }
-
         w = Math.max(w, 200);
         h = Math.max(h, 300);
 
@@ -321,12 +307,14 @@ class BubbleShooter {
         this.offsetX = (this.W - gridW) / 2 + this.BUBBLE_R;
         this.offsetY = this.HUD_H + this.BUBBLE_R + 5;
 
-        this.shooterX   = this.W / 2;
-        this.shooterY   = this.H - this.BOTTOM_H / 2;
-        this.ceilingY   = this.HUD_H;
-        this.deadlineY  = this.shooterY - this.BUBBLE_R * 3;
+        this.shooterX  = this.W / 2;
+        this.shooterY  = this.H - this.BOTTOM_H / 2;
+        this.ceilingY  = this.HUD_H;
+        this.deadlineY = this.shooterY - this.BUBBLE_R * 3;
 
-        this._bubbleCache.clear(); this._glowCache.clear(); this._gradCache.clear();
+        this._bubbleCache.clear();
+        this._glowCache.clear();
+        this._gradCache.clear();
     }
 
     // ══════════════════ PLAYER DATA ══════════════════
@@ -604,31 +592,76 @@ class BubbleShooter {
     }
     _calcStars() { if (this.moves<=15) return 3; if (this.moves<=25) return 2; return 1; }
 
-    // ══════════════════ AIM LINE ══════════════════
+    // ══════════════════ AIM LINE — FULL FIX ══════════════════
+    // Traces complete path with wall bounces all the way to ceiling or bubble hit
 
     _updateAimDots() {
-        this.aimDots=[];
-        if (this.projectile||this.gameWon||this.gameOver) return;
-        const step=this.BUBBLE_R*1.5,maxDots=this.isMobile?12:20;
-        let x=this.shooterX,y=this.shooterY;
-        let dx=Math.cos(this.shooterAngle)*step,dy=Math.sin(this.shooterAngle)*step;
-        for (let i=0;i<maxDots;i++) {
-            x+=dx; y+=dy;
-            if (x<this.BUBBLE_R){x=this.BUBBLE_R;dx=-dx;}
-            if (x>this.W-this.BUBBLE_R){x=this.W-this.BUBBLE_R;dx=-dx;}
-            if (y<this.ceilingY+this.BUBBLE_R) break;
-            let hitBubble=false;
-            for (let r=0;r<this.ROWS&&!hitBubble;r++) {
-                const maxC=(r%2===1)?this.COLS-1:this.COLS;
-                for (let c=0;c<maxC&&!hitBubble;c++) {
-                    if (this.grid[r][c]<0) continue;
-                    const pos=this._getBubblePos(r,c);
-                    const ddx=x-pos.x,ddy=y-pos.y;
-                    if (ddx*ddx+ddy*ddy<(this.BUBBLE_R*1.8)**2) hitBubble=true;
+        this.aimDots = [];
+        if (this.projectile || this.gameWon || this.gameOver) return;
+
+        // Use small steps for smooth accurate tracing
+        const stepSize  = this.BUBBLE_R * 0.6;
+        const maxSteps  = this.isMobile ? 180 : 300;
+        const dotSpacing= this.BUBBLE_R * 1.4; // place a dot every N pixels
+
+        let x  = this.shooterX;
+        let y  = this.shooterY;
+        let dx = Math.cos(this.shooterAngle) * stepSize;
+        let dy = Math.sin(this.shooterAngle) * stepSize;
+
+        let distSinceLastDot = 0;
+        let totalDots        = 0;
+        const maxDots        = this.isMobile ? 18 : 32;
+
+        for (let step = 0; step < maxSteps; step++) {
+            x += dx;
+            y += dy;
+
+            // Wall bounces
+            if (x - this.BUBBLE_R < 0) {
+                x  = this.BUBBLE_R;
+                dx = -dx;
+            }
+            if (x + this.BUBBLE_R > this.W) {
+                x  = this.W - this.BUBBLE_R;
+                dx = -dx;
+            }
+
+            // Hit ceiling — stop here
+            if (y - this.BUBBLE_R <= this.ceilingY) {
+                // Add final dot at ceiling
+                const alpha = Math.max(0.1, 1 - totalDots / maxDots);
+                this.aimDots.push({ x, y: this.ceilingY + this.BUBBLE_R, alpha, isFinal: true });
+                break;
+            }
+
+            // Check collision with existing bubbles
+            let hitBubble = false;
+            for (let r = 0; r < this.ROWS && !hitBubble; r++) {
+                const maxC = (r % 2 === 1) ? this.COLS - 1 : this.COLS;
+                for (let c = 0; c < maxC && !hitBubble; c++) {
+                    if (this.grid[r][c] < 0) continue;
+                    const pos = this._getBubblePos(r, c);
+                    const ddx = x - pos.x, ddy = y - pos.y;
+                    if (ddx * ddx + ddy * ddy < (this.BUBBLE_R * 1.85) ** 2) {
+                        hitBubble = true;
+                        // Add final dot at collision point
+                        const alpha = Math.max(0.1, 1 - totalDots / maxDots);
+                        this.aimDots.push({ x, y, alpha, isFinal: true });
+                    }
                 }
             }
-            this.aimDots.push({x,y,alpha:1-i/maxDots});
             if (hitBubble) break;
+
+            // Place dots at even intervals
+            distSinceLastDot += stepSize;
+            if (distSinceLastDot >= dotSpacing) {
+                distSinceLastDot = 0;
+                const alpha = Math.max(0.12, 1 - totalDots / maxDots);
+                this.aimDots.push({ x, y, alpha, isFinal: false });
+                totalDots++;
+                if (totalDots >= maxDots) break;
+            }
         }
     }
 
@@ -653,8 +686,7 @@ class BubbleShooter {
         for (let i=this.textPopups.length-1;i>=0;i--){const tp=this.textPopups[i];tp.y+=tp.vy;tp.life-=0.02;if(tp.life<=0)this.textPopups.splice(i,1);}
     }
 
-    // ══════════════════ CRISP TEXT — KEY FIX ══════════════════
-    // Always use textDPR for font size and coordinates
+    // ══════════════════ CRISP TEXT ══════════════════
 
     _drawCrispText(ctx, text, x, y, opts = {}) {
         const {
@@ -671,7 +703,6 @@ class BubbleShooter {
         ctx.textAlign    = align;
         ctx.textBaseline = baseline;
 
-        // ── CRISP FIX: textDPR for font size + coords ──
         const td = this.textDPR;
         ctx.font = `${weight} ${Math.round(size * td)}px 'Segoe UI', Rajdhani, Arial, sans-serif`;
 
@@ -687,12 +718,10 @@ class BubbleShooter {
             ctx.lineJoin    = 'round';
             ctx.strokeText(text, px, py, mw);
         }
-
         if (glow && glowBlur > 0 && !this.isMobile) {
             ctx.shadowBlur  = glowBlur * td;
             ctx.shadowColor = glowColor || color;
         }
-
         ctx.fillStyle = color;
         ctx.fillText(text, px, py, mw);
         ctx.shadowBlur  = 0;
@@ -708,7 +737,6 @@ class BubbleShooter {
         const grad=ctx.createLinearGradient(0,0,0,h);
         grad.addColorStop(0,'#0a0a1a'); grad.addColorStop(0.5,'#0d1025'); grad.addColorStop(1,'#060612');
         ctx.fillStyle=grad; ctx.fillRect(0,0,w,h);
-
         if (!this.isMobile) {
             ctx.strokeStyle='rgba(50,50,100,0.08)'; ctx.lineWidth=this.DPR;
             const spacing=40*this.DPR;
@@ -772,26 +800,23 @@ class BubbleShooter {
         const r=this.BUBBLE_R*dpr;
         const recoilOffset=this.shootRecoil*5*dpr;
 
-        // Platform
         ctx.beginPath(); ctx.arc(sx,sy,r*1.8,Math.PI,0);
         const baseGrad=ctx.createLinearGradient(sx-r*2,sy,sx+r*2,sy);
         baseGrad.addColorStop(0,'#1a1a3a'); baseGrad.addColorStop(0.5,'#2a2a5a'); baseGrad.addColorStop(1,'#1a1a3a');
         ctx.fillStyle=baseGrad; ctx.fill();
         ctx.strokeStyle='rgba(100,100,200,0.3)'; ctx.lineWidth=dpr; ctx.stroke();
 
-        // Cannon
         const angle=this.shooterAngle,cannonLen=r*2.5-recoilOffset;
-        const cx=sx+Math.cos(angle)*cannonLen*0.3,cy=sy+Math.sin(angle)*cannonLen*0.3;
+        const cx2=sx+Math.cos(angle)*cannonLen*0.3,cy2=sy+Math.sin(angle)*cannonLen*0.3;
         const ex=sx+Math.cos(angle)*cannonLen,ey=sy+Math.sin(angle)*cannonLen;
         ctx.beginPath();
-        ctx.moveTo(cx+Math.cos(angle+Math.PI/2)*r*0.4,cy+Math.sin(angle+Math.PI/2)*r*0.4);
+        ctx.moveTo(cx2+Math.cos(angle+Math.PI/2)*r*0.4,cy2+Math.sin(angle+Math.PI/2)*r*0.4);
         ctx.lineTo(ex+Math.cos(angle+Math.PI/2)*r*0.25,ey+Math.sin(angle+Math.PI/2)*r*0.25);
         ctx.lineTo(ex+Math.cos(angle-Math.PI/2)*r*0.25,ey+Math.sin(angle-Math.PI/2)*r*0.25);
-        ctx.lineTo(cx+Math.cos(angle-Math.PI/2)*r*0.4,cy+Math.sin(angle-Math.PI/2)*r*0.4);
+        ctx.lineTo(cx2+Math.cos(angle-Math.PI/2)*r*0.4,cy2+Math.sin(angle-Math.PI/2)*r*0.4);
         ctx.closePath(); ctx.fillStyle='#3a3a6a'; ctx.fill();
         ctx.strokeStyle='rgba(150,150,255,0.3)'; ctx.lineWidth=dpr; ctx.stroke();
 
-        // Current bubble
         const color=this.COLORS[this.currentBubble];
         if (color) {
             if (this.colorChangeFlash>0) {
@@ -815,7 +840,6 @@ class BubbleShooter {
 
         this._drawColorChangeButton(ctx,sx,sy,r);
 
-        // Next bubble
         const nextColor=this.COLORS[this.nextBubble];
         if (nextColor) {
             const nx=sx-r*2.8,ny=sy,nr=r*0.55;
@@ -823,7 +847,6 @@ class BubbleShooter {
             const nGrad=ctx.createRadialGradient(nx-nr*0.2,ny-nr*0.2,nr*0.1,nx,ny,nr);
             nGrad.addColorStop(0,nextColor.light); nGrad.addColorStop(1,nextColor.dark);
             ctx.fillStyle=nGrad; ctx.fill();
-            // ── CRISP labels using textDPR ──
             this._drawCrispText(ctx,'NEXT',this.shooterX-this.BUBBLE_R*2.8,this.shooterY-this.BUBBLE_R*0.55-4,{size:9,color:'rgba(255,255,255,0.5)'});
             this._drawCrispText(ctx,'SWAP',this.shooterX-this.BUBBLE_R*2.8,this.shooterY+this.BUBBLE_R*0.55+10,{size:7,color:'rgba(255,255,255,0.25)'});
         }
@@ -862,22 +885,80 @@ class BubbleShooter {
         ctx.fillText('🎨',btnX,btnY+btnR*0.05);
         ctx.globalAlpha=1; ctx.textBaseline='alphabetic';
 
-        // ── Crisp charge count badge ──
         ctx.globalAlpha=1;
         this._drawCrispText(ctx,`${this.colorChangesLeft}`,this._colorChangeBtnX,this._colorChangeBtnY-this._colorChangeBtnR-4,{size:9,weight:'bold',color:hasCharges?'#FFD700':'#888'});
         this._drawCrispText(ctx,'CHANGE',this._colorChangeBtnX,this._colorChangeBtnY+this._colorChangeBtnR+10,{size:7,color:hasCharges?'rgba(212,112,255,0.7)':'rgba(100,100,100,0.5)'});
     }
 
+    // ══════════════════ AIM LINE DRAW — FULL FIX ══════════════════
+    // Draws complete dotted aim line with bounce reflection
+
     _drawAimLine(ctx) {
-        const dpr=this.DPR;
-        if (this.aimDots.length===0) return;
-        for (let i=0;i<this.aimDots.length;i++) {
-            const dot=this.aimDots[i];
-            const pulse=0.5+0.5*Math.sin(this.globalTime*4+i*0.5);
-            const alpha=dot.alpha*0.6*(0.7+0.3*pulse);
-            const rr=(2+i*0.15)*dpr;
-            ctx.beginPath(); ctx.arc(dot.x*dpr,dot.y*dpr,rr,0,Math.PI*2);
-            ctx.fillStyle=`rgba(255,255,255,${alpha})`; ctx.fill();
+        if (this.aimDots.length === 0) return;
+        const dpr = this.DPR;
+        const color = this.COLORS[this.currentBubble];
+        const baseColor = color ? color.hex : '#ffffff';
+
+        // Draw connecting lines between dots for clarity
+        ctx.save();
+        ctx.setLineDash([4 * dpr, 8 * dpr]);
+        ctx.lineWidth   = 1.5 * dpr;
+        ctx.strokeStyle = `rgba(255,255,255,0.18)`;
+        ctx.beginPath();
+        ctx.moveTo(this.shooterX * dpr, this.shooterY * dpr);
+        for (const dot of this.aimDots) {
+            ctx.lineTo(dot.x * dpr, dot.y * dpr);
+        }
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.restore();
+
+        // Draw individual dots on top
+        for (let i = 0; i < this.aimDots.length; i++) {
+            const dot   = this.aimDots[i];
+            const pulse = 0.6 + 0.4 * Math.sin(this.globalTime * 5 + i * 0.6);
+            const alpha = dot.alpha * pulse;
+
+            if (dot.isFinal) {
+                // Draw crosshair / target at final landing point
+                const cr = 5 * dpr;
+                ctx.save();
+                ctx.globalAlpha  = Math.min(1, alpha * 1.4);
+                ctx.strokeStyle  = baseColor;
+                ctx.lineWidth    = 2 * dpr;
+                // Outer circle
+                ctx.beginPath();
+                ctx.arc(dot.x * dpr, dot.y * dpr, cr, 0, Math.PI * 2);
+                ctx.stroke();
+                // Cross lines
+                ctx.beginPath();
+                ctx.moveTo((dot.x - cr * 1.5) * dpr, dot.y * dpr);
+                ctx.lineTo((dot.x + cr * 1.5) * dpr, dot.y * dpr);
+                ctx.moveTo(dot.x * dpr, (dot.y - cr * 1.5) * dpr);
+                ctx.lineTo(dot.x * dpr, (dot.y + cr * 1.5) * dpr);
+                ctx.stroke();
+                ctx.restore();
+            } else {
+                // Regular dot
+                const dotR = (2.5 + i * 0.08) * dpr;
+                ctx.save();
+                ctx.globalAlpha = alpha * 0.75;
+                // Colored glow dot
+                ctx.shadowColor = baseColor;
+                ctx.shadowBlur  = this.isMobile ? 0 : 6 * dpr;
+                ctx.fillStyle   = baseColor;
+                ctx.beginPath();
+                ctx.arc(dot.x * dpr, dot.y * dpr, dotR, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.shadowBlur  = 0;
+                // White center
+                ctx.globalAlpha = alpha * 0.5;
+                ctx.fillStyle   = '#ffffff';
+                ctx.beginPath();
+                ctx.arc(dot.x * dpr, dot.y * dpr, dotR * 0.45, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
         }
     }
 
@@ -893,7 +974,7 @@ class BubbleShooter {
             ctx.fillStyle=color?color.hex:'#fff'; ctx.fill();
             ctx.globalAlpha=1;
         }
-        this._drawBubble(ctx,p.x,p.y,p.color,p.r);
+                this._drawBubble(ctx,p.x,p.y,p.color,p.r);
     }
 
     _drawParticles(ctx) {
@@ -931,7 +1012,6 @@ class BubbleShooter {
         ctx.strokeStyle='rgba(100,100,200,0.3)'; ctx.lineWidth=this.DPR;
         ctx.beginPath(); ctx.moveTo(0,hudH); ctx.lineTo(w,hudH); ctx.stroke();
 
-        // ── All HUD text uses _drawCrispText for sharp rendering ──
         this._drawCrispText(ctx,`LVL ${this.currentLevel+1}`,10,this.HUD_H*0.62,{size:13,weight:'bold',color:'#FFD700',align:'left',baseline:'middle'});
         this._drawCrispText(ctx,`${this.score}`,this.W/2,this.HUD_H*0.62,{size:16,weight:'bold',color:'#fff',align:'center',baseline:'middle'});
         this._drawCrispText(ctx,'SCORE',this.W/2,this.HUD_H*0.25,{size:9,color:'rgba(255,255,255,0.4)',align:'center',baseline:'middle'});
@@ -993,7 +1073,7 @@ class BubbleShooter {
         ctx.fillStyle=boxGrad; ctx.strokeStyle='#FFD700'; ctx.lineWidth=2*dpr;
         this._roundRect(ctx,bx,by,boxW,boxH,15*dpr,true,true);
 
-        this._drawCrispText(ctx,'LEVEL COMPLETE!',this.W/2,by/dpr+44,{size:24,weight:'bold',color:'#FFD700',glow:!this.isMobile,glowColor:'#FFD700',glowBlur:15});
+                this._drawCrispText(ctx,'LEVEL COMPLETE!',this.W/2,by/dpr+44,{size:24,weight:'bold',color:'#FFD700',glow:!this.isMobile,glowColor:'#FFD700',glowBlur:15});
         const starY=by/dpr+82;
         for (let i=0;i<3;i++) {
             const starX=this.W/2+(i-1)*44;
@@ -1007,7 +1087,8 @@ class BubbleShooter {
         const btnX=cx-btnW/2,btnY=by+210*dpr;
         const btnGrad=ctx.createLinearGradient(btnX,btnY,btnX,btnY+btnH);
         btnGrad.addColorStop(0,'#00CC55'); btnGrad.addColorStop(1,'#008833');
-        ctx.fillStyle=btnGrad; this._roundRect(ctx,btnX,btnY,btnW,btnH,8*dpr,true,false);
+        ctx.fillStyle=btnGrad;
+        this._roundRect(ctx,btnX,btnY,btnW,btnH,8*dpr,true,false);
         this._drawCrispText(ctx,'NEXT LEVEL ▶',this.W/2,(by+210*dpr)/dpr+btnH/(2*dpr),{size:15,weight:'bold',color:'#fff',baseline:'middle'});
         ctx.restore();
         this._nextLevelBtn={x:(cx-btnW/2)/dpr,y:(by+210*dpr)/dpr,w:btnW/dpr,h:btnH/dpr};
@@ -1019,43 +1100,72 @@ class BubbleShooter {
         if (this._destroyed) return;
         const dt=timestamp-this._lastFrameTime;
         this._lastFrameTime=timestamp;
-        if (dt>0){this.fpsHistory.push(1000/dt);if(this.fpsHistory.length>30)this.fpsHistory.shift();}
+        if (dt>0){
+            this.fpsHistory.push(1000/dt);
+            if (this.fpsHistory.length>30) this.fpsHistory.shift();
+        }
         if (timestamp-this.lastFpsCheck>2000) {
             this.lastFpsCheck=timestamp;
-            if (this.fpsHistory.length>10){const avgFps=this.fpsHistory.reduce((a,b)=>a+b,0)/this.fpsHistory.length;this.adaptiveMode=avgFps<35;}
+            if (this.fpsHistory.length>10) {
+                const avgFps=this.fpsHistory.reduce((a,b)=>a+b,0)/this.fpsHistory.length;
+                this.adaptiveMode=avgFps<35;
+            }
         }
-        this.globalTime+=0.016; this.frame++;
-        this._update(); this._render();
+        this.globalTime+=0.016;
+        this.frame++;
+        this._update();
+        this._render();
         this.animationFrameId=requestAnimationFrame(t=>this._mainLoop(t));
     }
 
     _update() {
         const angleDiff=this.targetAngle-this.shooterAngle;
         this.shooterAngle+=angleDiff*0.2;
-        this._updateAimDots(); this._updateProjectile();
-        if (this.shootCooldown>0) this.shootCooldown--;
+        this._updateAimDots();
+        this._updateProjectile();
+        if (this.shootCooldown>0)       this.shootCooldown--;
         if (this.colorChangeCooldown>0) this.colorChangeCooldown--;
-        if (this.shootRecoil>0){this.shootRecoil*=0.85;if(this.shootRecoil<0.01)this.shootRecoil=0;}
-        if (this.swapAnim>0){this.swapAnim*=0.9;if(this.swapAnim<0.01)this.swapAnim=0;}
-        if (this.colorChangeAnim>0){this.colorChangeAnim*=0.85;if(this.colorChangeAnim<0.01)this.colorChangeAnim=0;}
-        if (this.shakeTimer>0){this.shakeTimer--;this.shakeX=(Math.random()-0.5)*this.shakeForce;this.shakeY=(Math.random()-0.5)*this.shakeForce;this.shakeForce*=0.85;}
-        else{this.shakeX=0;this.shakeY=0;}
+        if (this.shootRecoil>0)  { this.shootRecoil*=0.85;  if (this.shootRecoil<0.01)  this.shootRecoil=0;  }
+        if (this.swapAnim>0)     { this.swapAnim*=0.9;      if (this.swapAnim<0.01)      this.swapAnim=0;     }
+        if (this.colorChangeAnim>0) { this.colorChangeAnim*=0.85; if (this.colorChangeAnim<0.01) this.colorChangeAnim=0; }
+        if (this.shakeTimer>0) {
+            this.shakeTimer--;
+            this.shakeX=(Math.random()-0.5)*this.shakeForce;
+            this.shakeY=(Math.random()-0.5)*this.shakeForce;
+            this.shakeForce*=0.85;
+        } else {
+            this.shakeX=0;
+            this.shakeY=0;
+        }
         this._updateParticles();
     }
 
     _render() {
-        const ctx=this.ctx,dpr=this.DPR;
+        const ctx=this.ctx, dpr=this.DPR;
         ctx.save();
-        if (this.shakeX||this.shakeY) ctx.translate(this.shakeX*dpr,this.shakeY*dpr);
+        if (this.shakeX||this.shakeY) ctx.translate(this.shakeX*dpr, this.shakeY*dpr);
         this._drawBackground(ctx);
-        // Deadline line
-        ctx.save(); ctx.setLineDash([8*dpr,6*dpr]);
-        ctx.strokeStyle='rgba(255,50,50,0.2)'; ctx.lineWidth=dpr;
-        ctx.beginPath(); ctx.moveTo(0,this.deadlineY*dpr); ctx.lineTo(this.cW,this.deadlineY*dpr); ctx.stroke();
+
+        // Deadline danger line
+        ctx.save();
+        ctx.setLineDash([8*dpr, 6*dpr]);
+        ctx.strokeStyle='rgba(255,50,50,0.22)';
+        ctx.lineWidth=dpr;
+        ctx.beginPath();
+        ctx.moveTo(0, this.deadlineY*dpr);
+        ctx.lineTo(this.cW, this.deadlineY*dpr);
+        ctx.stroke();
+        ctx.setLineDash([]);
         ctx.restore();
-        this._drawGrid(ctx); this._drawAimLine(ctx); this._drawProjectile(ctx);
-        this._drawParticles(ctx); this._drawShooter(ctx); this._drawHUD(ctx);
+
+        this._drawGrid(ctx);
+        this._drawAimLine(ctx);
+        this._drawProjectile(ctx);
+        this._drawParticles(ctx);
+        this._drawShooter(ctx);
+        this._drawHUD(ctx);
         ctx.restore();
+
         if (this.gameOver)          this._drawGameOver(ctx);
         if (this.showLevelComplete) this._drawLevelComplete(ctx);
     }
@@ -1064,73 +1174,136 @@ class BubbleShooter {
 
     _getCanvasPos(e) {
         const rect=this.canvas.getBoundingClientRect();
-        let clientX,clientY;
-        if (e.changedTouches&&e.changedTouches.length>0){clientX=e.changedTouches[0].clientX;clientY=e.changedTouches[0].clientY;}
-        else if (e.touches&&e.touches.length>0){clientX=e.touches[0].clientX;clientY=e.touches[0].clientY;}
-        else{clientX=e.clientX;clientY=e.clientY;}
-        return{x:clientX-rect.left,y:clientY-rect.top};
+        let clientX, clientY;
+        if (e.changedTouches&&e.changedTouches.length>0) {
+            clientX=e.changedTouches[0].clientX;
+            clientY=e.changedTouches[0].clientY;
+        } else if (e.touches&&e.touches.length>0) {
+            clientX=e.touches[0].clientX;
+            clientY=e.touches[0].clientY;
+        } else {
+            clientX=e.clientX;
+            clientY=e.clientY;
+        }
+        return { x: clientX - rect.left, y: clientY - rect.top };
     }
 
     _onHandleClick(e) {
         e.preventDefault();
         const pos=this._getCanvasPos(e);
-        const x=pos.x,y=pos.y;
-        if (this.gameOver&&this._retryBtn) {
+        const x=pos.x, y=pos.y;
+
+        // Game over retry button
+        if (this.gameOver && this._retryBtn) {
             const b=this._retryBtn;
-            if (x>=b.x&&x<=b.x+b.w&&y>=b.y&&y<=b.y+b.h){this._startLevel(this.currentLevel);return;}
+            if (x>=b.x && x<=b.x+b.w && y>=b.y && y<=b.y+b.h) {
+                this._startLevel(this.currentLevel);
+                return;
+            }
         }
-        if (this.showLevelComplete&&this._nextLevelBtn) {
+
+        // Level complete next button
+        if (this.showLevelComplete && this._nextLevelBtn) {
             const b=this._nextLevelBtn;
-            if (x>=b.x&&x<=b.x+b.w&&y>=b.y&&y<=b.y+b.h){this._startLevel(this.currentLevel+1);return;}
+            if (x>=b.x && x<=b.x+b.w && y>=b.y && y<=b.y+b.h) {
+                this._startLevel(this.currentLevel+1);
+                return;
+            }
         }
-        if (this.gameOver||this.gameWon) return;
-        if (this._colorChangeBtnX!==undefined) {
-            const dx=x-this._colorChangeBtnX,dy=y-this._colorChangeBtnY;
-            if (Math.sqrt(dx*dx+dy*dy)<=this._colorChangeBtnR*1.3){this._changeCurrentBubbleColor();return;}
+
+        if (this.gameOver || this.gameWon) return;
+
+        // Color change button
+        if (this._colorChangeBtnX !== undefined) {
+            const dx=x-this._colorChangeBtnX, dy=y-this._colorChangeBtnY;
+            if (Math.sqrt(dx*dx+dy*dy) <= this._colorChangeBtnR*1.3) {
+                this._changeCurrentBubbleColor();
+                return;
+            }
         }
-        const shooterDx=x-this.shooterX,shooterDy=y-this.shooterY;
-        if (Math.sqrt(shooterDx*shooterDx+shooterDy*shooterDy)<=this.BUBBLE_R*1.2){this._changeCurrentBubbleColor();return;}
-        const nxDist=Math.abs(x-(this.shooterX-this.BUBBLE_R*2.8)),nyDist=Math.abs(y-this.shooterY);
-        if (nxDist<this.BUBBLE_R*1.5&&nyDist<this.BUBBLE_R*1.5){this._swapBubbles();return;}
-        if (y>this.HUD_H&&y<this.shooterY-this.BUBBLE_R*0.5) {
-            const dx=x-this.shooterX,dy=y-this.shooterY;
-            let angle=Math.atan2(dy,dx);
-            if (angle>-0.15) angle=-0.15;
-            if (angle<-Math.PI+0.15) angle=-Math.PI+0.15;
-            this.shooterAngle=angle; this.targetAngle=angle;
-            this._updateAimDots(); this._shoot();
+
+        // Tap shooter bubble = color change
+        const shooterDx=x-this.shooterX, shooterDy=y-this.shooterY;
+        if (Math.sqrt(shooterDx*shooterDx+shooterDy*shooterDy) <= this.BUBBLE_R*1.2) {
+            this._changeCurrentBubbleColor();
+            return;
+        }
+
+        // Tap next bubble = swap
+        const nxDist=Math.abs(x-(this.shooterX-this.BUBBLE_R*2.8));
+        const nyDist=Math.abs(y-this.shooterY);
+        if (nxDist < this.BUBBLE_R*1.5 && nyDist < this.BUBBLE_R*1.5) {
+            this._swapBubbles();
+            return;
+        }
+
+        // Tap play area = aim + shoot
+        if (y > this.HUD_H && y < this.shooterY - this.BUBBLE_R*0.5) {
+            const dx=x-this.shooterX, dy=y-this.shooterY;
+            let angle=Math.atan2(dy, dx);
+            if (angle > -0.15)           angle = -0.15;
+            if (angle < -Math.PI + 0.15) angle = -Math.PI + 0.15;
+            this.shooterAngle = angle;
+            this.targetAngle  = angle;
+            this._updateAimDots();
+            this._shoot();
         }
     }
 
     _onHandleMove(e) {
         e.preventDefault();
-        if (this.gameOver||this.gameWon) return;
+        if (this.gameOver || this.gameWon) return;
         const pos=this._getCanvasPos(e);
-        const x=pos.x,y=pos.y;
-        if (y<this.shooterY-10) {
-            const dx=x-this.shooterX,dy=y-this.shooterY;
-            let angle=Math.atan2(dy,dx);
-            if (angle>-0.15) angle=-0.15;
-            if (angle<-Math.PI+0.15) angle=-Math.PI+0.15;
-            this.targetAngle=angle;
+        const x=pos.x, y=pos.y;
+        if (y < this.shooterY - 10) {
+            const dx=x-this.shooterX, dy=y-this.shooterY;
+            let angle=Math.atan2(dy, dx);
+            if (angle > -0.15)           angle = -0.15;
+            if (angle < -Math.PI + 0.15) angle = -Math.PI + 0.15;
+            this.targetAngle = angle;
         }
-        this.hoverX=x; this.hoverY=y;
+        this.hoverX = x;
+        this.hoverY = y;
     }
 
     _onKey(e) {
-        if (this.gameOver||this.gameWon) {
-            if (e.key==='Enter'||e.key===' '){if(this.gameOver)this._startLevel(this.currentLevel);if(this.gameWon)this._startLevel(this.currentLevel+1);}
+        if (this.gameOver || this.gameWon) {
+            if (e.key==='Enter' || e.key===' ') {
+                if (this.gameOver) this._startLevel(this.currentLevel);
+                if (this.gameWon)  this._startLevel(this.currentLevel+1);
+            }
             return;
         }
         switch(e.key) {
-            case 'ArrowLeft':  this.targetAngle=Math.max(this.targetAngle-0.05,-Math.PI+0.15); break;
-            case 'ArrowRight': this.targetAngle=Math.min(this.targetAngle+0.05,-0.15); break;
-            case ' ': case 'ArrowUp': e.preventDefault(); this._shoot(); break;
-            case 's': case 'S': this._swapBubbles(); break;
-            case 'c': case 'C': this._changeCurrentBubbleColor(); break;
-            case 'r': case 'R': this._startLevel(this.currentLevel); break;
+            case 'ArrowLeft':
+                this.targetAngle = Math.max(this.targetAngle - 0.05, -Math.PI + 0.15);
+                break;
+            case 'ArrowRight':
+                this.targetAngle = Math.min(this.targetAngle + 0.05, -0.15);
+                break;
+            case ' ':
+            case 'ArrowUp':
+                e.preventDefault();
+                this._shoot();
+                break;
+            case 's':
+            case 'S':
+                this._swapBubbles();
+                break;
+            case 'c':
+            case 'C':
+                this._changeCurrentBubbleColor();
+                break;
+            case 'r':
+            case 'R':
+                this._startLevel(this.currentLevel);
+                break;
         }
     }
 
-    _onResize() { this._setupCanvas(); this._bubbleCache.clear(); this._glowCache.clear(); }
+    _onResize() {
+        this._setupCanvas();
+        this._bubbleCache.clear();
+        this._glowCache.clear();
+    }
 }
