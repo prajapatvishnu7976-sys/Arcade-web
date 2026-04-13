@@ -29,8 +29,6 @@ class AngryBirds {
         this.RESTITUTION = 0.3;
         this.FRICTION    = 0.9;
 
-        // ✅ MAIN FIX: Ground upar shift kiya
-        // Mobile pe zyada upar, desktop pe thoda
         this._calcGround();
 
         this.sling = {
@@ -103,10 +101,7 @@ class AngryBirds {
         this.animId = requestAnimationFrame(t => this._loop(t));
     }
 
-    // ✅ Ground calculation - screen ka 72% pe ground
     _calcGround() {
-        // Mobile pe 68%, desktop pe 75%
-        // Taaki neeche enough space rahe controls ke liye
         const ratio = this.isMobile ? 0.68 : 0.75;
         this.GROUND = this.H * ratio;
     }
@@ -114,31 +109,14 @@ class AngryBirds {
     _setupHD() {
         const wrapper = this.canvas.parentElement;
         let w, h;
-
         const r = this.canvas.getBoundingClientRect();
-        w = r.width;
-        h = r.height;
-
+        w = r.width; h = r.height;
         if (w < 10 || h < 10) {
-            if (wrapper) {
-                w = wrapper.clientWidth  || wrapper.offsetWidth;
-                h = wrapper.clientHeight || wrapper.offsetHeight;
-            }
+            if (wrapper) { w = wrapper.clientWidth || wrapper.offsetWidth; h = wrapper.clientHeight || wrapper.offsetHeight; }
         }
-
-        if (w < 10 || h < 10) {
-            w = window.innerWidth;
-            h = window.innerHeight;
-        }
-
-        if (w < 10 || h < 10) {
-            w = parseInt(this.canvas.style.width)  || 480;
-            h = parseInt(this.canvas.style.height) || 700;
-        }
-
-        w = Math.max(w, 200);
-        h = Math.max(h, 200);
-
+        if (w < 10 || h < 10) { w = window.innerWidth; h = window.innerHeight; }
+        if (w < 10 || h < 10) { w = parseInt(this.canvas.style.width) || 480; h = parseInt(this.canvas.style.height) || 700; }
+        w = Math.max(w, 200); h = Math.max(h, 200);
         this.canvas.width  = Math.round(w * this.dpr);
         this.canvas.height = Math.round(h * this.dpr);
         this.canvas.style.width  = w + 'px';
@@ -156,49 +134,88 @@ class AngryBirds {
         try { audioManager.play(name); } catch(e) {}
     }
 
-    // ✅ HD Text renderer - real device DPR use karta hai
-    _utxt(text, x, y, o = {}) {
-        const ctx = this.ctx;
+    // ══════════════════ HD TEXT ENGINE ══════════════════
+    // Sab text ek hi jagah se render hoga — consistent, HD, anti-aliased
+
+    _txt(ctx, text, x, y, opts = {}) {
         const {
-            sz = 14, wt = 'bold', col = '#fff',
-            al = 'left', bl = 'alphabetic',
-            ff = null, op = 1,
-            stroke = false, sc = 'rgba(0,0,0,0.75)', sw = 3
-        } = o;
-        if (op <= 0) return;
+            size   = 14,
+            weight = 'bold',
+            color  = '#ffffff',
+            align  = 'left',
+            base   = 'middle',
+            font   = null,
+            alpha  = 1,
+            shadow = false,
+            shadowColor = 'rgba(0,0,0,0.8)',
+            shadowBlur  = 0,
+            shadowOffX  = 0,
+            shadowOffY  = 1,
+            stroke      = false,
+            strokeColor = 'rgba(0,0,0,0.75)',
+            strokeWidth = 3,
+            glow        = false,
+            glowColor   = null,
+            glowSize    = 0,
+            letterSpacing = 0,
+        } = opts;
+
+        if (alpha <= 0) return;
 
         ctx.save();
-        ctx.globalAlpha  = Math.min(1, op);
-        ctx.textAlign    = al;
-        ctx.textBaseline = bl;
+        ctx.globalAlpha = Math.min(1, alpha);
 
-        // ✅ HD: real DPR for font
-        const realDpr  = window.devicePixelRatio || 1;
-        const fontSize = Math.round(sz * realDpr);
-        ctx.font = `${wt} ${fontSize}px ${ff || (sz > 14 ? this.FT : this.FU)}`;
+        // ✅ HD: canvas DPR coords pe render
+        const px = Math.round(x * this.dpr);
+        const py = Math.round(y * this.dpr);
 
-        // ✅ HD coords
-        const px = (x * realDpr + 0.5) | 0;
-        const py = (y * realDpr + 0.5) | 0;
+        // ✅ Font size bhi DPR se multiply — real pixel size
+        const fs = Math.round(size * this.dpr);
+        const ff = font || (size >= 16 ? this.FT : this.FU);
+        ctx.font        = `${weight} ${fs}px ${ff}`;
+        ctx.textAlign   = align;
+        ctx.textBaseline = base;
 
-        ctx.imageSmoothingEnabled = true;
+        // Shadow
+        if (shadow) {
+            ctx.shadowColor   = shadowColor;
+            ctx.shadowBlur    = shadowBlur * this.dpr;
+            ctx.shadowOffsetX = shadowOffX * this.dpr;
+            ctx.shadowOffsetY = shadowOffY * this.dpr;
+        }
 
+        // Glow
+        if (glow && glowSize > 0) {
+            ctx.shadowColor = glowColor || color;
+            ctx.shadowBlur  = glowSize * this.dpr;
+        }
+
+        // Stroke (outline)
         if (stroke) {
-            ctx.strokeStyle = sc;
-            ctx.lineWidth   = sw * realDpr;
+            ctx.strokeStyle = strokeColor;
+            ctx.lineWidth   = strokeWidth * this.dpr;
             ctx.lineJoin    = 'round';
             ctx.strokeText(text, px, py);
         }
 
-        ctx.shadowBlur = 0;
-        ctx.fillStyle  = col;
+        // Main fill
+        ctx.fillStyle = color;
         ctx.fillText(text, px, py);
+
         ctx.restore();
     }
 
-    _ctxt(text, x, y, o = {}) {
-        this._utxt(text, x - this.camX, y, o);
+    // World-space text (camera offset apply hota hai)
+    _wtxt(text, wx, wy, opts = {}) {
+        this._txt(this.ctx, text, wx - this.camX, wy, opts);
     }
+
+    // Screen-space text (HUD, overlays)
+    _stxt(text, x, y, opts = {}) {
+        this._txt(this.ctx, text, x, y, opts);
+    }
+
+    // ══════════════════ SHAPES ══════════════════
 
     _circle(x, y, r, cam = true) {
         const cx = cam ? x - this.camX : x;
@@ -214,10 +231,10 @@ class AngryBirds {
         const dr = Math.min(this.S(r), dw / 2, dh / 2);
         ctx.beginPath();
         ctx.moveTo(dx + dr, dy);
-        ctx.arcTo(dx + dw, dy, dx + dw, dy + dh, dr);
-        ctx.arcTo(dx + dw, dy + dh, dx, dy + dh, dr);
-        ctx.arcTo(dx, dy + dh, dx, dy, dr);
-        ctx.arcTo(dx, dy, dx + dw, dy, dr);
+        ctx.arcTo(dx + dw, dy,      dx + dw, dy + dh, dr);
+        ctx.arcTo(dx + dw, dy + dh, dx,      dy + dh, dr);
+        ctx.arcTo(dx,      dy + dh, dx,      dy,      dr);
+        ctx.arcTo(dx,      dy,      dx + dw, dy,      dr);
         ctx.closePath();
     }
 
@@ -226,11 +243,13 @@ class AngryBirds {
         this.ctx.fillRect(this.X(cx), this.X(y), Math.round(w * this.dpr), Math.round(h * this.dpr));
     }
 
+    // ══════════════════ WORLD BUILDERS ══════════════════
+
     _mkStars(n) {
         return Array.from({length: n}, () => ({
-            x: Math.random() * (this.W * 3),
-            y: Math.random() * this.H * 0.52,
-            r: Math.random() * 1.3 + 0.2,
+            x:  Math.random() * (this.W * 3),
+            y:  Math.random() * this.H * 0.52,
+            r:  Math.random() * 1.3 + 0.2,
             ph: Math.random() * 6.28,
             sp: Math.random() * 0.012 + 0.003
         }));
@@ -259,6 +278,8 @@ class AngryBirds {
         }
         return pts;
     }
+
+    // ══════════════════ LEVELS ══════════════════
 
     _getLevels() {
         return [
@@ -302,27 +323,27 @@ class AngryBirds {
                     { x:290, y:0,   type:2 }
                 ],
                 structures: [
-                    { type:'stone', x:-28, y:0,   w:56, h:12 },
-                    { type:'stone', x:-28, y:-68, w:12, h:68 },
-                    { type:'stone', x:16,  y:-68, w:12, h:68 },
-                    { type:'stone', x:-34, y:-76, w:68, h:10 },
-                    { type:'stone', x:-22, y:-100,w:10, h:28 },
-                    { type:'stone', x:12,  y:-100,w:10, h:28 },
-                    { type:'plank', x:-28, y:-106,w:56, h:8  },
-                    { type:'wood',  x:112, y:0,   w:66, h:10 },
-                    { type:'wood',  x:112, y:-48, w:10, h:48 },
-                    { type:'wood',  x:168, y:-48, w:10, h:48 },
-                    { type:'plank', x:108, y:-54, w:74, h:8  },
-                    { type:'wood',  x:118, y:-90, w:10, h:38 },
-                    { type:'wood',  x:162, y:-90, w:10, h:38 },
-                    { type:'plank', x:112, y:-96, w:66, h:8  },
-                    { type:'ice',   x:258, y:0,   w:64, h:10 },
-                    { type:'ice',   x:258, y:-58, w:10, h:58 },
-                    { type:'ice',   x:312, y:-58, w:10, h:58 },
-                    { type:'ice',   x:252, y:-65, w:76, h:10 },
-                    { type:'ice',   x:270, y:-88, w:10, h:28 },
-                    { type:'ice',   x:300, y:-88, w:10, h:28 },
-                    { type:'plank', x:264, y:-94, w:52, h:8  }
+                    { type:'stone', x:-28, y:0,    w:56, h:12 },
+                    { type:'stone', x:-28, y:-68,  w:12, h:68 },
+                    { type:'stone', x:16,  y:-68,  w:12, h:68 },
+                    { type:'stone', x:-34, y:-76,  w:68, h:10 },
+                    { type:'stone', x:-22, y:-100, w:10, h:28 },
+                    { type:'stone', x:12,  y:-100, w:10, h:28 },
+                    { type:'plank', x:-28, y:-106, w:56, h:8  },
+                    { type:'wood',  x:112, y:0,    w:66, h:10 },
+                    { type:'wood',  x:112, y:-48,  w:10, h:48 },
+                    { type:'wood',  x:168, y:-48,  w:10, h:48 },
+                    { type:'plank', x:108, y:-54,  w:74, h:8  },
+                    { type:'wood',  x:118, y:-90,  w:10, h:38 },
+                    { type:'wood',  x:162, y:-90,  w:10, h:38 },
+                    { type:'plank', x:112, y:-96,  w:66, h:8  },
+                    { type:'ice',   x:258, y:0,    w:64, h:10 },
+                    { type:'ice',   x:258, y:-58,  w:10, h:58 },
+                    { type:'ice',   x:312, y:-58,  w:10, h:58 },
+                    { type:'ice',   x:252, y:-65,  w:76, h:10 },
+                    { type:'ice',   x:270, y:-88,  w:10, h:28 },
+                    { type:'ice',   x:300, y:-88,  w:10, h:28 },
+                    { type:'plank', x:264, y:-94,  w:52, h:8  }
                 ]
             },
             {
@@ -335,28 +356,28 @@ class AngryBirds {
                     { x:150, y:-80, type:0 }
                 ],
                 structures: [
-                    { type:'stone', x:-30, y:0,   w:60, h:12 },
-                    { type:'stone', x:-30, y:-80, w:12, h:80 },
-                    { type:'stone', x:18,  y:-80, w:12, h:80 },
-                    { type:'stone', x:-36, y:-88, w:72, h:10 },
-                    { type:'stone', x:-20, y:-108,w:10, h:24 },
-                    { type:'stone', x:10,  y:-108,w:10, h:24 },
-                    { type:'plank', x:-26, y:-114,w:52, h:8  },
-                    { type:'wood',  x:70,  y:0,   w:60, h:10 },
-                    { type:'wood',  x:70,  y:-55, w:10, h:55 },
-                    { type:'wood',  x:120, y:-55, w:10, h:55 },
-                    { type:'plank', x:64,  y:-62, w:72, h:8  },
-                    { type:'ice',   x:170, y:0,   w:60, h:10 },
-                    { type:'ice',   x:170, y:-55, w:10, h:55 },
-                    { type:'ice',   x:220, y:-55, w:10, h:55 },
-                    { type:'plank', x:164, y:-62, w:72, h:8  },
-                    { type:'wood',  x:100, y:-88, w:10, h:30 },
-                    { type:'wood',  x:130, y:-88, w:10, h:30 },
-                    { type:'plank', x:94,  y:-94, w:52, h:8  },
-                    { type:'stone', x:270, y:0,   w:60, h:12 },
-                    { type:'stone', x:270, y:-70, w:10, h:70 },
-                    { type:'stone', x:320, y:-70, w:10, h:70 },
-                    { type:'plank', x:264, y:-76, w:72, h:8  }
+                    { type:'stone', x:-30, y:0,    w:60, h:12 },
+                    { type:'stone', x:-30, y:-80,  w:12, h:80 },
+                    { type:'stone', x:18,  y:-80,  w:12, h:80 },
+                    { type:'stone', x:-36, y:-88,  w:72, h:10 },
+                    { type:'stone', x:-20, y:-108, w:10, h:24 },
+                    { type:'stone', x:10,  y:-108, w:10, h:24 },
+                    { type:'plank', x:-26, y:-114, w:52, h:8  },
+                    { type:'wood',  x:70,  y:0,    w:60, h:10 },
+                    { type:'wood',  x:70,  y:-55,  w:10, h:55 },
+                    { type:'wood',  x:120, y:-55,  w:10, h:55 },
+                    { type:'plank', x:64,  y:-62,  w:72, h:8  },
+                    { type:'ice',   x:170, y:0,    w:60, h:10 },
+                    { type:'ice',   x:170, y:-55,  w:10, h:55 },
+                    { type:'ice',   x:220, y:-55,  w:10, h:55 },
+                    { type:'plank', x:164, y:-62,  w:72, h:8  },
+                    { type:'wood',  x:100, y:-88,  w:10, h:30 },
+                    { type:'wood',  x:130, y:-88,  w:10, h:30 },
+                    { type:'plank', x:94,  y:-94,  w:52, h:8  },
+                    { type:'stone', x:270, y:0,    w:60, h:12 },
+                    { type:'stone', x:270, y:-70,  w:10, h:70 },
+                    { type:'stone', x:320, y:-70,  w:10, h:70 },
+                    { type:'plank', x:264, y:-76,  w:72, h:8  }
                 ]
             },
             {
@@ -370,37 +391,37 @@ class AngryBirds {
                     { x:260, y:-60, type:0 }
                 ],
                 structures: [
-                    { type:'stone', x:-35, y:0,   w:70, h:12 },
-                    { type:'stone', x:-35, y:-90, w:12, h:90 },
-                    { type:'stone', x:23,  y:-90, w:12, h:90 },
-                    { type:'stone', x:-42, y:-98, w:84, h:10 },
-                    { type:'plank', x:-30, y:-116,w:60, h:8  },
-                    { type:'stone', x:-22, y:-120,w:10, h:28 },
-                    { type:'stone', x:12,  y:-120,w:10, h:28 },
-                    { type:'plank', x:-28, y:-126,w:56, h:8  },
-                    { type:'stone', x:45,  y:0,   w:70, h:12 },
-                    { type:'stone', x:45,  y:-90, w:12, h:90 },
-                    { type:'stone', x:103, y:-90, w:12, h:90 },
-                    { type:'stone', x:39,  y:-98, w:84, h:10 },
-                    { type:'plank', x:50,  y:-116,w:60, h:8  },
-                    { type:'wood',  x:110, y:0,   w:60, h:10 },
-                    { type:'wood',  x:110, y:-60, w:10, h:60 },
-                    { type:'wood',  x:160, y:-60, w:10, h:60 },
-                    { type:'plank', x:104, y:-66, w:72, h:8  },
-                    { type:'wood',  x:120, y:-96, w:10, h:32 },
-                    { type:'wood',  x:148, y:-96, w:10, h:32 },
-                    { type:'plank', x:114, y:-102,w:52, h:8  },
-                    { type:'ice',   x:175, y:0,   w:60, h:10 },
-                    { type:'ice',   x:175, y:-70, w:10, h:70 },
-                    { type:'ice',   x:225, y:-70, w:10, h:70 },
-                    { type:'plank', x:169, y:-76, w:72, h:8  },
-                    { type:'ice',   x:235, y:-62, w:10, h:64 },
-                    { type:'ice',   x:285, y:-62, w:10, h:64 },
-                    { type:'plank', x:229, y:-68, w:72, h:8  },
-                    { type:'stone', x:290, y:0,   w:60, h:12 },
-                    { type:'stone', x:290, y:-75, w:10, h:75 },
-                    { type:'stone', x:340, y:-75, w:10, h:75 },
-                    { type:'plank', x:284, y:-81, w:72, h:8  }
+                    { type:'stone', x:-35, y:0,    w:70, h:12 },
+                    { type:'stone', x:-35, y:-90,  w:12, h:90 },
+                    { type:'stone', x:23,  y:-90,  w:12, h:90 },
+                    { type:'stone', x:-42, y:-98,  w:84, h:10 },
+                    { type:'plank', x:-30, y:-116, w:60, h:8  },
+                    { type:'stone', x:-22, y:-120, w:10, h:28 },
+                    { type:'stone', x:12,  y:-120, w:10, h:28 },
+                    { type:'plank', x:-28, y:-126, w:56, h:8  },
+                    { type:'stone', x:45,  y:0,    w:70, h:12 },
+                    { type:'stone', x:45,  y:-90,  w:12, h:90 },
+                    { type:'stone', x:103, y:-90,  w:12, h:90 },
+                    { type:'stone', x:39,  y:-98,  w:84, h:10 },
+                    { type:'plank', x:50,  y:-116, w:60, h:8  },
+                    { type:'wood',  x:110, y:0,    w:60, h:10 },
+                    { type:'wood',  x:110, y:-60,  w:10, h:60 },
+                    { type:'wood',  x:160, y:-60,  w:10, h:60 },
+                    { type:'plank', x:104, y:-66,  w:72, h:8  },
+                    { type:'wood',  x:120, y:-96,  w:10, h:32 },
+                    { type:'wood',  x:148, y:-96,  w:10, h:32 },
+                    { type:'plank', x:114, y:-102, w:52, h:8  },
+                    { type:'ice',   x:175, y:0,    w:60, h:10 },
+                    { type:'ice',   x:175, y:-70,  w:10, h:70 },
+                    { type:'ice',   x:225, y:-70,  w:10, h:70 },
+                    { type:'plank', x:169, y:-76,  w:72, h:8  },
+                    { type:'ice',   x:235, y:-62,  w:10, h:64 },
+                    { type:'ice',   x:285, y:-62,  w:10, h:64 },
+                    { type:'plank', x:229, y:-68,  w:72, h:8  },
+                    { type:'stone', x:290, y:0,    w:60, h:12 },
+                    { type:'stone', x:290, y:-75,  w:10, h:75 },
+                    { type:'stone', x:340, y:-75,  w:10, h:75 },
+                    { type:'plank', x:284, y:-81,  w:72, h:8  }
                 ]
             }
         ];
@@ -466,11 +487,9 @@ class AngryBirds {
 
     _nextBird() {
         if (this.birdQueue.length === 0) { this.bird = null; return; }
-
         const bd     = this.birdQueue.shift();
         const startX = this.sling.x - 36;
         const startY = this.GROUND - bd.r;
-
         this.bird = {
             ...bd,
             x: startX, y: startY,
@@ -478,14 +497,10 @@ class AngryBirds {
             launched: false, dead: false,
             hitAnim: 0, specialUsed: false,
             trail: [], phase: 0, explodeTimer: -1,
-            groundBounces: 0,
-            enterAnim: 1.0,
-            enterStartX: startX,
-            enterStartY: startY,
-            enterTargetX: this.sling.x,
-            enterTargetY: this.sling.y
+            groundBounces: 0, enterAnim: 1.0,
+            enterStartX: startX, enterStartY: startY,
+            enterTargetX: this.sling.x, enterTargetY: this.sling.y
         };
-
         this.sling.rx = 0; this.sling.ry = 0;
         this.sling.pulled = false;
         this.trajDots = [];
@@ -526,16 +541,11 @@ class AngryBirds {
             this._startDrag(pos); return;
         }
         if (this.state === this.STATE.FLYING)  { this._useSpecial(); return; }
-
         if (this.state === this.STATE.DEAD && this.overlayA > 0.7) {
-            this.score = 0; this.onScore(0);
-            this._loadLevel();
-            return;
+            this.score = 0; this.onScore(0); this._loadLevel(); return;
         }
         if (this.state === this.STATE.WIN && this.overlayA > 0.7) {
-            this.level++;
-            this._loadLevel();
-            return;
+            this.level++; this._loadLevel(); return;
         }
     }
 
@@ -565,17 +575,14 @@ class AngryBirds {
         if (pullDist < 12) {
             this.bird.x = this.sling.x; this.bird.y = this.sling.y;
             this.sling.rx = 0; this.sling.ry = 0;
-            this.sling.pulled = false;
-            this.trajDots = [];
+            this.sling.pulled = false; this.trajDots = [];
             this.state = this.STATE.WAITING; return;
         }
         this.bird.vx = -this.sling.rx * this.sling.power;
         this.bird.vy = -this.sling.ry * this.sling.power;
-        this.bird.launched = true;
-        this.sling.pulled  = false;
+        this.bird.launched = true; this.sling.pulled = false;
         this.sling.rx = 0; this.sling.ry = 0;
-        this.state = this.STATE.FLYING;
-        this.trajDots = [];
+        this.state = this.STATE.FLYING; this.trajDots = [];
         this._burstAt(this.bird.x, this.bird.y, this.bird.col, 8);
         this.rings.push({ x: this.bird.x, y: this.bird.y, r: this.bird.r, a: 0.55, col: this.bird.col });
         this._sfx('shoot', 50);
@@ -671,7 +678,6 @@ class AngryBirds {
                 }
             }
             if (this.bird.x < -200 || this.bird.x > this.worldW + 200) this.bird.dead = true;
-
             if (this.bird.dead) this._onBirdDone();
         }
 
@@ -733,7 +739,6 @@ class AngryBirds {
         b.vy      += this.GRAVITY * spd;
         b.x       += b.vx * spd; b.y += b.vy * spd;
         b.hitAnim  = Math.max(0, b.hitAnim - 0.055 * spd);
-
         if (b.y + b.r >= this.GROUND) {
             b.y = this.GROUND - b.r;
             b.vy *= -this.RESTITUTION * 0.45;
@@ -748,7 +753,6 @@ class AngryBirds {
     _checkBirdHits(b) {
         if (b.dead) return;
         const bspd = Math.hypot(b.vx, b.vy);
-
         this.pigs.forEach((pg, i) => {
             if (pg.dead) return;
             const d = Math.hypot(b.x - pg.x, b.y - pg.y);
@@ -762,7 +766,6 @@ class AngryBirds {
                 else this._burstAt(pg.x, pg.y, pg.col, 4);
             }
         });
-
         this.blocks.forEach((bl, i) => {
             if (bl.dead) return;
             const nx = Math.max(bl.x - bl.w / 2, Math.min(b.x, bl.x + bl.w / 2));
@@ -784,20 +787,13 @@ class AngryBirds {
 
     _blockBlockCollide(a, b) {
         if (a.dead || b.dead) return;
-        const ax1 = a.x - a.w/2, ax2 = a.x + a.w/2, ay1 = a.y - a.h/2, ay2 = a.y + a.h/2;
-        const bx1 = b.x - b.w/2, bx2 = b.x + b.w/2, by1 = b.y - b.h/2, by2 = b.y + b.h/2;
+        const ax1 = a.x-a.w/2, ax2 = a.x+a.w/2, ay1 = a.y-a.h/2, ay2 = a.y+a.h/2;
+        const bx1 = b.x-b.w/2, bx2 = b.x+b.w/2, by1 = b.y-b.h/2, by2 = b.y+b.h/2;
         if (ax1 < bx2 && ax2 > bx1 && ay1 < by2 && ay2 > by1) {
-            const ox = Math.min(ax2 - bx1, bx2 - ax1);
-            const oy = Math.min(ay2 - by1, by2 - ay1);
-            if (ox < oy) {
-                const dir = a.x < b.x ? -1 : 1;
-                a.x += dir * ox * 0.5; b.x -= dir * ox * 0.5;
-                a.vx *= -0.3; b.vx *= -0.3;
-            } else {
-                const dir = a.y < b.y ? -1 : 1;
-                a.y += dir * oy * 0.5; b.y -= dir * oy * 0.5;
-                a.vy *= -0.3; b.vy *= -0.3;
-            }
+            const ox = Math.min(ax2-bx1, bx2-ax1);
+            const oy = Math.min(ay2-by1, by2-ay1);
+            if (ox < oy) { const dir = a.x < b.x ? -1 : 1; a.x += dir*ox*0.5; b.x -= dir*ox*0.5; a.vx *= -0.3; b.vx *= -0.3; }
+            else         { const dir = a.y < b.y ? -1 : 1; a.y += dir*oy*0.5; b.y -= dir*oy*0.5; a.vy *= -0.3; b.vy *= -0.3; }
         }
     }
 
@@ -808,14 +804,10 @@ class AngryBirds {
         this.pops.push({ x: bl.x, y: bl.y - 15, text: '+100', col: bl.col, life: 900, op: 1 });
         for (let i = 0; i < 4; i++) {
             this.debris.push({
-                x: bl.x + (Math.random() - 0.5) * bl.w,
-                y: bl.y + (Math.random() - 0.5) * bl.h,
-                vx: (Math.random() - 0.5) * 6,
-                vy: -Math.random() * 5 - 2,
-                w: bl.w * 0.3, h: bl.h * 0.3,
-                angle: Math.random() * Math.PI,
-                av: (Math.random() - 0.5) * 0.3,
-                col: bl.col, life: 1
+                x: bl.x + (Math.random()-0.5)*bl.w, y: bl.y + (Math.random()-0.5)*bl.h,
+                vx: (Math.random()-0.5)*6, vy: -Math.random()*5-2,
+                w: bl.w*0.3, h: bl.h*0.3, angle: Math.random()*Math.PI,
+                av: (Math.random()-0.5)*0.3, col: bl.col, life: 1
             });
         }
         this._sfx('pop', 60);
@@ -825,14 +817,10 @@ class AngryBirds {
         const pg = this.pigs[idx];
         if (!pg || pg.dead) return;
         pg.dead = true;
-
         const bonus = this.birdQueue.length * 200;
         const pts   = pg.pts + bonus;
         this.score += pts;
-        if (this.score > this.bestScore) {
-            this.bestScore = this.score;
-            localStorage.setItem('ab_best_v2', this.bestScore);
-        }
+        if (this.score > this.bestScore) { this.bestScore = this.score; localStorage.setItem('ab_best_v2', this.bestScore); }
         this.onScore(this.score);
         this._burstAt(pg.x, pg.y, '#44FF22', 18);
         this.rings.push({ x: pg.x, y: pg.y, r: pg.r, a: 0.9, col: '#22CC44' });
@@ -840,7 +828,6 @@ class AngryBirds {
         this._shake(14, 10);
         this.flashA = 0.12; this.flashC = '#22CC44';
         this._sfx('success', 50);
-
         if (this._allPigsAreDead()) this.allPigsDead = true;
     }
 
@@ -852,19 +839,15 @@ class AngryBirds {
         this._shake(20, 14);
         this.flashA = 0.28; this.flashC = col;
         this._sfx('explosion', 100);
-
-        this.pigs.forEach((pg, i) => {
-            if (pg.dead) return;
-            if (Math.hypot(pg.x - x, pg.y - y) < radius + pg.r) this._killPig(i);
-        });
+        this.pigs.forEach((pg, i) => { if (!pg.dead && Math.hypot(pg.x-x, pg.y-y) < radius+pg.r) this._killPig(i); });
         this.blocks.forEach((bl, i) => {
             if (bl.dead) return;
-            const d = Math.hypot(bl.x - x, bl.y - y);
+            const d = Math.hypot(bl.x-x, bl.y-y);
             if (d < radius + Math.max(bl.w, bl.h)) {
                 bl.hp -= 3;
-                const ang = Math.atan2(bl.y - y, bl.x - x);
-                bl.vx += Math.cos(ang) * 8; bl.vy += Math.sin(ang) * 8 - 3;
-                bl.angV += (Math.random() - 0.5) * 0.4;
+                const ang = Math.atan2(bl.y-y, bl.x-x);
+                bl.vx += Math.cos(ang)*8; bl.vy += Math.sin(ang)*8-3;
+                bl.angV += (Math.random()-0.5)*0.4;
                 if (bl.hp <= 0) this._destroyBlock(bl, i);
             }
         });
@@ -881,10 +864,7 @@ class AngryBirds {
         this.state = this.STATE.WIN;
         const bonus = this.birdQueue.length * 1000;
         if (bonus > 0) { this.score += bonus; this.onScore(this.score); }
-        if (this.score > this.bestScore) {
-            this.bestScore = this.score;
-            localStorage.setItem('ab_best_v2', this.bestScore);
-        }
+        if (this.score > this.bestScore) { this.bestScore = this.score; localStorage.setItem('ab_best_v2', this.bestScore); }
         this.overlayA = 0;
         this._sfx('win', 100);
     }
@@ -893,10 +873,7 @@ class AngryBirds {
         if (this.state === this.STATE.DEAD || this.state === this.STATE.WIN) return;
         this.state = this.STATE.DEAD;
         this.overlayA = 0;
-        if (this.score > this.bestScore) {
-            this.bestScore = this.score;
-            localStorage.setItem('ab_best_v2', this.bestScore);
-        }
+        if (this.score > this.bestScore) { this.bestScore = this.score; localStorage.setItem('ab_best_v2', this.bestScore); }
         this._sfx('gameOver', 100);
     }
 
@@ -910,16 +887,15 @@ class AngryBirds {
         for (let i = 0; i < n && this.parts.length < this.MAX_PARTS; i++) {
             const a  = Math.random() * Math.PI * 2;
             const sp = Math.random() * 5.5 + 1.5;
-            this.parts.push({ x, y, vx: Math.cos(a)*sp, vy: Math.sin(a)*sp - 1, r: Math.random()*4.5+1.5, life: 1, dec: 0.03, col, g: 0.14 });
+            this.parts.push({ x, y, vx: Math.cos(a)*sp, vy: Math.sin(a)*sp-1, r: Math.random()*4.5+1.5, life: 1, dec: 0.03, col, g: 0.14 });
         }
     }
 
     _shake(t, f) { this.shakeT = t; this.shakeF = f; }
 
     _toggleFS() {
-        if (window.NeonFS) {
-            window.NeonFS.toggle();
-        } else {
+        if (window.NeonFS) { window.NeonFS.toggle(); }
+        else {
             const el  = document.documentElement;
             const isFS = !!(document.fullscreenElement || document.webkitFullscreenElement);
             if (!isFS) (el.requestFullscreen || el.webkitRequestFullscreen || function(){}).call(el);
@@ -928,6 +904,8 @@ class AngryBirds {
         setTimeout(() => this.resize(), 300);
     }
 
+    // ══════════════════ UPDATE ══════════════════
+
     update(ts, dt) {
         if (this.paused) return;
         this.time += dt; this.bgTime += dt * 0.001; this.menuTime += dt * 0.001;
@@ -935,38 +913,21 @@ class AngryBirds {
 
         if (this.shakeT > 0) {
             const f = this.shakeF * (this.shakeT / 18);
-            this.shakeX = (Math.random() - 0.5) * f;
-            this.shakeY = (Math.random() - 0.5) * f * 0.4;
+            this.shakeX = (Math.random()-0.5)*f; this.shakeY = (Math.random()-0.5)*f*0.4;
             this.shakeT--;
         } else { this.shakeX = 0; this.shakeY = 0; }
 
         if (this.flashA > 0) this.flashA = Math.max(0, this.flashA - 0.03);
-
-        this.clouds.forEach(c => {
-            c.x -= c.spd * (dt / 16.67);
-            if (c.x < -c.w * 2) c.x = this.W * 3 + c.w;
-        });
+        this.clouds.forEach(c => { c.x -= c.spd*(dt/16.67); if (c.x < -c.w*2) c.x = this.W*3+c.w; });
 
         if (this.state === this.STATE.MENU) return;
-
-        if (this.state === this.STATE.DEAD || this.state === this.STATE.WIN) {
-            this.overlayA = Math.min(1, this.overlayA + 0.018);
-            return;
-        }
-
-        if (this.state === this.STATE.WAITING) {
-            this._updateEnterAnim(dt);
-            return;
-        }
-
+        if (this.state === this.STATE.DEAD || this.state === this.STATE.WIN) { this.overlayA = Math.min(1, this.overlayA+0.018); return; }
+        if (this.state === this.STATE.WAITING) { this._updateEnterAnim(dt); return; }
         if (this.state === this.STATE.AIMING) this._updateEnterAnim(dt);
-
-        if (this.state === this.STATE.FLYING || this.state === this.STATE.SETTLE) {
-            this._updatePhysics(dt);
-        }
+        if (this.state === this.STATE.FLYING || this.state === this.STATE.SETTLE) this._updatePhysics(dt);
 
         if (this.bird && this.bird.launched && !this.bird.dead) {
-            this.targetCamX = Math.max(0, Math.min(this.bird.x - this.W * 0.3, this.worldW - this.W));
+            this.targetCamX = Math.max(0, Math.min(this.bird.x - this.W*0.3, this.worldW - this.W));
         }
         this.camX += (this.targetCamX - this.camX) * 0.065;
 
@@ -975,14 +936,10 @@ class AngryBirds {
             if (this.settleTimer <= 0) {
                 if (this._allPigsAreDead()) { this._doWin(); return; }
                 if (this.birdQueue.length > 0) {
-                    this._nextBird();
-                    this.state = this.STATE.WAITING;
-                    this.targetCamX = 0;
-                    this._sfx('navigate', 200);
-                    return;
+                    this._nextBird(); this.state = this.STATE.WAITING;
+                    this.targetCamX = 0; this._sfx('navigate', 200); return;
                 }
-                this._doGameOver();
-                return;
+                this._doGameOver(); return;
             }
             if (this._allPigsAreDead() && this.settleTimer < 60) { this._doWin(); return; }
         }
@@ -999,14 +956,16 @@ class AngryBirds {
 
     _updateEnterAnim(dt) {
         if (!this.bird || this.bird.launched || this.bird.enterAnim <= 0) return;
-        this.bird.enterAnim = Math.max(0, this.bird.enterAnim - dt / 600);
+        this.bird.enterAnim = Math.max(0, this.bird.enterAnim - dt/600);
         const t    = 1 - this.bird.enterAnim;
         const ease = t < 0.5 ? 2*t*t : 1 - Math.pow(-2*t+2, 2)/2;
         this.bird.x = this.bird.enterStartX + (this.bird.enterTargetX - this.bird.enterStartX) * ease;
         this.bird.y = this.bird.enterStartY + (this.bird.enterTargetY - this.bird.enterStartY) * ease;
-        this.bird.y -= Math.abs(Math.sin(t * Math.PI * 3)) * 10 * (1 - t);
+        this.bird.y -= Math.abs(Math.sin(t * Math.PI * 3)) * 10 * (1-t);
         this.bird.phase += 0.08;
     }
+
+    // ══════════════════ DRAW ══════════════════
 
     draw(ts) {
         const ctx = this.ctx;
@@ -1017,7 +976,6 @@ class AngryBirds {
 
         ctx.save();
         if (this.shakeX || this.shakeY) ctx.translate(this.S(this.shakeX), this.S(this.shakeY));
-
         this._drawSky();
         this._drawMountains();
         this._drawClouds();
@@ -1038,18 +996,15 @@ class AngryBirds {
             ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
             ctx.globalAlpha = 1;
         }
-
         ctx.restore();
 
         this._drawHUD(ts);
         this._drawFSBtn(ts);
 
+        // Special hint
         if (this.state === this.STATE.FLYING && this.bird && !this.bird.specialUsed && this.bird.special !== 'none' && !this.bird.dead) {
-            const sa = 0.5 + Math.sin(ts / 260) * 0.4;
-            this._utxt(`TAP — ${this.bird.name} SPECIAL!`, this.W/2, this.H - 65, {
-                sz: 12, wt: 'bold', col: '#FFD700', al: 'center', bl: 'middle', op: sa,
-                stroke: true, sc: 'rgba(0,0,0,0.5)', sw: 2, ff: this.FT
-            });
+            const sa = 0.55 + Math.sin(ts / 260) * 0.4;
+            this._drawHintBar(`TAP — ${this.bird.name.toUpperCase()} SPECIAL!`, '#FFD700', sa);
         }
 
         if (this.state === this.STATE.WAITING && this.bird && this.bird.enterAnim <= 0) {
@@ -1060,6 +1015,8 @@ class AngryBirds {
         if (this.state === this.STATE.WIN)  this._drawWinOverlay(ts);
     }
 
+    // ══════════════════ BACKGROUND ══════════════════
+
     _drawSky() {
         const ctx = this.ctx;
         const g   = ctx.createLinearGradient(0, 0, 0, this.X(this.GROUND));
@@ -1067,11 +1024,9 @@ class AngryBirds {
         ctx.fillStyle = g;
         ctx.fillRect(0, 0, this.canvas.width, this.X(this.GROUND + 4));
         this.stars.forEach(s => {
-            ctx.globalAlpha = 0.1 + ((Math.sin(s.ph) + 1) / 2) * 0.5;
+            ctx.globalAlpha = 0.1 + ((Math.sin(s.ph)+1)/2) * 0.5;
             ctx.fillStyle   = '#dde8ff';
-            ctx.beginPath();
-            ctx.arc(this.X(s.x - this.camX * 0.18), this.X(s.y), this.S(s.r), 0, Math.PI*2);
-            ctx.fill();
+            ctx.beginPath(); ctx.arc(this.X(s.x-this.camX*0.18), this.X(s.y), this.S(s.r), 0, Math.PI*2); ctx.fill();
         });
         ctx.globalAlpha = 1;
     }
@@ -1080,9 +1035,9 @@ class AngryBirds {
         const ctx = this.ctx;
         this.mountains.forEach(m => {
             ctx.fillStyle = m.col;
-            const mx = this.X(m.x - this.camX * 0.08);
+            const mx = this.X(m.x - this.camX*0.08);
             ctx.beginPath();
-            ctx.moveTo(mx,                  this.X(this.GROUND));
+            ctx.moveTo(mx,                 this.X(this.GROUND));
             ctx.lineTo(mx + this.S(m.w/2), this.X(this.GROUND - m.h));
             ctx.lineTo(mx + this.S(m.w),   this.X(this.GROUND));
             ctx.closePath(); ctx.fill();
@@ -1093,7 +1048,7 @@ class AngryBirds {
         const ctx = this.ctx;
         this.clouds.forEach(c => {
             ctx.globalAlpha = c.alpha; ctx.fillStyle = 'rgba(200,210,255,0.65)';
-            const cx = this.X(c.x - this.camX * 0.12), cy = this.X(c.y);
+            const cx = this.X(c.x - this.camX*0.12), cy = this.X(c.y);
             ctx.beginPath(); ctx.ellipse(cx, cy, this.S(c.w), this.S(c.h), 0, 0, Math.PI*2); ctx.fill();
             ctx.beginPath(); ctx.ellipse(cx - this.S(c.w*.3), cy + this.S(c.h*.1), this.S(c.w*.5), this.S(c.h*.7), 0, 0, Math.PI*2); ctx.fill();
             ctx.beginPath(); ctx.ellipse(cx + this.S(c.w*.3), cy, this.S(c.w*.45), this.S(c.h*.65), 0, 0, Math.PI*2); ctx.fill();
@@ -1103,52 +1058,33 @@ class AngryBirds {
 
     _drawGround() {
         const ctx = this.ctx, gy = this.GROUND;
-
-        // ✅ Ground se neeche fill - baaki bottom area dark
         ctx.fillStyle = '#0a2a0a';
-        ctx.fillRect(0, this.X(gy + 16), this.canvas.width, this.canvas.height);
-
-        // Ground strip gradient
-        const g = ctx.createLinearGradient(0, this.X(gy - 2), 0, this.X(gy + 20));
-        g.addColorStop(0,   '#2a6a1a');
-        g.addColorStop(0.3, '#1d5512');
-        g.addColorStop(1,   '#0d3a0a');
+        ctx.fillRect(0, this.X(gy+16), this.canvas.width, this.canvas.height);
+        const g = ctx.createLinearGradient(0, this.X(gy-2), 0, this.X(gy+20));
+        g.addColorStop(0,   '#2a6a1a'); g.addColorStop(0.3, '#1d5512'); g.addColorStop(1, '#0d3a0a');
         ctx.fillStyle = g;
-        ctx.fillRect(0, this.X(gy - 2), this.canvas.width, this.X(22));
-
-        // Grass top
+        ctx.fillRect(0, this.X(gy-2), this.canvas.width, this.X(22));
         ctx.fillStyle = 'rgba(100,220,55,0.2)';
-        ctx.fillRect(0, this.X(gy - 2), this.canvas.width, this.S(2.5));
-
-        // Grass tufts
-        const tw  = 20;
-        const off = (((-this.camX * 1.02) % tw) + tw) % tw;
-        for (let x = -tw + off; x < this.W + tw*2; x += tw) {
-            const h = 2.5 + Math.sin(x * 0.45 + this.bgTime) * 1.8;
+        ctx.fillRect(0, this.X(gy-2), this.canvas.width, this.S(2.5));
+        const tw = 20, off = (((-this.camX*1.02) % tw) + tw) % tw;
+        for (let x = -tw+off; x < this.W+tw*2; x += tw) {
+            const h = 2.5 + Math.sin(x*0.45+this.bgTime)*1.8;
             ctx.fillStyle = 'rgba(80,200,40,0.3)';
-            ctx.fillRect(this.X(x), this.X(gy - 2 - h), this.S(1.5), this.S(h));
+            ctx.fillRect(this.X(x), this.X(gy-2-h), this.S(1.5), this.S(h));
         }
-
-        // ✅ Bottom area - dark panel neeche controls ke liye
-        // Yeh area clearly alag dikhega
         const bottomAreaY = gy + 20;
         const bottomH     = this.H - bottomAreaY;
         if (bottomH > 0) {
             const bg2 = ctx.createLinearGradient(0, this.X(bottomAreaY), 0, this.X(this.H));
-            bg2.addColorStop(0, '#0a1a0a');
-            bg2.addColorStop(1, '#050e05');
+            bg2.addColorStop(0, '#0a1a0a'); bg2.addColorStop(1, '#050e05');
             ctx.fillStyle = bg2;
             ctx.fillRect(0, this.X(bottomAreaY), this.canvas.width, this.X(bottomH));
-
-            // Subtle separator line
-            ctx.strokeStyle = 'rgba(100,200,50,0.15)';
-            ctx.lineWidth   = this.S(1);
-            ctx.beginPath();
-            ctx.moveTo(0, this.X(bottomAreaY));
-            ctx.lineTo(this.canvas.width, this.X(bottomAreaY));
-            ctx.stroke();
+            ctx.strokeStyle = 'rgba(100,200,50,0.15)'; ctx.lineWidth = this.S(1);
+            ctx.beginPath(); ctx.moveTo(0, this.X(bottomAreaY)); ctx.lineTo(this.canvas.width, this.X(bottomAreaY)); ctx.stroke();
         }
     }
+
+    // ══════════════════ GAME OBJECTS ══════════════════
 
     _drawBlocks() {
         const ctx = this.ctx;
@@ -1157,32 +1093,25 @@ class AngryBirds {
             ctx.save();
             ctx.translate(this.X(bl.x - this.camX), this.X(bl.y));
             ctx.rotate(bl.angle);
-
             ctx.fillStyle = 'rgba(0,0,0,0.16)';
-            ctx.fillRect(this.S(-bl.w/2 + 1.5), this.S(-bl.h/2 + 1.5), this.S(bl.w), this.S(bl.h));
-
+            ctx.fillRect(this.S(-bl.w/2+1.5), this.S(-bl.h/2+1.5), this.S(bl.w), this.S(bl.h));
             const bg = ctx.createLinearGradient(this.S(-bl.w/2), this.S(-bl.h/2), this.S(bl.w/2), this.S(bl.h/2));
             bg.addColorStop(0,   bl.hitAnim > 0 ? '#fff' : bl.light);
             bg.addColorStop(0.5, bl.col);
             bg.addColorStop(1,   bl.dark);
             ctx.fillStyle = bg;
             ctx.fillRect(this.S(-bl.w/2), this.S(-bl.h/2), this.S(bl.w), this.S(bl.h));
-
             if (bl.type === 'wood' || bl.type === 'plank') {
                 ctx.strokeStyle = 'rgba(80,50,20,0.25)'; ctx.lineWidth = this.S(0.7);
                 for (let i = 0; i < 3; i++) {
                     const ly = this.S(-bl.h/2 + (i+1)*bl.h/4);
-                    ctx.beginPath();
-                    ctx.moveTo(this.S(-bl.w/2 + 2), ly);
-                    ctx.lineTo(this.S(bl.w/2 - 2),  ly + this.S(Math.sin(bl.crackseed + i)*2));
-                    ctx.stroke();
+                    ctx.beginPath(); ctx.moveTo(this.S(-bl.w/2+2), ly); ctx.lineTo(this.S(bl.w/2-2), ly + this.S(Math.sin(bl.crackseed+i)*2)); ctx.stroke();
                 }
             } else if (bl.type === 'stone') {
                 ctx.strokeStyle = 'rgba(40,40,50,0.2)'; ctx.lineWidth = this.S(0.6);
                 ctx.beginPath(); ctx.moveTo(0, this.S(-bl.h/2)); ctx.lineTo(0, this.S(bl.h/2)); ctx.stroke();
                 ctx.beginPath(); ctx.moveTo(this.S(-bl.w/2), 0); ctx.lineTo(this.S(bl.w/2), 0); ctx.stroke();
             }
-
             const hpR = bl.hp / bl.maxHp;
             if (hpR < 0.65) {
                 ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = this.S(0.8); ctx.lineCap = 'round';
@@ -1190,17 +1119,15 @@ class AngryBirds {
                 for (let i = 0; i < n; i++) {
                     const s = bl.crackseed + i*7.3;
                     ctx.beginPath();
-                    ctx.moveTo(this.S(Math.sin(s)*bl.w*0.28),    this.S(Math.cos(s*1.3)*bl.h*0.28));
-                    ctx.lineTo(this.S(Math.sin(s*2.1)*bl.w*0.3), this.S(Math.cos(s*0.7)*bl.h*0.3));
+                    ctx.moveTo(this.S(Math.sin(s)*bl.w*.28),    this.S(Math.cos(s*1.3)*bl.h*.28));
+                    ctx.lineTo(this.S(Math.sin(s*2.1)*bl.w*.3), this.S(Math.cos(s*.7)*bl.h*.3));
                     ctx.stroke();
                 }
             }
-
-            ctx.strokeStyle = `rgba(255,255,255,${bl.hitAnim > 0 ? 0.5 : 0.12})`;
-            ctx.lineWidth   = this.S(0.8);
+            ctx.strokeStyle = `rgba(255,255,255,${bl.hitAnim > 0 ? 0.5 : 0.12})`; ctx.lineWidth = this.S(0.8);
             ctx.strokeRect(this.S(-bl.w/2), this.S(-bl.h/2), this.S(bl.w), this.S(bl.h));
             ctx.fillStyle = 'rgba(255,255,255,0.15)';
-            ctx.fillRect(this.S(-bl.w/2 + 1.5), this.S(-bl.h/2 + 1.5), this.S(bl.w*0.4), this.S(3));
+            ctx.fillRect(this.S(-bl.w/2+1.5), this.S(-bl.h/2+1.5), this.S(bl.w*0.4), this.S(3));
             ctx.restore();
         });
     }
@@ -1209,7 +1136,7 @@ class AngryBirds {
         const ctx = this.ctx;
         this.debris.forEach(d => {
             ctx.save(); ctx.globalAlpha = d.life;
-            ctx.translate(this.X(d.x - this.camX), this.X(d.y)); ctx.rotate(d.angle);
+            ctx.translate(this.X(d.x-this.camX), this.X(d.y)); ctx.rotate(d.angle);
             ctx.fillStyle = d.col;
             ctx.fillRect(this.S(-d.w/2), this.S(-d.h/2), this.S(d.w), this.S(d.h));
             ctx.restore();
@@ -1223,38 +1150,28 @@ class AngryBirds {
             const sc = pg.hitAnim > 0 ? 1 + pg.hitAnim*0.12 : 1 + Math.sin(pg.phase)*0.02;
             const r  = pg.r * sc;
             ctx.save(); ctx.translate(this.X(pg.x - this.camX), this.X(pg.y));
-
             ctx.fillStyle = 'rgba(0,0,0,0.14)';
             ctx.beginPath(); ctx.ellipse(this.S(2), this.S(r*.65), this.S(r*.8), this.S(r*.18), 0, 0, Math.PI*2); ctx.fill();
-
             const bg = ctx.createRadialGradient(this.S(-r*.25), this.S(-r*.28), 0, 0, 0, this.S(r));
-            bg.addColorStop(0,   pg.hitAnim > 0 ? '#BBFFBB' : pg.light);
-            bg.addColorStop(0.55, pg.col);
-            bg.addColorStop(1,   pg.dark);
+            bg.addColorStop(0, pg.hitAnim > 0 ? '#BBFFBB' : pg.light);
+            bg.addColorStop(0.55, pg.col); bg.addColorStop(1, pg.dark);
             ctx.fillStyle = bg;
             ctx.beginPath(); ctx.arc(0, 0, this.S(r), 0, Math.PI*2); ctx.fill();
-            ctx.strokeStyle = `rgba(255,255,255,${pg.hitAnim > 0 ? 0.42 : 0.1})`;
-            ctx.lineWidth   = this.S(0.7); ctx.stroke();
-
+            ctx.strokeStyle = `rgba(255,255,255,${pg.hitAnim > 0 ? 0.42 : 0.1})`; ctx.lineWidth = this.S(0.7); ctx.stroke();
             if (pg.hp < pg.maxHp && pg.maxHp > 1) {
-                ctx.fillStyle = 'rgba(0,0,0,0.4)';
-                ctx.fillRect(this.S(-r), this.S(-r-8), this.S(r*2), this.S(4));
-                ctx.fillStyle = '#22DD44';
-                ctx.fillRect(this.S(-r), this.S(-r-8), this.S(r*2*(pg.hp/pg.maxHp)), this.S(4));
+                ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(this.S(-r), this.S(-r-8), this.S(r*2), this.S(4));
+                ctx.fillStyle = '#22DD44'; ctx.fillRect(this.S(-r), this.S(-r-8), this.S(r*2*(pg.hp/pg.maxHp)), this.S(4));
             }
-
             [-1, 1].forEach(side => {
                 const ex = this.S(side*r*.36), ey = this.S(-r*.12);
                 ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(ex, ey, this.S(r*.24), 0, Math.PI*2); ctx.fill();
                 ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(ex + this.S(side*1.2), ey + this.S(1.2), this.S(r*.12), 0, Math.PI*2); ctx.fill();
                 ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(ex + this.S(side*1.2+.6), ey + this.S(.2), this.S(r*.05), 0, Math.PI*2); ctx.fill();
             });
-
             ctx.fillStyle = '#228800';
             ctx.beginPath(); ctx.ellipse(0, this.S(r*.1), this.S(r*.2), this.S(r*.12), 0, 0, Math.PI*2); ctx.fill();
             ctx.fillStyle = '#004400';
             [-1, 1].forEach(s => { ctx.beginPath(); ctx.arc(this.S(s*r*.09), this.S(r*.1), this.S(r*.05), 0, Math.PI*2); ctx.fill(); });
-
             ctx.fillStyle = 'rgba(255,255,255,0.35)';
             ctx.beginPath(); ctx.ellipse(this.S(-r*.22), this.S(-r*.28), this.S(r*.22), this.S(r*.15), -.5, 0, Math.PI*2); ctx.fill();
             ctx.restore();
@@ -1264,49 +1181,31 @@ class AngryBirds {
     _drawSling() {
         const ctx = this.ctx, sx = this.sling.x, sy = this.sling.y;
         const fH  = 48, sw = 7;
-
         ctx.fillStyle = 'rgba(0,0,0,0.15)';
-        ctx.fillRect(this.X(sx - sw/2 - this.camX + 2), this.X(sy + 3), this.S(sw), this.X(this.GROUND - sy));
-
+        ctx.fillRect(this.X(sx-sw/2-this.camX+2), this.X(sy+3), this.S(sw), this.X(this.GROUND-sy));
         const sg = ctx.createLinearGradient(0, this.X(sy), 0, this.X(this.GROUND));
         sg.addColorStop(0, '#8B5A2B'); sg.addColorStop(1, '#5C3A1E');
-        ctx.fillStyle = sg;
-        this._fillRect(sx - sw/2, sy, sw, this.GROUND - sy);
-
-        ctx.strokeStyle = '#6B4A2A'; ctx.lineWidth = this.S(sw - 1.5); ctx.lineCap = 'round';
-        [[-22, -fH], [22, -fH]].forEach(([dx, dy]) => {
-            ctx.beginPath();
-            ctx.moveTo(this.X(sx - this.camX), this.X(sy));
-            ctx.lineTo(this.X(sx + dx - this.camX), this.X(sy + dy));
-            ctx.stroke();
+        ctx.fillStyle = sg; this._fillRect(sx-sw/2, sy, sw, this.GROUND-sy);
+        ctx.strokeStyle = '#6B4A2A'; ctx.lineWidth = this.S(sw-1.5); ctx.lineCap = 'round';
+        [[-22,-fH],[22,-fH]].forEach(([dx, dy]) => {
+            ctx.beginPath(); ctx.moveTo(this.X(sx-this.camX), this.X(sy)); ctx.lineTo(this.X(sx+dx-this.camX), this.X(sy+dy)); ctx.stroke();
         });
-
         ctx.strokeStyle = '#9B7A4A'; ctx.lineWidth = this.S(3);
-        [[-22, -fH], [22, -fH]].forEach(([dx, dy]) => {
-            ctx.beginPath();
-            ctx.moveTo(this.X(sx + dx - this.camX - 4), this.X(sy + dy));
-            ctx.lineTo(this.X(sx + dx - this.camX + 4), this.X(sy + dy));
-            ctx.stroke();
+        [[-22,-fH],[22,-fH]].forEach(([dx, dy]) => {
+            ctx.beginPath(); ctx.moveTo(this.X(sx+dx-this.camX-4), this.X(sy+dy)); ctx.lineTo(this.X(sx+dx-this.camX+4), this.X(sy+dy)); ctx.stroke();
         });
-
         if (this.bird && !this.bird.launched) {
             const bx = this.bird.x, by = this.bird.y;
             ctx.strokeStyle = 'rgba(110,55,18,0.78)'; ctx.lineWidth = this.S(2.5); ctx.lineCap = 'round';
-            [[sx-22, sy-fH], [sx+22, sy-fH]].forEach(([lx, ly]) => {
-                ctx.beginPath(); ctx.moveTo(this.X(lx - this.camX), this.X(ly));
-                ctx.lineTo(this.X(bx - this.camX), this.X(by)); ctx.stroke();
+            [[sx-22,sy-fH],[sx+22,sy-fH]].forEach(([lx, ly]) => {
+                ctx.beginPath(); ctx.moveTo(this.X(lx-this.camX), this.X(ly)); ctx.lineTo(this.X(bx-this.camX), this.X(by)); ctx.stroke();
             });
         } else {
             ctx.strokeStyle = 'rgba(90,45,15,0.35)'; ctx.lineWidth = this.S(1.8);
-            ctx.beginPath();
-            ctx.moveTo(this.X(sx - 22 - this.camX), this.X(sy - fH));
-            ctx.lineTo(this.X(sx - this.camX),      this.X(sy - 7));
-            ctx.lineTo(this.X(sx + 22 - this.camX), this.X(sy - fH));
-            ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(this.X(sx-22-this.camX), this.X(sy-fH)); ctx.lineTo(this.X(sx-this.camX), this.X(sy-7)); ctx.lineTo(this.X(sx+22-this.camX), this.X(sy-fH)); ctx.stroke();
         }
-
         ctx.fillStyle = '#5C3A1E';
-        ctx.beginPath(); ctx.arc(this.X(sx - this.camX), this.X(sy), this.S(4.2), 0, Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.arc(this.X(sx-this.camX), this.X(sy), this.S(4.2), 0, Math.PI*2); ctx.fill();
     }
 
     _drawTrajectory() {
@@ -1323,10 +1222,10 @@ class AngryBirds {
     _drawBirdWithQueue(ts) {
         if (!this.bird) return;
         this.birdQueue.forEach((bd, i) => {
-            const qx  = this.sling.x - 36 - i * 28;
+            const qx  = this.sling.x - 36 - i*28;
             const qy  = this.GROUND - bd.r;
-            const bob = Math.sin(this.time / 550 + i * 1.2) * 2.5;
-            this._drawBirdAt(this.ctx, qx - this.camX, qy + bob, bd.r * 0.72, bd, ts);
+            const bob = Math.sin(this.time/550 + i*1.2) * 2.5;
+            this._drawBirdAt(this.ctx, qx - this.camX, qy + bob, bd.r*0.72, bd, ts);
         });
         if (this.bird.enterAnim > 0 && !this.bird.launched) {
             this._drawBirdAt(this.ctx, this.bird.x - this.camX, this.bird.y, this.bird.r, this.bird, ts);
@@ -1336,10 +1235,7 @@ class AngryBirds {
     }
 
     _drawActiveBirds(ts) {
-        this.activeBirds.forEach(ab => {
-            if (!ab.launched || ab.settled) return;
-            this._renderBirdFull(ab, ts);
-        });
+        this.activeBirds.forEach(ab => { if (!ab.launched || ab.settled) return; this._renderBirdFull(ab, ts); });
     }
 
     _renderBirdFull(b, ts) {
@@ -1348,17 +1244,15 @@ class AngryBirds {
         if (b.trail && b.trail.length) {
             b.trail.forEach((tp, i) => {
                 if (tp.a <= 0) return;
-                ctx.globalAlpha = tp.a * 0.18;
-                ctx.fillStyle   = b.col;
-                this._circle(tp.x, tp.y, Math.max(0.4, b.r * (i / b.trail.length) * 0.5));
-                ctx.fill();
+                ctx.globalAlpha = tp.a * 0.18; ctx.fillStyle = b.col;
+                this._circle(tp.x, tp.y, Math.max(0.4, b.r*(i/b.trail.length)*0.5)); ctx.fill();
             });
             ctx.globalAlpha = 1;
         }
         const p = b.hitAnim > 0 ? 1 + b.hitAnim*0.15 : 1 + Math.sin(b.phase||0)*0.03;
         ctx.save();
-        ctx.translate(this.X(b.x - this.camX), this.X(b.y));
-        if (b.launched) ctx.rotate(Math.atan2(b.vy, b.vx) * 0.35);
+        ctx.translate(this.X(b.x-this.camX), this.X(b.y));
+        if (b.launched) ctx.rotate(Math.atan2(b.vy, b.vx)*0.35);
         ctx.scale(p, p);
         this._drawBirdAt(ctx, 0, 0, b.r, b, ts);
         ctx.restore();
@@ -1367,77 +1261,32 @@ class AngryBirds {
     _drawBirdAt(ctx, x, y, r, bd, ts) {
         ctx.fillStyle = 'rgba(0,0,0,0.12)';
         ctx.beginPath(); ctx.ellipse(this.S(x+1.5), this.S(y+r*.6), this.S(r*.85), this.S(r*.18), 0, 0, Math.PI*2); ctx.fill();
-
         const bg = ctx.createRadialGradient(this.S(x-r*.28), this.S(y-r*.28), this.S(r*.04), this.S(x), this.S(y), this.S(r));
-        bg.addColorStop(0,   bd.light);
-        bg.addColorStop(0.42, bd.col);
-        bg.addColorStop(1,   bd.dark);
+        bg.addColorStop(0, bd.light); bg.addColorStop(0.42, bd.col); bg.addColorStop(1, bd.dark);
         ctx.fillStyle = bg;
         ctx.beginPath(); ctx.arc(this.S(x), this.S(y), this.S(r), 0, Math.PI*2); ctx.fill();
         ctx.strokeStyle = 'rgba(255,255,255,0.14)'; ctx.lineWidth = this.S(0.7); ctx.stroke();
-
         [-1, 1].forEach(side => {
-            const ex = this.S(x + side*r*.28), ey = this.S(y - r*.06);
+            const ex = this.S(x+side*r*.28), ey = this.S(y-r*.06);
             ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(ex, ey, this.S(r*.25), 0, Math.PI*2); ctx.fill();
-            ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(ex + this.S(side*.6), ey + this.S(.8), this.S(r*.13), 0, Math.PI*2); ctx.fill();
+            ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(ex+this.S(side*.6), ey+this.S(.8), this.S(r*.13), 0, Math.PI*2); ctx.fill();
         });
-
         ctx.fillStyle = '#FF8C00';
-        ctx.beginPath();
-        ctx.moveTo(this.S(x + r*.32), this.S(y + r*.06));
-        ctx.lineTo(this.S(x + r*.88), this.S(y));
-        ctx.lineTo(this.S(x + r*.32), this.S(y - r*.06));
-        ctx.closePath(); ctx.fill();
-
-        if (bd.id === 'red') {
-            ctx.fillStyle = '#EE0011';
-            ctx.beginPath();
-            ctx.moveTo(this.S(x - r*.08), this.S(y - r));
-            ctx.lineTo(this.S(x + r*.16), this.S(y - r*1.35));
-            ctx.lineTo(this.S(x + r*.35), this.S(y - r*.9));
-            ctx.closePath(); ctx.fill();
-        }
-        if (bd.id === 'black') {
-            ctx.strokeStyle = '#FFD700'; ctx.lineWidth = this.S(1.6); ctx.lineCap = 'round';
-            ctx.beginPath();
-            ctx.moveTo(this.S(x), this.S(y - r));
-            ctx.quadraticCurveTo(this.S(x + r*.35), this.S(y - r*1.45), this.S(x + r*.2), this.S(y - r*1.82));
-            ctx.stroke();
-        }
-        if (bd.id === 'yellow') {
-            ctx.fillStyle = 'rgba(255,200,0,0.25)';
-            ctx.beginPath();
-            ctx.moveTo(this.S(x + r*.7),  this.S(y));
-            ctx.lineTo(this.S(x - r*.4),  this.S(y - r*.55));
-            ctx.lineTo(this.S(x - r*.4),  this.S(y + r*.55));
-            ctx.closePath(); ctx.fill();
-        }
-        if (bd.id === 'blue') {
-            ctx.fillStyle = bd.dark;
-            ctx.beginPath();
-            ctx.moveTo(this.S(x - r*.7),  this.S(y));
-            ctx.lineTo(this.S(x - r*1.3), this.S(y - r*.4));
-            ctx.lineTo(this.S(x - r*1.2), this.S(y + r*.3));
-            ctx.closePath(); ctx.fill();
-        }
-        if (bd.id === 'green') {
-            ctx.fillStyle = bd.dark;
-            ctx.beginPath();
-            ctx.moveTo(this.S(x - r*.8),  this.S(y));
-            ctx.lineTo(this.S(x - r*1.5), this.S(y + r*.2));
-            ctx.lineTo(this.S(x - r*1.3), this.S(y - r*.4));
-            ctx.closePath(); ctx.fill();
-        }
-
+        ctx.beginPath(); ctx.moveTo(this.S(x+r*.32), this.S(y+r*.06)); ctx.lineTo(this.S(x+r*.88), this.S(y)); ctx.lineTo(this.S(x+r*.32), this.S(y-r*.06)); ctx.closePath(); ctx.fill();
+        if (bd.id === 'red') { ctx.fillStyle = '#EE0011'; ctx.beginPath(); ctx.moveTo(this.S(x-r*.08), this.S(y-r)); ctx.lineTo(this.S(x+r*.16), this.S(y-r*1.35)); ctx.lineTo(this.S(x+r*.35), this.S(y-r*.9)); ctx.closePath(); ctx.fill(); }
+        if (bd.id === 'black') { ctx.strokeStyle = '#FFD700'; ctx.lineWidth = this.S(1.6); ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(this.S(x), this.S(y-r)); ctx.quadraticCurveTo(this.S(x+r*.35), this.S(y-r*1.45), this.S(x+r*.2), this.S(y-r*1.82)); ctx.stroke(); }
+        if (bd.id === 'yellow') { ctx.fillStyle = 'rgba(255,200,0,0.25)'; ctx.beginPath(); ctx.moveTo(this.S(x+r*.7), this.S(y)); ctx.lineTo(this.S(x-r*.4), this.S(y-r*.55)); ctx.lineTo(this.S(x-r*.4), this.S(y+r*.55)); ctx.closePath(); ctx.fill(); }
+        if (bd.id === 'blue') { ctx.fillStyle = bd.dark; ctx.beginPath(); ctx.moveTo(this.S(x-r*.7), this.S(y)); ctx.lineTo(this.S(x-r*1.3), this.S(y-r*.4)); ctx.lineTo(this.S(x-r*1.2), this.S(y+r*.3)); ctx.closePath(); ctx.fill(); }
+        if (bd.id === 'green') { ctx.fillStyle = bd.dark; ctx.beginPath(); ctx.moveTo(this.S(x-r*.8), this.S(y)); ctx.lineTo(this.S(x-r*1.5), this.S(y+r*.2)); ctx.lineTo(this.S(x-r*1.3), this.S(y-r*.4)); ctx.closePath(); ctx.fill(); }
         ctx.fillStyle = 'rgba(255,255,255,0.38)';
-        ctx.beginPath(); ctx.ellipse(this.S(x - r*.2), this.S(y - r*.28), this.S(r*.26), this.S(r*.17), -.5, 0, Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(this.S(x-r*.2), this.S(y-r*.28), this.S(r*.26), this.S(r*.17), -.5, 0, Math.PI*2); ctx.fill();
     }
 
     _drawRings() {
         const ctx = this.ctx;
         this.rings.forEach(r => {
             ctx.save(); ctx.globalAlpha = Math.max(0, r.a);
-            ctx.strokeStyle = r.col; ctx.lineWidth = this.S(2 * r.a);
+            ctx.strokeStyle = r.col; ctx.lineWidth = this.S(2*r.a);
             this._circle(r.x, r.y, r.r); ctx.stroke();
             ctx.restore();
         });
@@ -1448,237 +1297,460 @@ class AngryBirds {
         this.parts.forEach(p => {
             ctx.save(); ctx.globalAlpha = Math.max(0, p.life);
             ctx.fillStyle = p.col;
-            this._circle(p.x, p.y, Math.max(0.3, p.r * p.life)); ctx.fill();
+            this._circle(p.x, p.y, Math.max(0.3, p.r*p.life)); ctx.fill();
             ctx.restore();
         });
     }
 
     _drawPops() {
         this.pops.forEach(p => {
-            this._ctxt(p.text, p.x, p.y, {
-                sz: 13, wt: 'bold', col: p.col, al: 'center', op: p.op,
-                stroke: true, sc: 'rgba(0,0,0,0.55)', sw: 2.5, ff: this.FT
+            this._wtxt(p.text, p.x, p.y, {
+                size: 13, weight: 'bold', color: p.col,
+                align: 'center', base: 'middle',
+                alpha: p.op,
+                stroke: true, strokeColor: 'rgba(0,0,0,0.6)', strokeWidth: 2.5,
+                font: this.FT
             });
         });
     }
 
-    _drawHUD(ts) {
-        const ctx = this.ctx, W = this.W;
-        const hg  = ctx.createLinearGradient(0, 0, 0, this.X(52));
-        hg.addColorStop(0, 'rgba(0,0,0,0.8)');
-        hg.addColorStop(1, 'rgba(0,0,0,0.04)');
-        ctx.fillStyle = hg;
-        ctx.fillRect(0, 0, this.canvas.width, this.X(52));
+    // ══════════════════ HUD — STRUCTURED LAYOUT ══════════════════
 
-        this._utxt(this.score.toLocaleString(), W/2, 24, {
-            sz: 20, wt: 'bold', col: '#fff', al: 'center', bl: 'middle', ff: this.FT
+    _drawHUD(ts) {
+        const ctx = this.ctx;
+        const W = this.W;
+
+        // ── HUD background bar ──
+        const hudH = 56;
+        const hg = ctx.createLinearGradient(0, 0, 0, this.X(hudH));
+        hg.addColorStop(0, 'rgba(0,0,10,0.92)');
+        hg.addColorStop(1, 'rgba(0,0,10,0.0)');
+        ctx.fillStyle = hg;
+        ctx.fillRect(0, 0, this.canvas.width, this.X(hudH));
+
+        // ── Bottom separator line ──
+        ctx.strokeStyle = 'rgba(255,140,0,0.12)';
+        ctx.lineWidth   = this.S(1);
+        ctx.beginPath();
+        ctx.moveTo(0, this.X(hudH - 2));
+        ctx.lineTo(this.canvas.width, this.X(hudH - 2));
+        ctx.stroke();
+
+        // ─────────────────────────────────────────
+        //  LEFT BLOCK — Level badge
+        // ─────────────────────────────────────────
+        const badgeX = 10, badgeY = 8, badgeW = 62, badgeH = 34;
+        ctx.fillStyle   = 'rgba(185,79,227,0.15)';
+        ctx.strokeStyle = 'rgba(185,79,227,0.45)';
+        ctx.lineWidth   = this.S(1.2);
+        this._rrect(badgeX, badgeY, badgeW, badgeH, 8); ctx.fill(); ctx.stroke();
+
+        this._stxt('LVL', badgeX + badgeW/2, badgeY + 10, {
+            size: 8, weight: '600',
+            color: 'rgba(200,140,255,0.7)',
+            align: 'center', base: 'middle',
+            font: this.FU
         });
+        this._stxt(`${this.level}`, badgeX + badgeW/2, badgeY + 25, {
+            size: 14, weight: 'bold',
+            color: '#cc80ff',
+            align: 'center', base: 'middle',
+            font: this.FT,
+            glow: true, glowColor: 'rgba(200,120,255,0.5)', glowSize: 6
+        });
+
+        // ─────────────────────────────────────────
+        //  CENTER BLOCK — Score + Best
+        // ─────────────────────────────────────────
+        this._stxt(this.score.toLocaleString(), W / 2, 20, {
+            size: 19, weight: '900',
+            color: '#ffffff',
+            align: 'center', base: 'middle',
+            font: this.FT,
+            shadow: true, shadowColor: 'rgba(255,200,0,0.3)',
+            shadowBlur: 8, shadowOffY: 1
+        });
+
         if (this.bestScore > 0) {
-            this._utxt(`BEST ${this.bestScore.toLocaleString()}`, W/2, 42, {
-                sz: 8, col: 'rgba(255,215,0,0.4)', al: 'center', bl: 'middle', ff: this.FU
+            this._stxt(`BEST  ${this.bestScore.toLocaleString()}`, W / 2, 38, {
+                size: 8, weight: '500',
+                color: 'rgba(255,215,0,0.45)',
+                align: 'center', base: 'middle',
+                font: this.FU
             });
         }
 
-        ctx.fillStyle = 'rgba(185,79,227,0.18)';
-        ctx.strokeStyle = 'rgba(185,79,227,0.4)';
-        ctx.lineWidth   = this.S(1);
-        this._rrect(8, 8, 54, 24, 6); ctx.fill(); ctx.stroke();
-        this._utxt(`LVL ${this.level}`, 35, 20, {
-            sz: 11, wt: 'bold', col: '#cc80ff', al: 'center', bl: 'middle', ff: this.FT
-        });
-
+        // ─────────────────────────────────────────
+        //  RIGHT BLOCK — Birds & Pigs counters
+        // ─────────────────────────────────────────
         const qLen   = this.birdQueue.length + (this.bird && !this.bird.dead ? 1 : 0);
         const pAlive = this.pigs.filter(p => !p.dead).length;
-        this._utxt(`🐦 ${qLen}`, W - 12, 22, {
-            sz: 13, wt: 'bold', col: '#FFD700', al: 'right', bl: 'middle', ff: this.FT
+        const rightX = W - 10;
+
+        // Birds remaining
+        this._stxt('🐦', rightX - 52, 16, {
+            size: 13, align: 'center', base: 'middle'
         });
-        this._utxt(`🐷 ${pAlive}`, W/2 + 55, 22, {
-            sz: 11, wt: 'bold', col: '#22CC44', al: 'left', bl: 'middle', ff: this.FT
+        this._stxt(`${qLen}`, rightX - 36, 16, {
+            size: 14, weight: 'bold',
+            color: '#FFD700',
+            align: 'left', base: 'middle',
+            font: this.FT,
+            glow: true, glowColor: 'rgba(255,215,0,0.4)', glowSize: 5
+        });
+
+        // Pigs remaining
+        this._stxt('🐷', rightX - 52, 38, {
+            size: 12, align: 'center', base: 'middle'
+        });
+        this._stxt(`${pAlive}`, rightX - 36, 38, {
+            size: 12, weight: 'bold',
+            color: '#22CC44',
+            align: 'left', base: 'middle',
+            font: this.FT
         });
     }
+
+    // ══════════════════ HINT BAR ══════════════════
+
+    _drawHintBar(text, color, alpha) {
+        const ctx = this.ctx;
+        const W = this.W;
+        const barW = Math.min(W * 0.85, 280);
+        const barH = 28;
+        const barX = (W - barW) / 2;
+        const barY = this.H - 72;
+
+        ctx.globalAlpha = alpha * 0.85;
+        ctx.fillStyle   = 'rgba(0,0,0,0.65)';
+        this._rrect(barX, barY, barW, barH, 10); ctx.fill();
+        ctx.strokeStyle = color + '55';
+        ctx.lineWidth   = this.S(1);
+        this._rrect(barX, barY, barW, barH, 10); ctx.stroke();
+        ctx.globalAlpha = 1;
+
+        this._stxt(text, W / 2, barY + barH / 2, {
+            size: 11, weight: 'bold',
+            color: color, align: 'center', base: 'middle',
+            font: this.FT, alpha,
+            glow: true, glowColor: color, glowSize: 6
+        });
+    }
+
+    // ══════════════════ FS BUTTON ══════════════════
 
     _drawFSBtn(ts) {
         const ctx = this.ctx, bw = 42, bh = 42, mg = 10;
         const bx  = this.W - bw - mg, by = this.H - bh - mg;
         this.fsRect = { x: bx, y: by, w: bw, h: bh };
-        const pulse = 0.4 + Math.sin(ts / 1200) * 0.18;
+        const pulse = 0.4 + Math.sin(ts/1200) * 0.18;
         ctx.save(); ctx.globalAlpha = pulse;
         ctx.fillStyle   = 'rgba(0,0,10,0.5)';
         ctx.strokeStyle = 'rgba(255,255,255,0.16)';
         ctx.lineWidth   = this.S(1);
         this._rrect(bx, by, bw, bh, 9); ctx.fill(); ctx.stroke();
-        const cx = bx + bw/2, cy = by + bh/2, ic = 7;
+        const cx = bx+bw/2, cy = by+bh/2, ic = 7;
         ctx.strokeStyle = '#fff'; ctx.lineWidth = this.S(1.8); ctx.lineCap = 'round';
-        [[-ic,-(ic-3),-ic,-ic,-(ic-3),-ic],
-         [ic-3,-ic,ic,-ic,ic,-(ic-3)],
-         [-ic,ic-3,-ic,ic,-(ic-3),ic],
-         [ic-3,ic,ic,ic,ic,ic-3]
-        ].forEach(([x1,y1,x2,y2,x3,y3]) => {
-            ctx.beginPath();
-            ctx.moveTo(this.X(cx+x1), this.X(cy+y1));
-            ctx.lineTo(this.X(cx+x2), this.X(cy+y2));
-            ctx.lineTo(this.X(cx+x3), this.X(cy+y3));
-            ctx.stroke();
+        [[-ic,-(ic-3),-ic,-ic,-(ic-3),-ic],[ic-3,-ic,ic,-ic,ic,-(ic-3)],[-ic,ic-3,-ic,ic,-(ic-3),ic],[ic-3,ic,ic,ic,ic,ic-3]].forEach(([x1,y1,x2,y2,x3,y3]) => {
+            ctx.beginPath(); ctx.moveTo(this.X(cx+x1), this.X(cy+y1)); ctx.lineTo(this.X(cx+x2), this.X(cy+y2)); ctx.lineTo(this.X(cx+x3), this.X(cy+y3)); ctx.stroke();
         });
         ctx.restore();
     }
 
+    // ══════════════════ WAIT HINT ══════════════════
+
     _drawWaitHint(ts) {
-        const cx = this.W/2, cy = this.H/2;
-        const cw = Math.min(this.W - 36, 272), ch = 82;
-        this.ctx.fillStyle = 'rgba(4,2,16,0.82)';
-        this._rrect(cx - cw/2, cy - ch/2, cw, ch, 14); this.ctx.fill();
-        this.ctx.strokeStyle = 'rgba(255,140,0,0.3)';
-        this.ctx.lineWidth   = this.S(1.2);
-        this._rrect(cx - cw/2, cy - ch/2, cw, ch, 14); this.ctx.stroke();
+        const ctx = this.ctx;
+        const cx  = this.W / 2;
+        const cw  = Math.min(this.W - 40, 260);
+        const ch  = 78;
+        const cy  = this.H / 2 - ch / 2;
+
+        // Card background
+        ctx.fillStyle   = 'rgba(4,2,16,0.88)';
+        this._rrect(cx - cw/2, cy, cw, ch, 14); ctx.fill();
+        ctx.strokeStyle = 'rgba(255,140,0,0.3)'; ctx.lineWidth = this.S(1.2);
+        this._rrect(cx - cw/2, cy, cw, ch, 14); ctx.stroke();
+
+        // Top accent line
+        ctx.fillStyle = this.bird ? this.bird.col + '55' : 'rgba(255,140,0,0.3)';
+        ctx.fillRect(this.X(cx - cw/2), this.X(cy), this.X(cw), this.S(2));
 
         if (this.bird) {
-            this._utxt(`${this.bird.name} Bird Ready!`, cx, cy - 14, {
-                sz: 14, wt: 'bold', col: this.bird.col, al: 'center', bl: 'middle', ff: this.FT
+            // Bird name
+            this._stxt(`${this.bird.name} Bird`, cx, cy + 20, {
+                size: 13, weight: 'bold',
+                color: this.bird.col,
+                align: 'center', base: 'middle',
+                font: this.FT,
+                glow: true, glowColor: this.bird.col, glowSize: 8
             });
+
+            // Special description
             const specials = {
-                none: 'Basic bird — no special',
-                split: 'TAP mid-air to split into 3!',
-                boost: 'TAP mid-air for speed boost!',
-                bomb:  'TAP mid-air to set explosion!',
-                egg:   'TAP mid-air to drop egg bomb!',
-                boomerang: 'TAP mid-air to reverse!'
+                none: 'Basic — no special power',
+                split: 'Splits into 3 mid-air!',
+                boost: 'Speed boost mid-air!',
+                bomb:  'Timed explosion!',
+                egg:   'Drops egg bomb!',
+                boomerang: 'Reverses direction!'
             };
-            this._utxt(specials[this.bird.special] || '', cx, cy + 3, {
-                sz: 9, col: 'rgba(255,220,130,0.5)', al: 'center', bl: 'middle', ff: this.FU
+            this._stxt(specials[this.bird.special] || '', cx, cy + 38, {
+                size: 9, weight: '500',
+                color: 'rgba(255,220,130,0.55)',
+                align: 'center', base: 'middle',
+                font: this.FU
             });
         }
-        const bob = Math.sin(this.time / 380) * 4;
-        this._utxt('← Pull bird back to launch', cx, cy + ch/2 - 10 + bob, {
-            sz: 9, col: `rgba(255,210,0,${0.35 + Math.sin(this.time/380)*0.35})`,
-            al: 'center', bl: 'middle', ff: this.FU
+
+        // Pull hint
+        const bob = Math.sin(this.time / 380) * 3;
+        this._stxt('← Pull back to launch', cx, cy + ch - 14 + bob, {
+            size: 9, weight: '600',
+            color: `rgba(255,200,0,${0.35 + Math.sin(this.time/380)*0.35})`,
+            align: 'center', base: 'middle',
+            font: this.FU
         });
     }
 
+    // ══════════════════ OVERLAYS ══════════════════
+
     _drawRetryOverlay(ts) {
-        const ctx = this.ctx, W = this.W, H = this.H, a = this.overlayA;
+        const ctx = this.ctx;
+        const W = this.W, H = this.H, a = this.overlayA;
+
+        // Dim background
         ctx.fillStyle = `rgba(0,0,0,${a * 0.76})`;
         ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
         if (a < 0.4) return;
 
         const pa = Math.min(1, (a - 0.4) / 0.6);
-        const pw = Math.min(W - 28, 285), ph = 228;
-        const px = W/2 - pw/2, py = H/2 - ph/2;
-        ctx.save(); ctx.globalAlpha = pa;
+
+        // ── Panel ──
+        const pw = Math.min(W - 28, 270);
+        const ph = 240;
+        const px = W/2 - pw/2;
+        const py = H/2 - ph/2;
+
+        ctx.save();
+        ctx.globalAlpha = pa;
+
+        // Panel bg
         ctx.fillStyle   = 'rgba(6,2,18,0.97)';
-        this._rrect(px, py, pw, ph, 20); ctx.fill();
-        ctx.strokeStyle = 'rgba(255,80,60,0.4)'; ctx.lineWidth = this.S(1.5);
-        this._rrect(px, py, pw, ph, 20); ctx.stroke();
-        ctx.fillStyle = 'rgba(255,80,60,0.12)';
+        this._rrect(px, py, pw, ph, 18); ctx.fill();
+
+        // Red top accent
+        ctx.fillStyle   = 'rgba(255,60,60,0.35)';
         ctx.fillRect(this.X(px), this.X(py), this.X(pw), this.S(3));
+
+        // Red border
+        ctx.strokeStyle = 'rgba(255,80,60,0.45)'; ctx.lineWidth = this.S(1.5);
+        this._rrect(px, py, pw, ph, 18); ctx.stroke();
+
         ctx.globalAlpha = 1;
 
-        ctx.font = `${Math.round(28 * this.dpr)}px serif`;
+        // ── Emoji ──
+        ctx.font = `${Math.round(26 * this.dpr)}px serif`;
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         ctx.globalAlpha = pa;
-        ctx.fillText('😡', this.X(W/2), this.X(py + 38));
+        ctx.fillText('😡', this.X(W/2), this.X(py + 30));
+
+        // ── Title ──
+        this._stxt('LEVEL FAILED', W/2, py + 58, {
+            size: 19, weight: '900',
+            color: '#FF4444',
+            align: 'center', base: 'middle',
+            font: this.FT, alpha: pa,
+            glow: true, glowColor: '#FF4444', glowSize: 10
+        });
+
+        // ── Divider ──
+        ctx.globalAlpha = 0.12 * pa;
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(this.X(px + 20), this.X(py + 76), this.X(pw - 40), this.S(1));
         ctx.globalAlpha = 1;
 
-        this._utxt('LEVEL FAILED!', W/2, py+66, { sz:22, wt:'bold', col:'#FF4444', al:'center', bl:'middle', op:pa, ff:this.FT });
-        this._utxt('Pigs survived!', W/2, py+86, { sz:11, col:'rgba(200,180,180,0.55)', al:'center', bl:'middle', op:pa, ff:this.FU });
-
-        ctx.fillStyle = `rgba(255,255,255,${0.07*pa})`;
-        ctx.fillRect(this.X(px+22), this.X(py+100), this.X(pw-44), this.S(1));
-
+        // ── Stats rows ──
         const rows = [
-            { l:'SCORE',    v: this.score.toLocaleString(),             c: this.score >= this.bestScore ? '#00fff5' : '#fff'  },
-            { l:'BEST',     v: this.bestScore.toLocaleString(),          c: this.score >= this.bestScore ? '#FFD700' : '#999'  },
-            { l:'LEVEL',    v: `${this.level}`,                          c: '#c070ff' },
-            { l:'PIGS LEFT',v: `${this.pigs.filter(p=>!p.dead).length}`, c: '#22CC44' }
+            { label: 'SCORE',     value: this.score.toLocaleString(),              vc: this.score >= this.bestScore ? '#00fff5' : '#ffffff' },
+            { label: 'BEST',      value: this.bestScore.toLocaleString(),           vc: this.score >= this.bestScore ? '#FFD700' : '#888888' },
+            { label: 'LEVEL',     value: `${this.level}`,                           vc: '#cc80ff' },
+            { label: 'PIGS LEFT', value: `${this.pigs.filter(p=>!p.dead).length}`, vc: '#22CC44' },
         ];
-        rows.forEach((r, i) => {
-            const ry = py + 115 + i*26;
-            this._utxt(r.l, px+22,    ry, { sz:10, col:`rgba(140,140,170,${pa})`, ff:this.FU });
-            this._utxt(r.v, px+pw-22, ry, { sz:i===0?15:12, wt:'bold', col:r.c, al:'right', op:pa, ff:this.FT });
+
+        rows.forEach((row, i) => {
+            const ry = py + 92 + i * 28;
+            // Label — left
+            this._stxt(row.label, px + 18, ry, {
+                size: 9, weight: '600',
+                color: `rgba(150,140,180,${pa})`,
+                align: 'left', base: 'middle',
+                font: this.FU
+            });
+            // Value — right
+            this._stxt(row.value, px + pw - 18, ry, {
+                size: i === 0 ? 14 : 12, weight: 'bold',
+                color: row.vc,
+                align: 'right', base: 'middle',
+                font: this.FT, alpha: pa
+            });
         });
 
+        // New best badge
         if (this.score > 0 && this.score >= this.bestScore) {
-            ctx.fillStyle = 'rgba(255,215,0,0.1)'; ctx.strokeStyle = 'rgba(255,215,0,0.38)'; ctx.lineWidth = this.S(1);
-            this._rrect(W/2-52, py+104, 104, 18, 6); ctx.fill(); ctx.stroke();
-            this._utxt('✦ NEW BEST ✦', W/2, py+115, { sz:9, wt:'bold', col:'#FFD700', al:'center', bl:'middle', op:pa, ff:this.FT });
+            ctx.globalAlpha = pa;
+            ctx.fillStyle   = 'rgba(255,215,0,0.12)';
+            ctx.strokeStyle = 'rgba(255,215,0,0.4)'; ctx.lineWidth = this.S(1);
+            this._rrect(W/2 - 52, py + 76, 104, 16, 5); ctx.fill(); ctx.stroke();
+            this._stxt('✦ NEW BEST ✦', W/2, py + 84, {
+                size: 8, weight: 'bold',
+                color: '#FFD700',
+                align: 'center', base: 'middle',
+                font: this.FT, alpha: pa
+            });
         }
 
-        ctx.fillStyle = `rgba(255,255,255,${0.07*pa})`;
-        ctx.fillRect(this.X(px+22), this.X(py+ph-48), this.X(pw-44), this.S(1));
-        const blink = 0.4 + Math.sin(this.time / 320) * 0.45;
-        this._utxt('● TAP TO RETRY ●', W/2, py+ph-18, {
-            sz: 12, wt: 'bold', col: 'rgba(255,150,150,0.9)', al: 'center', bl: 'middle', op: blink*pa, ff: this.FT
+        // ── Bottom divider ──
+        ctx.globalAlpha = 0.1 * pa;
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(this.X(px + 20), this.X(py + ph - 44), this.X(pw - 40), this.S(1));
+
+        // ── Tap to retry ──
+        const blink = 0.45 + Math.sin(this.time / 320) * 0.5;
+        this._stxt('● TAP TO RETRY ●', W/2, py + ph - 18, {
+            size: 11, weight: 'bold',
+            color: 'rgba(255,140,130,0.9)',
+            align: 'center', base: 'middle',
+            font: this.FT, alpha: blink * pa
         });
+
         ctx.restore();
     }
 
     _drawWinOverlay(ts) {
-        const ctx = this.ctx, W = this.W, H = this.H, a = this.overlayA;
+        const ctx = this.ctx;
+        const W = this.W, H = this.H, a = this.overlayA;
+
         ctx.fillStyle = `rgba(0,0,0,${a * 0.72})`;
         ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
         if (a < 0.4) return;
 
         const pa = Math.min(1, (a - 0.4) / 0.6);
-        const pw = Math.min(W - 28, 285), ph = 228;
-        const px = W/2 - pw/2, py = H/2 - ph/2;
-        ctx.save(); ctx.globalAlpha = pa;
+
+        // ── Panel ──
+        const pw = Math.min(W - 28, 270);
+        const ph = 240;
+        const px = W/2 - pw/2;
+        const py = H/2 - ph/2;
+
+        ctx.save();
+        ctx.globalAlpha = pa;
+
         ctx.fillStyle   = 'rgba(4,14,4,0.97)';
-        this._rrect(px, py, pw, ph, 20); ctx.fill();
-        ctx.strokeStyle = 'rgba(0,255,88,0.4)'; ctx.lineWidth = this.S(1.5);
-        this._rrect(px, py, pw, ph, 20); ctx.stroke();
-        ctx.fillStyle = 'rgba(0,255,88,0.1)';
+        this._rrect(px, py, pw, ph, 18); ctx.fill();
+
+        ctx.fillStyle   = 'rgba(0,255,88,0.25)';
         ctx.fillRect(this.X(px), this.X(py), this.X(pw), this.S(3));
+
+        ctx.strokeStyle = 'rgba(0,255,88,0.45)'; ctx.lineWidth = this.S(1.5);
+        this._rrect(px, py, pw, ph, 18); ctx.stroke();
+
         ctx.globalAlpha = 1;
 
-        const bl = 0.7 + Math.sin(ts / 180) * 0.28;
-        ['⭐','⭐','⭐'].forEach((s, i) => {
+        // ── Stars ──
+        const bl = 0.7 + Math.sin(ts/180) * 0.28;
+        [W/2 - 40, W/2, W/2 + 40].forEach((sx, i) => {
             const sc = bl * (0.82 + i * 0.09);
-            ctx.font = `${Math.round(22 * sc * this.dpr)}px serif`;
+            ctx.font = `${Math.round(20 * sc * this.dpr)}px serif`;
             ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
             ctx.globalAlpha = pa * sc;
-            ctx.fillText(s, this.X(W/2 - 42 + i*42), this.X(py + 36));
+            ctx.fillText('⭐', this.X(sx), this.X(py + 28));
         });
         ctx.globalAlpha = 1;
 
-        this._utxt('LEVEL CLEAR!', W/2, py+68, { sz:22, wt:'bold', col:'#00FF88', al:'center', bl:'middle', op:pa, ff:this.FT });
-
-        ctx.fillStyle = `rgba(255,255,255,${0.07*pa})`;
-        ctx.fillRect(this.X(px+22), this.X(py+84), this.X(pw-44), this.S(1));
-
-        const rows = [
-            { l:'SCORE',      v: this.score.toLocaleString(),     c: this.score >= this.bestScore ? '#00fff5' : '#fff' },
-            { l:'BEST',       v: this.bestScore.toLocaleString(),  c: this.score >= this.bestScore ? '#FFD700' : '#999' },
-            { l:'NEXT LEVEL', v: `${this.level + 1}`,             c: '#c070ff' },
-            { l:'BIRD BONUS', v: `+${this.birdQueue.length*1000}`, c: '#FFD700' }
-        ];
-        rows.forEach((r, i) => {
-            const ry = py + 100 + i*28;
-            this._utxt(r.l, px+22,    ry, { sz:10, col:`rgba(140,170,140,${pa})`, ff:this.FU });
-            this._utxt(r.v, px+pw-22, ry, { sz:i===0?15:12, wt:'bold', col:r.c, al:'right', op:pa, ff:this.FT });
+        // ── Title ──
+        this._stxt('LEVEL CLEAR!', W/2, py + 56, {
+            size: 19, weight: '900',
+            color: '#00FF88',
+            align: 'center', base: 'middle',
+            font: this.FT, alpha: pa,
+            glow: true, glowColor: '#00FF88', glowSize: 12
         });
 
+        // ── Divider ──
+        ctx.globalAlpha = 0.12 * pa;
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(this.X(px + 20), this.X(py + 72), this.X(pw - 40), this.S(1));
+        ctx.globalAlpha = 1;
+
+        // ── Stats ──
+        const rows = [
+            { label: 'SCORE',       value: this.score.toLocaleString(),     vc: this.score >= this.bestScore ? '#00fff5' : '#ffffff' },
+            { label: 'BEST',        value: this.bestScore.toLocaleString(),  vc: this.score >= this.bestScore ? '#FFD700' : '#888888' },
+            { label: 'NEXT LEVEL',  value: `${this.level + 1}`,             vc: '#cc80ff' },
+            { label: 'BIRD BONUS',  value: `+${this.birdQueue.length*1000}`, vc: '#FFD700' },
+        ];
+
+        rows.forEach((row, i) => {
+            const ry = py + 88 + i * 28;
+            this._stxt(row.label, px + 18, ry, {
+                size: 9, weight: '600',
+                color: `rgba(140,180,140,${pa})`,
+                align: 'left', base: 'middle',
+                font: this.FU
+            });
+            this._stxt(row.value, px + pw - 18, ry, {
+                size: i === 0 ? 14 : 12, weight: 'bold',
+                color: row.vc,
+                align: 'right', base: 'middle',
+                font: this.FT, alpha: pa
+            });
+        });
+
+        // New best badge
         if (this.score > 0 && this.score >= this.bestScore) {
-            ctx.fillStyle = 'rgba(255,215,0,0.1)'; ctx.strokeStyle = 'rgba(255,215,0,0.38)'; ctx.lineWidth = this.S(1);
-            this._rrect(W/2-52, py+88, 104, 18, 6); ctx.fill(); ctx.stroke();
-            this._utxt('✦ NEW BEST ✦', W/2, py+99, { sz:9, wt:'bold', col:'#FFD700', al:'center', bl:'middle', op:pa, ff:this.FT });
+            ctx.globalAlpha = pa;
+            ctx.fillStyle   = 'rgba(255,215,0,0.12)';
+            ctx.strokeStyle = 'rgba(255,215,0,0.4)'; ctx.lineWidth = this.S(1);
+            this._rrect(W/2 - 52, py + 72, 104, 16, 5); ctx.fill(); ctx.stroke();
+            this._stxt('✦ NEW BEST ✦', W/2, py + 80, {
+                size: 8, weight: 'bold',
+                color: '#FFD700',
+                align: 'center', base: 'middle',
+                font: this.FT, alpha: pa
+            });
         }
 
-        ctx.fillStyle = `rgba(255,255,255,${0.07*pa})`;
-        ctx.fillRect(this.X(px+22), this.X(py+ph-48), this.X(pw-44), this.S(1));
-        const blink = 0.4 + Math.sin(this.time / 320) * 0.45;
-        this._utxt('● TAP FOR NEXT LEVEL ●', W/2, py+ph-18, {
-            sz: 11, col: 'rgba(150,255,180,0.9)', al: 'center', bl: 'middle', op: blink*pa, ff: this.FU
+        // ── Bottom divider ──
+        ctx.globalAlpha = 0.1 * pa;
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(this.X(px + 20), this.X(py + ph - 44), this.X(pw - 40), this.S(1));
+
+        // ── Tap hint ──
+        const blink = 0.45 + Math.sin(this.time / 320) * 0.5;
+        this._stxt('● TAP FOR NEXT LEVEL ●', W/2, py + ph - 18, {
+            size: 10, weight: 'bold',
+            color: 'rgba(150,255,180,0.9)',
+            align: 'center', base: 'middle',
+            font: this.FT, alpha: blink * pa
         });
+
         ctx.restore();
     }
 
-    _drawMenu(ts) {
-        const ctx = this.ctx, W = this.W, H = this.H, t = this.menuTime;
+    // ══════════════════ MENU ══════════════════
 
+    _drawMenu(ts) {
+        const ctx = this.ctx;
+        const W = this.W, H = this.H;
+        const t = this.menuTime;
+
+        // Sky
         const bg = ctx.createLinearGradient(0, 0, 0, this.X(H));
         bg.addColorStop(0, '#0a0520'); bg.addColorStop(0.5, '#080418'); bg.addColorStop(1, '#060312');
         ctx.fillStyle = bg; ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
+        // Stars
         this.stars.forEach(s => {
             ctx.globalAlpha = 0.1 + ((Math.sin(s.ph)+1)/2) * 0.48;
             ctx.fillStyle   = '#dde8ff';
@@ -1686,6 +1758,7 @@ class AngryBirds {
         });
         ctx.globalAlpha = 1;
 
+        // Clouds
         this.clouds.forEach(c => {
             ctx.globalAlpha = c.alpha; ctx.fillStyle = 'rgba(200,210,255,0.6)';
             ctx.beginPath(); ctx.ellipse(this.X(c.x), this.X(c.y), this.S(c.w), this.S(c.h), 0, 0, Math.PI*2); ctx.fill();
@@ -1696,18 +1769,41 @@ class AngryBirds {
         ctx.fillStyle = '#1a4a1a'; ctx.fillRect(0, this.X(H*.78), this.canvas.width, this.canvas.height);
         ctx.fillStyle = 'rgba(100,220,55,0.2)'; ctx.fillRect(0, this.X(H*.78-2), this.canvas.width, this.S(2.5));
 
-        // Title card
-        const cw = Math.min(W - 30, 310), ch = 95, cx = W/2, cy = H * 0.15;
-        ctx.fillStyle   = 'rgba(4,1,16,0.88)';
-        this._rrect(cx-cw/2, cy, cw, ch, 18); ctx.fill();
+        // ── Title card ──
+        const cw = Math.min(W - 30, 300);
+        const ch = 88;
+        const cx = W / 2;
+        const cy = H * 0.13;
+        ctx.fillStyle   = 'rgba(4,1,16,0.9)';
+        this._rrect(cx - cw/2, cy, cw, ch, 16); ctx.fill();
         ctx.strokeStyle = 'rgba(255,140,0,0.4)'; ctx.lineWidth = this.S(1.5);
-        this._rrect(cx-cw/2, cy, cw, ch, 18); ctx.stroke();
+        this._rrect(cx - cw/2, cy, cw, ch, 16); ctx.stroke();
 
-        this._utxt('ANGRY BIRDS',  cx, cy+36, { sz:24, wt:'bold', col:'#FF8C00', al:'center', bl:'middle', ff:this.FT });
-        this._utxt('NEON EDITION', cx, cy+60, { sz:10, col:'rgba(255,200,100,0.5)', al:'center', bl:'middle', ff:this.FU });
-        this._utxt(`BEST: ${this.bestScore.toLocaleString()}`, cx, cy+80, { sz:9, col:'rgba(255,215,0,0.4)', al:'center', bl:'middle', ff:this.FU });
+        // Orange top line
+        ctx.fillStyle = 'rgba(255,140,0,0.5)';
+        ctx.fillRect(this.X(cx - cw/2), this.X(cy), this.X(cw), this.S(2.5));
 
-        // Bird showcase
+        this._stxt('ANGRY BIRDS', cx, cy + 32, {
+            size: 22, weight: '900',
+            color: '#FF8C00',
+            align: 'center', base: 'middle',
+            font: this.FT,
+            glow: true, glowColor: '#FF6600', glowSize: 14
+        });
+        this._stxt('NEON EDITION', cx, cy + 54, {
+            size: 9, weight: '600',
+            color: 'rgba(255,200,100,0.55)',
+            align: 'center', base: 'middle',
+            font: this.FU
+        });
+        this._stxt(`BEST: ${this.bestScore.toLocaleString()}`, cx, cy + 72, {
+            size: 8, weight: '500',
+            color: 'rgba(255,215,0,0.45)',
+            align: 'center', base: 'middle',
+            font: this.FU
+        });
+
+        // ── Bird showcase ──
         const birdTypes = ['red','yellow','black','blue','green'];
         const btw = 38, brow = H * 0.48;
         const bstx = cx - (birdTypes.length * btw) / 2 + btw/2;
@@ -1717,23 +1813,41 @@ class AngryBirds {
             this._drawBirdAt(ctx, bstx + i*btw, brow + bob, bd.r * 0.82, bd, ts);
         });
 
-        // Tips
-        const tips = ['🏹  Drag bird back to aim','⚡  Tap while flying for SPECIAL','🐷  Destroy all pigs to win!'];
+        // ── Tips ──
+        const tips = [
+            '🏹  Drag bird back to aim & launch',
+            '⚡  Tap while flying to use SPECIAL',
+            '🐷  Destroy all pigs to win!'
+        ];
         tips.forEach((tip, i) => {
-            this._utxt(tip, cx, H*0.62 + i*20, { sz:9.5, col:'rgba(200,200,220,0.5)', al:'center', bl:'middle', ff:this.FU });
+            this._stxt(tip, cx, H*0.60 + i*19, {
+                size: 9, weight: '500',
+                color: 'rgba(200,200,220,0.5)',
+                align: 'center', base: 'middle',
+                font: this.FU
+            });
         });
 
-        // Play button
-        const pb    = { x: cx-80, y: H*0.80, w: 160, h: 48 };
-        const pulse = 0.55 + Math.sin(t * 2.8) * 0.3;
-        const pg    = ctx.createLinearGradient(this.X(pb.x), 0, this.X(pb.x), this.X(pb.y + pb.h));
+        // ── Play button ──
+        const pb     = { x: cx - 80, y: H * 0.79, w: 160, h: 46 };
+        const pulse  = 0.55 + Math.sin(t * 2.8) * 0.3;
+        const pg     = ctx.createLinearGradient(this.X(pb.x), 0, this.X(pb.x), this.X(pb.y + pb.h));
         pg.addColorStop(0, `rgba(255,140,0,${0.35 + pulse*.08})`);
         pg.addColorStop(1, `rgba(200,80,0,${0.22 + pulse*.05})`);
-        ctx.fillStyle = pg; this._rrect(pb.x, pb.y, pb.w, pb.h, 14); ctx.fill();
+        ctx.fillStyle = pg; this._rrect(pb.x, pb.y, pb.w, pb.h, 12); ctx.fill();
         ctx.strokeStyle = `rgba(255,180,50,${0.55 + pulse*.3})`; ctx.lineWidth = this.S(1.8);
-        this._rrect(pb.x, pb.y, pb.w, pb.h, 14); ctx.stroke();
-        this._utxt('▶  PLAY', cx, pb.y + pb.h/2, { sz:17, wt:'900', col:'#FFE066', al:'center', bl:'middle', ff:this.FT });
+        this._rrect(pb.x, pb.y, pb.w, pb.h, 12); ctx.stroke();
+
+        this._stxt('▶  PLAY', cx, pb.y + pb.h/2, {
+            size: 16, weight: '900',
+            color: '#FFE066',
+            align: 'center', base: 'middle',
+            font: this.FT,
+            glow: true, glowColor: '#FFD700', glowSize: 8
+        });
     }
+
+    // ══════════════════ LOOP ══════════════════
 
     _loop(ts) {
         if (this.destroyed) return;
@@ -1752,13 +1866,10 @@ class AngryBirds {
 
     resize() {
         this._setupHD();
-        this.W      = this.canvas.width  / this.dpr;
-        this.H      = this.canvas.height / this.dpr;
+        this.W = this.canvas.width  / this.dpr;
+        this.H = this.canvas.height / this.dpr;
         this.isMobile = ('ontouchstart' in window) || window.innerWidth < 768;
-
-        // ✅ Recalculate ground on resize
         this._calcGround();
-
         this.worldW    = this.W * 2;
         this.sling.x   = this.W * 0.18;
         this.sling.y   = this.GROUND - 55;
