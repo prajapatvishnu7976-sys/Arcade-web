@@ -2,15 +2,16 @@ window.initAngryBirds = function (canvas) {
     'use strict';
 
     // ═══════════════════════════════════════════
-    // ROTATE SCREEN OVERLAY
+    // ROTATE SCREEN OVERLAY — SCOPED TO THIS GAME ONLY
     // ═══════════════════════════════════════════
     let rotateOverlay = null;
     let gameStarted = false;
+    let orientationCheckBound = null;
 
     function createRotateOverlay() {
         if (rotateOverlay) return;
         rotateOverlay = document.createElement('div');
-        rotateOverlay.id = 'ab-rotate-overlay';
+        rotateOverlay.id = 'ab-rotate-overlay-' + Date.now();
         rotateOverlay.style.cssText = `
             position: fixed;
             top: 0; left: 0;
@@ -32,11 +33,11 @@ window.initAngryBirds = function (canvas) {
                 text-align: center;
                 max-width: 320px;
             ">
-                <div id="ab-rotate-icon" style="
+                <div style="
                     font-size: 72px;
                     margin-bottom: 20px;
                     display: inline-block;
-                    animation: abRotateAnim 1.8s ease-in-out infinite;
+                    animation: abRotateAnim_${rotateOverlay.id} 1.8s ease-in-out infinite;
                 ">📱</div>
                 <div style="
                     font-size: 22px;
@@ -56,7 +57,7 @@ window.initAngryBirds = function (canvas) {
                 ">Please rotate to landscape mode 🔄</div>
             </div>
             <style>
-                @keyframes abRotateAnim {
+                @keyframes abRotateAnim_${rotateOverlay.id} {
                     0%   { transform: rotate(0deg);   }
                     30%  { transform: rotate(0deg);   }
                     60%  { transform: rotate(-90deg); }
@@ -69,10 +70,10 @@ window.initAngryBirds = function (canvas) {
     }
 
     function removeRotateOverlay() {
-        if (rotateOverlay) {
-            rotateOverlay.remove();
-            rotateOverlay = null;
+        if (rotateOverlay && rotateOverlay.parentNode) {
+            rotateOverlay.parentNode.removeChild(rotateOverlay);
         }
+        rotateOverlay = null;
     }
 
     function isPortrait() {
@@ -83,12 +84,15 @@ window.initAngryBirds = function (canvas) {
     }
 
     function checkOrientation() {
+        // Agar game destroy ho chuka hai toh kuch mat karo
+        if (destroyed) {
+            removeRotateOverlay();
+            return;
+        }
         if (isPortrait()) {
-            // Portrait — show overlay, pause game
             createRotateOverlay();
             gameStarted = false;
         } else {
-            // Landscape — hide overlay, start/resume game
             removeRotateOverlay();
             if (!gameStarted) {
                 gameStarted = true;
@@ -100,12 +104,11 @@ window.initAngryBirds = function (canvas) {
         }
     }
 
-    window.addEventListener('orientationchange', () => {
-        setTimeout(checkOrientation, 300);
-    });
-    window.addEventListener('resize', () => {
-        setTimeout(checkOrientation, 300);
-    });
+    // Bound function store karo taaki destroy pe remove kar sakein
+    orientationCheckBound = () => setTimeout(checkOrientation, 300);
+
+    window.addEventListener('orientationchange', orientationCheckBound);
+    window.addEventListener('resize', orientationCheckBound);
 
     const ctx = canvas.getContext('2d', { alpha: false });
     const isMobile = ('ontouchstart' in window) || window.innerWidth < 768;
@@ -122,7 +125,7 @@ window.initAngryBirds = function (canvas) {
     const MAX_LEVEL = 8;
 
     // ═══════════════════════════════════════════
-    // SOUND ENGINE — Web Audio API
+    // SOUND ENGINE
     // ═══════════════════════════════════════════
     let audioCtx = null;
 
@@ -178,82 +181,27 @@ window.initAngryBirds = function (canvas) {
         } catch(e) {}
     }
 
-    // Sound presets
     const SFX = {
-        slingPull() {
-            playTone(80 + Math.hypot(pullX, pullY) * 2, 'sawtooth', 0.08, 0.06, 0.01);
-        },
-        launch() {
-            playTone(400, 'sine', 0.25, 0.25, 0.01, 0.05, 900);
-            playNoise(0.18, 0.15, 600);
-        },
-        whoosh() {
-            playTone(200, 'sine', 0.12, 0.08, 0.01, 0.05, 350);
-        },
-        hitWood() {
-            playTone(180, 'sawtooth', 0.18, 0.3, 0.005, 0.02, 280);
-            playNoise(0.15, 0.2, 400);
-        },
-        hitStone() {
-            playTone(100, 'square', 0.22, 0.35, 0.005, 0.03, 150);
-            playNoise(0.2, 0.25, 300);
-        },
-        hitGlass() {
-            playTone(1200, 'sine', 0.15, 0.2, 0.002, 0.02, 1600);
-            playTone(900, 'sine', 0.12, 0.15, 0.002, 0.02);
-        },
-        hitMetal() {
-            playTone(280, 'square', 0.3, 0.4, 0.002, 0.04, 500);
-            playTone(140, 'sawtooth', 0.25, 0.3, 0.005, 0.03);
-        },
-        pigHit() {
-            playTone(600, 'sine', 0.2, 0.25, 0.01, 0.05, 400);
-            playTone(500, 'sine', 0.15, 0.15, 0.02, 0.05, 700);
-        },
-        pigDie() {
-            playTone(800, 'sine', 0.12, 0.3, 0.005, 0.02, 500);
-            playTone(400, 'sine', 0.25, 0.2, 0.01, 0.05, 600);
-            playNoise(0.2, 0.25, 1000);
-        },
-        explosion() {
-            playNoise(0.5, 0.6, 150);
-            playTone(60, 'sawtooth', 0.5, 0.5, 0.005, 0.1, 120);
-            playTone(40, 'sine', 0.6, 0.4, 0.01, 0.15, 80);
-        },
-        birdLand() {
-            playNoise(0.12, 0.2, 350);
-            playTone(150, 'sine', 0.1, 0.2, 0.005, 0.02, 200);
-        },
-        win() {
-            const notes = [523, 659, 784, 1047];
-            notes.forEach((f, i) => {
-                setTimeout(() => playTone(f, 'sine', 0.35, 0.3, 0.02, 0.05), i * 120);
-            });
-        },
-        lose() {
-            playTone(400, 'sawtooth', 0.4, 0.3, 0.02, 0.1, 600);
-            setTimeout(() => playTone(250, 'sawtooth', 0.5, 0.3, 0.02, 0.1, 350), 200);
-            setTimeout(() => playTone(150, 'sawtooth', 0.6, 0.3, 0.02, 0.15, 220), 450);
-        },
-        levelStart() {
-            playTone(440, 'sine', 0.2, 0.2, 0.02, 0.04);
-            setTimeout(() => playTone(550, 'sine', 0.2, 0.2, 0.02, 0.04), 150);
-            setTimeout(() => playTone(660, 'sine', 0.3, 0.25, 0.02, 0.05), 300);
-        },
-        special() {
-            playTone(900, 'sine', 0.2, 0.3, 0.01, 0.04, 600);
-            playTone(1200, 'sine', 0.15, 0.2, 0.02, 0.04, 800);
-        },
-        snap() {
-            playTone(300, 'sawtooth', 0.08, 0.2, 0.002, 0.02, 500);
-        }
+        slingPull() { playTone(80 + Math.hypot(pullX, pullY) * 2, 'sawtooth', 0.08, 0.06, 0.01); },
+        launch() { playTone(400, 'sine', 0.25, 0.25, 0.01, 0.05, 900); playNoise(0.18, 0.15, 600); },
+        whoosh() { playTone(200, 'sine', 0.12, 0.08, 0.01, 0.05, 350); },
+        hitWood() { playTone(180, 'sawtooth', 0.18, 0.3, 0.005, 0.02, 280); playNoise(0.15, 0.2, 400); },
+        hitStone() { playTone(100, 'square', 0.22, 0.35, 0.005, 0.03, 150); playNoise(0.2, 0.25, 300); },
+        hitGlass() { playTone(1200, 'sine', 0.15, 0.2, 0.002, 0.02, 1600); playTone(900, 'sine', 0.12, 0.15, 0.002, 0.02); },
+        hitMetal() { playTone(280, 'square', 0.3, 0.4, 0.002, 0.04, 500); playTone(140, 'sawtooth', 0.25, 0.3, 0.005, 0.03); },
+        pigHit() { playTone(600, 'sine', 0.2, 0.25, 0.01, 0.05, 400); playTone(500, 'sine', 0.15, 0.15, 0.02, 0.05, 700); },
+        pigDie() { playTone(800, 'sine', 0.12, 0.3, 0.005, 0.02, 500); playTone(400, 'sine', 0.25, 0.2, 0.01, 0.05, 600); playNoise(0.2, 0.25, 1000); },
+        explosion() { playNoise(0.5, 0.6, 150); playTone(60, 'sawtooth', 0.5, 0.5, 0.005, 0.1, 120); playTone(40, 'sine', 0.6, 0.4, 0.01, 0.15, 80); },
+        birdLand() { playNoise(0.12, 0.2, 350); playTone(150, 'sine', 0.1, 0.2, 0.005, 0.02, 200); },
+        win() { const notes = [523, 659, 784, 1047]; notes.forEach((f, i) => { setTimeout(() => playTone(f, 'sine', 0.35, 0.3, 0.02, 0.05), i * 120); }); },
+        lose() { playTone(400, 'sawtooth', 0.4, 0.3, 0.02, 0.1, 600); setTimeout(() => playTone(250, 'sawtooth', 0.5, 0.3, 0.02, 0.1, 350), 200); setTimeout(() => playTone(150, 'sawtooth', 0.6, 0.3, 0.02, 0.15, 220), 450); },
+        levelStart() { playTone(440, 'sine', 0.2, 0.2, 0.02, 0.04); setTimeout(() => playTone(550, 'sine', 0.2, 0.2, 0.02, 0.04), 150); setTimeout(() => playTone(660, 'sine', 0.3, 0.25, 0.02, 0.05), 300); },
+        special() { playTone(900, 'sine', 0.2, 0.3, 0.01, 0.04, 600); playTone(1200, 'sine', 0.15, 0.2, 0.02, 0.04, 800); },
+        snap() { playTone(300, 'sawtooth', 0.08, 0.2, 0.002, 0.02, 500); }
     };
 
-    // Camera
     let camX = 0, targetCamX = 0;
     let shakeX = 0, shakeY = 0, shakeMag = 0;
-
-    // Slingshot
     let SX = 0, SY = 0;
     let SF1X = 0, SF1Y = 0;
     let SF2X = 0, SF2Y = 0;
@@ -263,11 +211,10 @@ window.initAngryBirds = function (canvas) {
     let lastPullD = 0;
     const MAX_PULL = isMobile ? 85 : 75;
     const POWER = 0.28;
-
-    const GRAVITY   = 0.38;
-    const BOUNCE    = 0.22;
-    const FRIC      = 0.82;
-    const AIR       = 0.998;
+    const GRAVITY = 0.38;
+    const BOUNCE  = 0.22;
+    const FRIC    = 0.82;
+    const AIR     = 0.998;
 
     let bird = null, birdQueue = [], splitBirds = [];
     let pigs = [], blocks = [];
@@ -278,20 +225,13 @@ window.initAngryBirds = function (canvas) {
     let winButtons = [], loseButtons = [], confetti = [];
 
     let launchAnim = {
-        active: false,
-        timer: 0,
-        duration: 14,
-        startX: 0, startY: 0,
-        targetVX: 0, targetVY: 0,
-        elasticPhase: 0,
-        slingSnapBack: 0
+        active: false, timer: 0, duration: 14,
+        startX: 0, startY: 0, targetVX: 0, targetVY: 0,
+        elasticPhase: 0, slingSnapBack: 0
     };
 
     let birdFlightTime = 0;
 
-    // ═══════════════════════════════════════════
-    // BIRD TYPES
-    // ═══════════════════════════════════════════
     const BIRDS = {
         red:    { id:'red',    r:16, body:'#EE3333', shine:'#FF8877', shadow:'#AA1111', type:'normal', feather:true  },
         blue:   { id:'blue',   r:11, body:'#2288FF', shine:'#88CCFF', shadow:'#0044BB', type:'split'                 },
@@ -302,9 +242,6 @@ window.initAngryBirds = function (canvas) {
         green:  { id:'green',  r:13, body:'#44CC22', shine:'#88EE55', shadow:'#228811', type:'boomerang'             }
     };
 
-    // ═══════════════════════════════════════════
-    // MATERIALS
-    // ═══════════════════════════════════════════
     const MAT = {
         wood:     { top:'#F0C060', mid:'#D4903A', bot:'#8B5A14', edge:'#6B3A08', hp:4,  pts:50,  sfx:'hitWood'  },
         stone:    { top:'#AAAAAA', mid:'#888888', bot:'#555555', edge:'#333333', hp:9,  pts:100, sfx:'hitStone' },
@@ -314,9 +251,6 @@ window.initAngryBirds = function (canvas) {
         darkwood: { top:'#A07040', mid:'#7A5028', bot:'#4A2C10', edge:'#3A1C05', hp:6,  pts:70,  sfx:'hitWood'  }
     };
 
-    // ═══════════════════════════════════════════
-    // LEVELS
-    // ═══════════════════════════════════════════
     const LEVELS = [
         {
             name: 'FIRST SHOT',
@@ -588,7 +522,6 @@ window.initAngryBirds = function (canvas) {
 
         state=ST.INTRO; introTimer=0;
         updateUI();
-
         setTimeout(() => SFX.levelStart(), 500);
     }
 
@@ -596,9 +529,6 @@ window.initAngryBirds = function (canvas) {
         return {x,y,w:rng(70,160),h:rng(22,42),sp:rng(0.05,0.18),op:rng(0.55,0.88)};
     }
 
-    // ═══════════════════════════════════════════
-    // SPAWN BIRD
-    // ═══════════════════════════════════════════
     function spawnBird() {
         if(birdQueue.length===0){bird=null;return;}
         const bd = birdQueue.shift();
@@ -607,9 +537,6 @@ window.initAngryBirds = function (canvas) {
         birdFlightTime=0;
     }
 
-    // ═══════════════════════════════════════════
-    // TRAJECTORY
-    // ═══════════════════════════════════════════
     function calcTrajectory() {
         trajectory=[];
         if(!bird) return;
@@ -624,31 +551,23 @@ window.initAngryBirds = function (canvas) {
         }
     }
 
-    // ═══════════════════════════════════════════
-    // PHYSICS
-    // ═══════════════════════════════════════════
     function physicsTick() {
         if(bird && bird.launched && !bird.dead){
             bird.vy+=GRAVITY; bird.vx*=AIR;
             bird.cx+=bird.vx; bird.cy+=bird.vy;
             bird.rot=Math.atan2(bird.vy,bird.vx);
             birdFlightTime++;
-
             const spd=Math.hypot(bird.vx,bird.vy);
             bird.stretch=clamp(1+spd*0.012,1,1.35);
             bird.squash=clamp(1/bird.stretch,0.7,1);
-
             if(birdFlightTime%25===0) SFX.whoosh();
-
             const last=bird.trail[bird.trail.length-1];
             if(!last||Math.hypot(bird.cx-last.x,bird.cy-last.y)>12){
                 bird.trail.push({x:bird.cx,y:bird.cy,a:1,sz:bird.r*0.5});
                 if(bird.trail.length>40) bird.trail.shift();
             }
             bird.trail.forEach(t=>t.a-=0.025);
-
             if(bird.explodeT>0){bird.explodeT--;if(bird.explodeT===0){doBomb(bird.cx,bird.cy);bird.dead=true;}}
-
             if(bird.cy+bird.r>=GROUND){
                 bird.cy=GROUND-bird.r;
                 bird.vy*=-BOUNCE; bird.vx*=FRIC;
@@ -661,7 +580,6 @@ window.initAngryBirds = function (canvas) {
             if(bird.cx>camX+W*2.8||bird.cx<camX-400||bird.cy>H+120) bird.dead=true;
             hitWorld(bird);
         }
-
         splitBirds=splitBirds.filter(b=>!b.dead);
         splitBirds.forEach(b=>{
             if(b.isEgg){b.vy+=GRAVITY;b.cy+=b.vy;if(b.cy+10>=GROUND||b.dead){doBomb(b.cx,b.cy);b.dead=true;}return;}
@@ -671,7 +589,6 @@ window.initAngryBirds = function (canvas) {
             if(b.cx>camX+W*2.8||b.cy>H+120) b.dead=true;
             hitWorld(b);
         });
-
         blocks.forEach(b=>{
             if(b.dead)return;
             b.vy+=GRAVITY*0.55;b.vx*=FRIC;
@@ -684,11 +601,9 @@ window.initAngryBirds = function (canvas) {
             }
             b.hit=Math.max(0,b.hit-0.06);
         });
-
         for(let i=0;i<blocks.length;i++)
             for(let j=i+1;j<blocks.length;j++)
                 settleBlocks(blocks[i],blocks[j]);
-
         pigs.forEach((p,idx)=>{
             if(p.dead)return;
             p.vy+=GRAVITY*0.5;p.vx*=FRIC;
@@ -811,9 +726,6 @@ window.initAngryBirds = function (canvas) {
         });
     }
 
-    // ═══════════════════════════════════════════
-    // SPECIAL
-    // ═══════════════════════════════════════════
     function useSpecial(){
         if(!bird||bird.specialUsed||bird.dead||!bird.launched)return;
         bird.specialUsed=true;
@@ -864,9 +776,6 @@ window.initAngryBirds = function (canvas) {
         }
     }
 
-    // ═══════════════════════════════════════════
-    // PARTICLES
-    // ═══════════════════════════════════════════
     function burst(x,y,col,n,minSp,maxSp){
         for(let i=0;i<n;i++){
             const a=rng(0,Math.PI*2),sp=rng(minSp,maxSp);
@@ -892,9 +801,6 @@ window.initAngryBirds = function (canvas) {
         }
     }
 
-    // ═══════════════════════════════════════════
-    // GAME FLOW
-    // ═══════════════════════════════════════════
     function checkWin(){
         if(pigs.every(p=>p.dead)){
             const bonus=birdQueue.length*2000;
@@ -929,9 +835,6 @@ window.initAngryBirds = function (canvas) {
         if(el)el.textContent=score.toLocaleString();
     }
 
-    // ═══════════════════════════════════════════
-    // INPUT
-    // ═══════════════════════════════════════════
     function getPos(e){
         const rect=canvas.getBoundingClientRect();
         const src=e.touches?e.touches[0]:e;
@@ -1014,11 +917,10 @@ window.initAngryBirds = function (canvas) {
     // UPDATE
     // ═══════════════════════════════════════════
     function update(){
-        // Agar portrait mein hai toh game update mat karo
-        if (isPortrait()) return;
+        if(isPortrait()) return;
 
         clouds.forEach(c=>{c.x-=c.sp;if(c.x+c.w<-200){c.x=W+camX+rng(0,200);c.y=rng(18,H*0.26);}});
-        bgBirds.forEach(b=>{b.x+=b.sp;b.wp+=0.09;if(b.x>W+camX+100){b.x=camX-80;b.y=rng(35,H*0.23);        }});
+        bgBirds.forEach(b=>{b.x+=b.sp;b.wp+=0.09;if(b.x>W+camX+100){b.x=camX-80;b.y=rng(35,H*0.23);}});
 
         if(shakeMag>0){
             shakeX=(Math.random()-0.5)*shakeMag*1.4;
@@ -1045,7 +947,7 @@ window.initAngryBirds = function (canvas) {
                 bird.cy=lerp(launchAnim.startY,SEAT_Y-bird.r,elastic);
                 bird.squash=lerp(1.3,0.7,t);
                 bird.stretch=lerp(0.7,1.4,t);
-                launchAnim.slingSnapBack=1-elastic;
+                                launchAnim.slingSnapBack=1-elastic;
                 pullX=lerp(launchAnim.startX-SEAT_X,0,elastic);
                 pullY=lerp(launchAnim.startY-(SEAT_Y-bird.r),0,elastic);
             }else{
@@ -1108,13 +1010,12 @@ window.initAngryBirds = function (canvas) {
     // DRAW
     // ═══════════════════════════════════════════
     function draw(){
-        // Portrait mein sirf overlay draw karo, game nahi
-        if (isPortrait()) {
-            const c = ctx;
-            c.save();
-            c.scale(dpr, dpr);
-            c.fillStyle = '#000';
-            c.fillRect(0, 0, W || canvas.width, H || canvas.height);
+        // Portrait mein sirf black screen
+        if(isPortrait()){
+            const c=ctx;
+            c.save();c.scale(dpr,dpr);
+            c.fillStyle='#000';
+            c.fillRect(0,0,W||canvas.width/dpr,H||canvas.height/dpr);
             c.restore();
             return;
         }
@@ -1288,7 +1189,6 @@ window.initAngryBirds = function (canvas) {
     function drawBands(c){
         if(!bird||bird.launched)return;
         const bx=bird.cx,by=bird.cy;
-
         if(state===ST.LAUNCH_ANIM){
             const snap=launchAnim.slingSnapBack||0;
             const bandX=lerp(SEAT_X,bx,snap);
@@ -1298,7 +1198,6 @@ window.initAngryBirds = function (canvas) {
             c.beginPath();c.moveTo(SF2X,SF2Y);c.lineTo(bandX,bandY);c.stroke();
             c.restore();return;
         }
-
         if(!isPulling){
             c.save();c.strokeStyle='rgba(90,50,18,0.9)';c.lineWidth=4.5;c.lineCap='round';
             c.beginPath();c.moveTo(SF1X,SF1Y);c.lineTo(bx,by);c.stroke();
@@ -1317,7 +1216,6 @@ window.initAngryBirds = function (canvas) {
             c.strokeStyle='rgba(160,100,40,0.45)';c.lineWidth=2.5;
             c.beginPath();c.moveTo(SF2X,SF2Y);c.lineTo(bx,by);c.stroke();
             c.restore();
-
             const pullRatio=Math.hypot(pullX,pullY)/MAX_PULL;
             const mX=SX-44,mTop=SY-90,mH=66;
             c.save();
@@ -1711,24 +1609,21 @@ window.initAngryBirds = function (canvas) {
     function loop(now){
         if(destroyed)return;
         lastTime=now;
-        update();
-        draw();
+        update();draw();
         requestAnimationFrame(loop);
     }
 
     // ═══════════════════════════════════════════
-    // INIT — Pehle orientation check karo
+    // INIT
     // ═══════════════════════════════════════════
     resize();
 
-    // Portrait mein hai toh overlay dikhao, landscape mein seedha load karo
-    if (isPortrait()) {
+    if(isPortrait()){
         createRotateOverlay();
-        gameStarted = false;
-        // Game loop start karo taaki canvas black rahe
+        gameStarted=false;
         requestAnimationFrame(loop);
-    } else {
-        gameStarted = true;
+    }else{
+        gameStarted=true;
         loadLevel(1);
         requestAnimationFrame(loop);
     }
@@ -1746,8 +1641,20 @@ window.initAngryBirds = function (canvas) {
             if(bird&&!bird.launched){bird.cx=SEAT_X;bird.cy=SEAT_Y-bird.r;}
         },
         destroy(){
+            // ── IMPORTANT: destroyed flag pehle set karo ──
             destroyed=true;
+
+            // ── Event listeners remove karo ──
+            if(orientationCheckBound){
+                window.removeEventListener('orientationchange', orientationCheckBound);
+                window.removeEventListener('resize', orientationCheckBound);
+                orientationCheckBound=null;
+            }
+
+            // ── Overlay hata do ──
             removeRotateOverlay();
+
+            // ── Game state clean karo ──
             pigs=[];blocks=[];bird=null;splitBirds=[];particles=[];
             if(audioCtx){try{audioCtx.close();}catch(e){}}
         },
