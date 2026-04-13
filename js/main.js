@@ -1,7 +1,6 @@
 // ============================================================
-// NEONARCADE - PREMIUM MAIN.JS v9.1
-// FIXED: Mobile viewport scroll | Fullscreen bottom cut
-//        Back button in fullscreen | Canvas sizing
+// NEONARCADE - PREMIUM MAIN.JS v9.4
+// FIXED: Color Up + Angry Birds both use init functions
 // ============================================================
 
 'use strict';
@@ -16,7 +15,7 @@ const gamesData = [
     { id: 'knife-hit',       name: 'Knife Hit',           icon: '🔪', category: 'action', description: 'Throw knives at the spinning target!',              rating: 4.6, plays: 18900, difficulty: 'Hard',   tags: ['knife','aim','reflex'],               instructions: "Tap to throw knives at the target. Don't hit other knives!",           color: '#ff6b35' },
     { id: 'color-bump',      name: 'Color Bump',          icon: '🔴', category: 'action', description: 'Bump balls of your color, avoid others!',          rating: 4.5, plays: 9800,  difficulty: 'Medium', tags: ['bump','color','dodge'],               instructions: 'Drag to move. Tap to change color. Bump same-color balls!',           color: '#fe2254' },
     { id: 'bottle-shooting', name: 'Bottle Shooting',     icon: '🎯', category: 'action', description: 'Test your aim by shooting bottles!',               rating: 4.4, plays: 7600,  difficulty: 'Easy',   tags: ['shoot','aim','target'],               instructions: 'Tap to shoot and break all the bottles!',                             color: '#39ff14' },
-    { id: 'color-up',        name: 'Color Up',            icon: '🎨', category: 'puzzle', description: 'Match colors to climb higher!',                   rating: 4.5, plays: 11200, difficulty: 'Medium', tags: ['color','climb','match'],              instructions: 'Tap to change color and pass through matching gates!',                color: '#ffff00' },
+    { id: 'color-up',        name: 'Color Up',            icon: '🎨', category: 'puzzle', description: 'Match colors to climb higher!',                   rating: 4.5, plays: 11200, difficulty: 'Medium', tags: ['color','climb','match'],              instructions: 'Drag the ball left/right to land on matching color plates!',          color: '#ffff00' },
     { id: 'flappy-bird',     name: 'Flappy Bird',         icon: '🐦', category: 'arcade', description: 'The classic — fly through the pipes!',            rating: 4.9, plays: 45000, difficulty: 'Hard',   tags: ['fly','classic','pipe'],               instructions: 'Tap to flap. Navigate through the pipes!',                            color: '#00f5ff' },
     { id: 'angry-birds',     name: 'Angry Birds',         icon: '🐦‍🔥', category: 'action', description: 'Slingshot birds to destroy pig fortresses!',   rating: 4.9, plays: 55000, difficulty: 'Medium', tags: ['physics','slingshot','birds','pigs'], instructions: 'Pull back to aim, release to launch! Tap mid-flight for special!',    color: '#FF8C00' },
     { id: 'jewel-legend',    name: 'Jewel Legend',        icon: '💎', category: 'puzzle', description: 'Match 3 or more gems to score big!',              rating: 4.8, plays: 38000, difficulty: 'Medium', tags: ['match3','gems','puzzle','jewel'],     instructions: 'Tap a gem then tap adjacent gem to swap. Match 3+ to score!',        color: '#FFD700' },
@@ -71,9 +70,9 @@ function getGameClass(gameId) {
         'knife-hit':       typeof KnifeHit        !== 'undefined' ? KnifeHit        : null,
         'color-bump':      typeof ColorBump       !== 'undefined' ? ColorBump       : null,
         'bottle-shooting': typeof BottleShooting  !== 'undefined' ? BottleShooting  : null,
-        'color-up':        typeof ColorUp         !== 'undefined' ? ColorUp         : null,
+        // color-up  → handled via window.initColorUp
+        // angry-birds → handled via window.initAngryBirds
         'flappy-bird':     typeof FlappyBird      !== 'undefined' ? FlappyBird      : null,
-        'angry-birds':     typeof AngryBirds      !== 'undefined' ? AngryBirds      : null,
         'jewel-legend':    typeof JewelLegend     !== 'undefined' ? JewelLegend     : null,
         'block-vs-ball':   typeof BlockVsBall     !== 'undefined' ? BlockVsBall     : null
     };
@@ -86,7 +85,7 @@ function getGameClass(gameId) {
 
 document.addEventListener('DOMContentLoaded', () => {
     cacheElements();
-    initViewportFix();   // ← FIX: Viewport height fix sabse pehle
+    initViewportFix();
     simulateLoading();
     initNavigation();
     initMobileMenu();
@@ -98,7 +97,7 @@ document.addEventListener('DOMContentLoaded', () => {
     renderGames();
     renderLeaderboard();
     initScrollReveal();
-    console.log('%c🎮 NeonArcade v9.1 Loaded!', 'color:#b347d9;font-size:16px;font-weight:bold;');
+    console.log('%c🎮 NeonArcade v9.4 Loaded!', 'color:#b347d9;font-size:16px;font-weight:bold;');
 });
 
 // ============================================================
@@ -123,15 +122,10 @@ function cacheElements() {
 }
 
 // ============================================================
-// 7. VIEWPORT FIX — Mobile browser chrome height problem solve karta hai
-//    --real-vh CSS variable set karta hai (index.html mein bhi hai)
-//    Yeh JS function game page ke dimensions ke liye use hota hai
+// 7. VIEWPORT FIX
 // ============================================================
 
 function initViewportFix() {
-    // setRealVH already index.html ke <head> script mein defined hai
-    // Yahan sirf resize + orientation events attach karte hain
-    // (agar index.html script miss ho toh fallback bhi karte hain)
     if (typeof setRealVH !== 'function') {
         window.setRealVH = function() {
             var vh = window.innerHeight;
@@ -219,7 +213,7 @@ function handleBackAction() {
 }
 
 // ============================================================
-// 11. BROWSER BACK BUTTON FIX
+// 11. BROWSER BACK BUTTON
 // ============================================================
 
 function initBrowserBack() {
@@ -605,7 +599,8 @@ function filterAndRenderGames() {
         const matchFilter = state.activeFilter === 'all' || cat === state.activeFilter ||
             (state.activeFilter === 'favorites' && state.favorites.includes(gid));
         const matchSearch = !state.searchQuery || name.includes(state.searchQuery) ||
-            desc.includes(state.searchQuery) || tags.includes(state.searchQuery) || cat.includes(state.searchQuery);
+            desc.includes(state.searchQuery) || tags.includes(state.searchQuery) ||
+            cat.includes(state.searchQuery);
 
         const show = matchFilter && matchSearch;
         card.style.display = show ? '' : 'none';
@@ -663,16 +658,14 @@ function openGame(gameId) {
     showInstructionToast(game.instructions);
     state.gameStartTime = Date.now();
 
-    // ── FIX: Game page visible hone ke baad viewport recalculate karo ──
-    // Phir canvas size set karo, phir game start karo
     if (typeof setRealVH === 'function') setRealVH();
 
-    requestAnimationFrame(() => {
-        if (typeof setRealVH === 'function') setRealVH();
-        requestAnimationFrame(() => {
-            startGame(gameId);
-        });
-    });
+    // Slight delay for layout to settle
+    const initDelay = (gameId === 'angry-birds' || gameId === 'color-up') ? 150 : 50;
+
+    setTimeout(() => {
+        requestAnimationFrame(() => startGame(gameId));
+    }, initDelay);
 }
 
 window.openGame = openGame;
@@ -686,7 +679,7 @@ function showInstructionToast(text) {
 }
 
 // ============================================================
-// 25. START GAME — MAIN FIX: Canvas size correctly calculate karo
+// 25. START GAME — MAIN DISPATCHER
 // ============================================================
 
 function startGame(gameId) {
@@ -697,21 +690,60 @@ function startGame(gameId) {
     const wrapper = document.getElementById('game-wrapper');
     if (!wrapper) return;
 
-    // ── FIX: getBoundingClientRect use karo — ye actual rendered size deta hai ──
-    // clientWidth/Height bhi fallback ke liye rakho
-    const rect = wrapper.getBoundingClientRect();
-
+    const rect  = wrapper.getBoundingClientRect();
     const wrapW = (rect.width  > 10 ? rect.width  : wrapper.clientWidth)  || window.innerWidth;
     const wrapH = (rect.height > 10 ? rect.height : wrapper.clientHeight) || (window.innerHeight - getHeaderHeight());
 
-    // Canvas CSS size set karo
+    // Canvas CSS size
     canvas.style.position = 'absolute';
     canvas.style.top      = '0';
     canvas.style.left     = '0';
     canvas.style.width    = wrapW + 'px';
     canvas.style.height   = wrapH + 'px';
 
-    // Canvas actual pixel size (DPR ke saath)
+    // ── ANGRY BIRDS ──
+    if (gameId === 'angry-birds') {
+        canvas.width  = Math.round(wrapW);
+        canvas.height = Math.round(wrapH);
+
+        if (typeof window.initAngryBirds === 'function') {
+            try {
+                state.gameInstance = window.initAngryBirds(canvas);
+                window._activeGameInstance = state.gameInstance;
+                console.log('✅ Angry Birds started via initAngryBirds');
+            } catch (err) {
+                console.error('❌ Angry Birds start error:', err);
+                showPlaceholder(canvas.getContext('2d'), canvas, gameId);
+            }
+        } else {
+            console.error('❌ initAngryBirds not found! Check angry-birds.js is loaded.');
+            showPlaceholder(canvas.getContext('2d'), canvas, gameId);
+        }
+        return;
+    }
+
+    // ── COLOR UP ──
+    if (gameId === 'color-up') {
+        canvas.width  = Math.round(wrapW);
+        canvas.height = Math.round(wrapH);
+
+        if (typeof window.initColorUp === 'function') {
+            try {
+                state.gameInstance = window.initColorUp(canvas, updateScore);
+                window._activeGameInstance = state.gameInstance;
+                console.log('✅ Color Up started via initColorUp');
+            } catch (err) {
+                console.error('❌ Color Up start error:', err);
+                showPlaceholder(canvas.getContext('2d'), canvas, gameId);
+            }
+        } else {
+            console.error('❌ initColorUp not found! Check color-up.js is loaded.');
+            showPlaceholder(canvas.getContext('2d'), canvas, gameId);
+        }
+        return;
+    }
+
+    // ── ALL OTHER GAMES (class-based) ──
     const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
     canvas.width  = Math.round(wrapW * dpr);
     canvas.height = Math.round(wrapH * dpr);
@@ -719,26 +751,22 @@ function startGame(gameId) {
     const ctx = canvas.getContext('2d');
     if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    console.log(`🎮 startGame: ${gameId} | wrapper: ${wrapW}×${wrapH} | canvas: ${canvas.width}×${canvas.height} | dpr: ${dpr}`);
-
     const GameClass = getGameClass(gameId);
-
     if (GameClass) {
         try {
             state.gameInstance = new GameClass(canvas, updateScore);
             window._activeGameInstance = state.gameInstance;
-            console.log(`✅ ${gameId} started`);
+            console.log(`✅ ${gameId} started via class`);
         } catch (err) {
             console.error(`❌ Error starting ${gameId}:`, err);
             showPlaceholder(ctx, canvas, gameId);
         }
     } else {
-        console.warn(`⚠️ No class found for: ${gameId}`);
+        console.warn(`⚠️ No initializer found for: ${gameId}`);
         showPlaceholder(ctx, canvas, gameId);
     }
 }
 
-// ── Helper: Game header ki actual height pata karo ──
 function getHeaderHeight() {
     const header = document.getElementById('game-header');
     if (!header) return 48;
@@ -773,10 +801,10 @@ function updateScore(score, gameOver = false) {
     }
 
     if (gameOver) {
-        const gid = state.currentGame;
+        const gid     = state.currentGame;
         const numScore = typeof score === 'number' ? score : parseInt(score) || 0;
-        const prev  = state.scores[gid] || 0;
-        const isNew = numScore > prev;
+        const prev    = state.scores[gid] || 0;
+        const isNew   = numScore > prev;
 
         if (isNew && numScore > 0) {
             state.scores[gid] = numScore;
@@ -791,7 +819,10 @@ function updateScore(score, gameOver = false) {
             setTimeout(() => audioManager.startMusic('menu'), 1000);
         }
 
-        showOverlay('GAME OVER', numScore, isNew);
+        // Angry Birds & Color Up handle their own game over screens
+        if (gid !== 'angry-birds' && gid !== 'color-up') {
+            showOverlay('GAME OVER', numScore, isNew);
+        }
     }
 }
 
@@ -826,9 +857,9 @@ function updateLeaderboardWithScores() {
     elements.leaderboardContent.innerHTML = `
         <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:24px;">
             ${[
-                { label:'Players', val:top.length, icon:'👥', col:'#00f5ff' },
-                { label:'Total Score', val:fmtNum(totalScore), icon:'⭐', col:'#FFD700' },
-                { label:'Top Score', val:fmtNum(top[0]?.score||0), icon:'🏆', col:'#b347d9' }
+                { label:'Players',    val: top.length,          icon:'👥', col:'#00f5ff' },
+                { label:'Total Score',val: fmtNum(totalScore),  icon:'⭐', col:'#FFD700' },
+                { label:'Top Score',  val: fmtNum(top[0]?.score||0), icon:'🏆', col:'#b347d9' }
             ].map(s => `
                 <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(${s.col==='#00f5ff'?'0,245,255':s.col==='#FFD700'?'255,215,0':'179,71,217'},.2);border-radius:12px;padding:14px 10px;text-align:center;">
                     <div style="font-size:1.4rem;margin-bottom:4px">${s.icon}</div>
@@ -848,11 +879,14 @@ function updateLeaderboardWithScores() {
             ${top.map((entry, i) => {
                 const rankMedal = i===0?'🥇':i===1?'🥈':i===2?'🥉':null;
                 const rankColor = i===0?'#FFD700':i===1?'#C0C0C0':i===2?'#CD7F32':'#6a6a9a';
-                const rowBg = entry.isPlayer?'rgba(0,245,255,0.06)':i<3?'rgba(179,71,217,0.06)':'rgba(255,255,255,0.025)';
+                const rowBg     = entry.isPlayer?'rgba(0,245,255,0.06)':i<3?'rgba(179,71,217,0.06)':'rgba(255,255,255,0.025)';
                 const rowBorder = entry.isPlayer?'1px solid rgba(0,245,255,.28)':i<3?'1px solid rgba(179,71,217,.14)':'1px solid rgba(255,255,255,.05)';
                 return `
                 <div style="display:grid;grid-template-columns:40px 36px 1fr auto auto;gap:8px;align-items:center;padding:10px 14px;border-radius:10px;background:${rowBg};border:${rowBorder};animation:fadeInUp .3s ease both;animation-delay:${i*0.04}s;">
-                    <div style="text-align:center;">${rankMedal?`<span style="font-size:1.1rem">${rankMedal}</span>`:`<span style="font-family:Orbitron,sans-serif;font-size:.7rem;font-weight:700;color:${rankColor};">#${i+1}</span>`}</div>
+                    <div style="text-align:center;">${rankMedal
+                        ? `<span style="font-size:1.1rem">${rankMedal}</span>`
+                        : `<span style="font-family:Orbitron,sans-serif;font-size:.7rem;font-weight:700;color:${rankColor};">#${i+1}</span>`
+                    }</div>
                     <div style="width:32px;height:32px;border-radius:50%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);display:flex;align-items:center;justify-content:center;font-size:1rem;">${entry.avatar||'🎮'}</div>
                     <div>
                         <div style="font-family:Rajdhani,sans-serif;font-size:.88rem;font-weight:700;color:${entry.isPlayer?'#00f5ff':'#e0e0f0'};display:flex;align-items:center;gap:5px;">
@@ -882,8 +916,8 @@ function showToast(message, type = 'info', duration = 3000) {
         document.body.appendChild(container);
     }
     const colors = { success:'#39ff14', error:'#fe2254', info:'#00f5ff', warning:'#ffff00' };
-    const color = colors[type] || colors.info;
-    const toast = document.createElement('div');
+    const color  = colors[type] || colors.info;
+    const toast  = document.createElement('div');
     toast.style.cssText = `background:rgba(10,10,20,.92);border:1px solid ${color};border-left:4px solid ${color};border-radius:8px;padding:10px 16px;color:#fff;font-family:Rajdhani,sans-serif;font-size:13px;font-weight:600;box-shadow:0 4px 20px ${color}33;transform:translateX(120%);transition:transform .3s cubic-bezier(.175,.885,.32,1.275);pointer-events:auto;cursor:pointer;backdrop-filter:blur(8px);`;
     toast.textContent = message;
     container.appendChild(toast);
@@ -915,9 +949,7 @@ window.addEventListener('scroll', () => {
     if (nav) nav.classList.toggle('scrolled', window.scrollY > 50);
 }, { passive: true });
 
-// ── FIX: Resize pe --real-vh bhi update karo aur canvas bhi resize karo ──
 window.addEventListener('resize', debounce(() => {
-    // Viewport height update
     if (typeof setRealVH === 'function') setRealVH();
 
     if (state.currentPage === 'game' && state.gameInstance) {
@@ -927,10 +959,8 @@ window.addEventListener('resize', debounce(() => {
             const rect = w.getBoundingClientRect();
             const ww = (rect.width  > 10 ? rect.width  : w.clientWidth)  || window.innerWidth;
             const wh = (rect.height > 10 ? rect.height : w.clientHeight) || (window.innerHeight - getHeaderHeight());
-
             c.style.width  = ww + 'px';
             c.style.height = wh + 'px';
-
             if (state.gameInstance.resize) {
                 try { state.gameInstance.resize(); } catch(e) {}
             }
@@ -957,6 +987,8 @@ window.addEventListener('orientationchange', () => {
 
 document.addEventListener('visibilitychange', () => {
     if (document.hidden && state.currentPage === 'game' && state.gameInstance) {
+        // Angry Birds & Color Up handle their own pause
+        if (state.currentGame === 'angry-birds' || state.currentGame === 'color-up') return;
         if (state.gameInstance.togglePause && !state.gameInstance.isPaused) {
             state.gameInstance.togglePause();
             showOverlay('PAUSED');

@@ -1,766 +1,1472 @@
-/* ============================================================
-   BLOCK VS BALL v2.1 — MOBILE FIXED
-   NeonArcade Compatible | DPR Scaled | Zero Blur
-   Fullscreen | Mobile-First | Premium Quality
-   FIX: DPR 2.5→2 (lag fix) | setupHD parent-based (screen fit fix)
-   ============================================================ */
-
 'use strict';
+
+/* ============================================================
+   BLOCK VS BALL — UFO Edition
+   - UFO at bottom shoots orange balls
+   - Slow block descent (user has time)
+   - Spread shot (multiple balls)
+   - Addictive progression
+   ============================================================ */
 
 class BlockVsBall {
     constructor(canvas, onScore) {
-        this.canvas = canvas;
-        this.onScore = onScore;
+        this.canvas  = canvas;
+        this.onScore = onScore || function(){};
         this.destroyed = false;
-        this.paused = false;
-        this.isPaused = false;
+        this.paused    = false;
 
-        // ── FIX 1: DPR max 2 instead of 2.5 — big lag reduction on mobile ──
         this.dpr = Math.min(window.devicePixelRatio || 1, 2);
-        this._setupHD();
-        this.ctx = this.canvas.getContext('2d', { alpha: false });
-        this.W = this.canvas.width / this.dpr;
-        this.H = this.canvas.height / this.dpr;
-        this.isMobile = ('ontouchstart' in window) || window.innerWidth < 768;
+        this._resize();
+        this.ctx = this.canvas.getContext('2d');
+        this.W   = this.canvas.width  / this.dpr;
+        this.H   = this.canvas.height / this.dpr;
 
-        this.FT = '"Orbitron","Segoe UI",monospace';
-        this.FU = '"Rajdhani",-apple-system,sans-serif';
+        // ── Grid ──
+        this.COLS      = 7;
+        this.BLOCK_PAD = 5;
+        this.BLOCK_H   = 50;
+        this.BLOCK_TOP = 100;
 
-        this.STATE = { WAIT:0, PLAY:1, DEAD:2 };
-        this.state = this.STATE.WAIT;
+        // ── Physics ──
+        this.BALL_R   = 8;
+        this.BALL_SPD = 11;
 
-        this.score = 0;
-        this.bestScore = parseInt(localStorage.getItem('bvb2_best') || '0');
-        this.level = 1;
-        this.lives = 3;
-        this.combo = 0;
-        this.maxCombo = 0;
+        // ── UFO dims ──
+        this.UFO_W = 80;
+        this.UFO_H = 32;
 
-        // Paddle
-        this.paddle = {
-            x: this.W / 2, y: this.H - 42,
-            w: Math.min(this.W * 0.28, 120), h: 14,
-            targetX: this.W / 2, trail: []
+        // ── Colors ──
+        this.COLORS = {
+            blue:   { fill:'#4DA6FF', dark:'#1A77DD', text:'#fff' },
+            teal:   { fill:'#22DDCC', dark:'#119988', text:'#fff' },
+            green:  { fill:'#44DD66', dark:'#1DAA44', text:'#fff' },
+            yellow: { fill:'#FFD700', dark:'#CC9900', text:'#222' },
+            orange: { fill:'#FF8833', dark:'#CC5511', text:'#fff' },
+            red:    { fill:'#FF4455', dark:'#CC1122', text:'#fff' },
+            purple: { fill:'#BB55FF', dark:'#8822CC', text:'#fff' },
+            pink:   { fill:'#FF44AA', dark:'#CC1177', text:'#fff' },
         };
 
-        // Ball
-        this.balls = [];
-        this.baseSpeed = 4.5;
+        // ── States ──
+        this.STATE = { MENU:0, AIMING:1, SHOOTING:2, DEAD:3 };
+        this.state = this.STATE.MENU;
 
-        // Blocks
-        this.blocks = [];
-        this.COLS = Math.min(8, Math.floor((this.W - 20) / 48));
-        this.BCOLORS = [
-            { fill:'#FF006E', lt:'#FF66AA', dk:'#CC0044', pts:10 },
-            { fill:'#00D4FF', lt:'#88EEFF', dk:'#0088AA', pts:20 },
-            { fill:'#00FF88', lt:'#88FFCC', dk:'#00AA55', pts:30 },
-            { fill:'#FFD700', lt:'#FFEE88', dk:'#CC9900', pts:40 },
-            { fill:'#B94FE3', lt:'#DD99FF', dk:'#7722AA', pts:50 },
-            { fill:'#FF8C00', lt:'#FFBB66', dk:'#CC6600', pts:30 }
-        ];
+        this.score    = 0;
+        this.best     = parseInt(localStorage.getItem('bvb3_best') || '0');
+        this.round    = 0;
+        this.ballCount = 1;
+        this.combo    = 0;
+        this.maxCombo = 0;
 
-        // FX
-        this.parts = [];
-        this.pops = [];
-        this.rings = [];
-        this.MAX_PARTS = this.isMobile ? 40 : 100;
-        this.shakeX = 0; this.shakeY = 0; this.shakeT = 0;
-        this.flashA = 0; this.flashC = '#fff';
-        this.deathA = 0;
-        this.time = 0;
+        // ── Objects ──
+        this.blocks     = [];
+        this.balls      = [];
+        this.pickups    = [];
+        this.parts      = [];
+        this.floatTexts = [];
+        this.rings      = [];
+        this.stars      = this._mkStars(60);
 
-        // BG
-        this.stars = this._mkStars(this.isMobile ? 20 : 45);
+        // ── UFO ──
+        this.ufo = {
+            x: 0, y: 0,
+            targetX: 0,
+            hoverOffset: 0,
+            engineGlow: 0,
+            shootFlash: 0,
+            catchGlow: 0,
+            lights: [
+                { phase: 0,    col: '#FF006E' },
+                { phase: 1.57, col: '#FFD700' },
+                { phase: 3.14, col: '#00FF88' },
+                { phase: 4.71, col: '#00D4FF' },
+            ]
+        };
 
-        // FS
-        this.fsRect = { x:0, y:0, w:44, h:44 };
+        // ── Aim ──
+        this.aimAngle   = -Math.PI / 2;
+        this.isDragging = false;
+        this.aimDots    = [];
 
-        this._genLevel();
-        this._resetBall();
-        this._bind();
+        // ── Round tracking ──
+        this.launched     = 0;
+        this.returned     = 0;
+        this.firstLandX   = null;
+        this.pendingBalls = 0;
 
-        this.lastTime = 0;
-        this.animId = requestAnimationFrame(t => this._loop(t));
+        // ── FX ──
+        this.shakeAmt = 0;
+        this.flashA   = 0;
+        this.flashCol = '#fff';
+        this.bgT      = 0;
+        this.time     = 0;
+
+        // ── Game over callback flag ──
+        this._gameOverCalled = false;
+
+        this._initLayout();
+        this._bindInput();
+
+        this.lastTS = 0;
+        this.raf = requestAnimationFrame(ts => this._loop(ts));
     }
 
-    // ── FIX 2: setupHD uses parent element dimensions for reliable mobile height ──
-    _setupHD() {
-        // Try parent element first (game-wrapper — most reliable on mobile)
-        const parent = this.canvas.parentElement;
-        let w, h;
+    // ═══════════════════════════════════
+    //  SETUP
+    // ═══════════════════════════════════
 
-        if (parent && parent.clientWidth > 10 && parent.clientHeight > 10) {
-            w = parent.clientWidth;
-            h = parent.clientHeight;
-        } else {
-            // Fallback: getBoundingClientRect
-            const r = this.canvas.getBoundingClientRect();
-            w = (r.width  > 10 ? r.width  : this.canvas.clientWidth)  || window.innerWidth;
-            h = (r.height > 10 ? r.height : this.canvas.clientHeight) || window.innerHeight;
-        }
-
+    _resize() {
+        const p = this.canvas.parentElement;
+        const w = (p && p.clientWidth  > 10) ? p.clientWidth  : window.innerWidth;
+        const h = (p && p.clientHeight > 10) ? p.clientHeight : window.innerHeight;
         this.canvas.width  = Math.round(w * this.dpr);
         this.canvas.height = Math.round(h * this.dpr);
         this.canvas.style.width  = w + 'px';
         this.canvas.style.height = h + 'px';
     }
 
-    S(v) { return v * this.dpr; }
-    X(v) { return Math.round(v * this.dpr); }
+    _initLayout() {
+        this.W = this.canvas.width  / this.dpr;
+        this.H = this.canvas.height / this.dpr;
 
-    _txt(t, x, y, o = {}) {
-        const c = this.ctx;
-        const { sz=14, wt='bold', col='#fff', al='left', bl='alphabetic',
-                ff=null, op=1, stroke=false, sc='rgba(0,0,0,0.6)', sw=3 } = o;
-        c.save(); c.globalAlpha = op;
-        c.textAlign = al; c.textBaseline = bl;
-        c.font = `${wt} ${Math.round(sz * this.dpr)}px ${ff || (sz > 14 ? this.FT : this.FU)}`;
-        if (stroke) { c.strokeStyle = sc; c.lineWidth = sw * this.dpr; c.lineJoin = 'round'; c.strokeText(t, this.X(x), this.X(y)); }
-        c.shadowBlur = 0; c.fillStyle = col; c.fillText(t, this.X(x), this.X(y));
-        c.restore();
-    }
+        this.BAR_H   = 65;
+        this.FLOOR_Y = this.H - this.BAR_H - 8;
 
-    _circle(x, y, r) { this.ctx.beginPath(); this.ctx.arc(this.X(x), this.X(y), this.S(r), 0, Math.PI * 2); }
+        // UFO sits just above floor
+        this.ufo.x       = this.W / 2;
+        this.ufo.y       = this.FLOOR_Y - this.UFO_H / 2 - 2;
+        this.ufo.targetX = this.W / 2;
 
-    _rrect(x, y, w, h, r) {
-        const c = this.ctx;
-        const dx = this.X(x), dy = this.X(y), dw = this.X(x+w)-dx, dh = this.X(y+h)-dy, dr = this.S(r);
-        c.beginPath();
-        c.moveTo(dx + dr, dy);
-        c.arcTo(dx + dw, dy, dx + dw, dy + dh, dr);
-        c.arcTo(dx + dw, dy + dh, dx, dy + dh, dr);
-        c.arcTo(dx, dy + dh, dx, dy, dr);
-        c.arcTo(dx, dy, dx + dw, dy, dr);
-        c.closePath();
+        this.BLOCK_W  = (this.W - 10 - (this.COLS - 1) * this.BLOCK_PAD) / this.COLS;
+        this.DANGER_Y = this.FLOOR_Y - this.UFO_H - 60;
     }
 
     _mkStars(n) {
-        return Array.from({length: n}, () => ({
-            x: Math.random() * this.W, y: Math.random() * this.H,
-            r: Math.random() * 1.2 + 0.3, ph: Math.random() * 6.28,
-            sp: Math.random() * 0.01 + 0.003
+        return Array.from({ length: n }, () => ({
+            x:  Math.random(),
+            y:  Math.random() * 0.88,
+            r:  Math.random() * 1.3 + 0.2,
+            ph: Math.random() * Math.PI * 2,
+            sp: Math.random() * 0.018 + 0.003,
         }));
     }
 
-    _sfx(name, cd = 80) {
-        if (!window.audioManager) return;
-        try { audioManager.play(name); } catch(e) {}
+    // ═══════════════════════════════════
+    //  INPUT
+    // ═══════════════════════════════════
+
+    _bindInput() {
+        const getPos = (e) => {
+            const r   = this.canvas.getBoundingClientRect();
+            const src = e.touches ? e.touches[0] : e;
+            return {
+                x: (src.clientX - r.left) * (this.W / r.width),
+                y: (src.clientY - r.top)  * (this.H / r.height),
+            };
+        };
+
+        const onDown = (e) => {
+            e.preventDefault();
+            const p = getPos(e);
+            if (this.state === this.STATE.MENU) {
+                this._startGame(); return;
+            }
+            // ── FIXED: Dead state pe tap to restart ──
+            if (this.state === this.STATE.DEAD && this.bgT > 1.8) {
+                this._startGame(); return;
+            }
+            if (this.state === this.STATE.AIMING) {
+                this.isDragging = true;
+                this._updateAim(p);
+            }
+        };
+
+        const onMove = (e) => {
+            e.preventDefault();
+            if (this.isDragging && this.state === this.STATE.AIMING) {
+                this._updateAim(getPos(e));
+            }
+        };
+
+        const onUp = (e) => {
+            e.preventDefault();
+            if (this.isDragging && this.state === this.STATE.AIMING) {
+                this.isDragging = false;
+                if (this.aimDots.length > 3) this._shootAll();
+                else this.aimDots = [];
+            }
+        };
+
+        this.canvas.addEventListener('mousedown',  onDown);
+        this.canvas.addEventListener('mousemove',  onMove);
+        this.canvas.addEventListener('mouseup',    onUp);
+        this.canvas.addEventListener('touchstart', onDown, { passive: false });
+        this.canvas.addEventListener('touchmove',  onMove, { passive: false });
+        this.canvas.addEventListener('touchend',   onUp,   { passive: false });
+
+        this._evD = onDown;
+        this._evM = onMove;
+        this._evU = onUp;
     }
 
-    // ─── Level Gen ───
+    _updateAim(p) {
+        const ufoTopY = this.ufo.y - this.UFO_H / 2 - 4;
+        const dx = p.x - this.ufo.x;
+        const dy = p.y - ufoTopY;
+        if (dy >= -20) return;
+        this.aimAngle = Math.atan2(dy, dx);
+        this.aimAngle = Math.max(-Math.PI + 0.14, Math.min(-0.14, this.aimAngle));
+        this._buildDots();
+    }
 
-    _genLevel() {
-        this.blocks = [];
-        const rows = Math.min(5 + Math.floor(this.level / 2), 10);
-        const cols = this.COLS;
-        const pad = 4;
-        const bw = (this.W - 20 - (cols - 1) * pad) / cols;
-        const bh = Math.min(22, this.H * 0.032);
-        const ox = 10;
-        const oy = 55;
+    _buildDots() {
+        this.aimDots = [];
+        const startX = this.ufo.x;
+        const startY = this.ufo.y - this.UFO_H / 2 - 4;
+        let x  = startX, y = startY;
+        let vx = Math.cos(this.aimAngle) * 20;
+        let vy = Math.sin(this.aimAngle) * 20;
 
-        for (let r = 0; r < rows; r++) {
-            for (let c = 0; c < cols; c++) {
-                if (Math.random() < 0.08) continue;
-                const ci = (r * 3 + c * 2) % this.BCOLORS.length;
-                const hp = 1 + Math.floor(r / 3) + Math.floor(this.level / 3);
-                this.blocks.push({
-                    x: ox + c * (bw + pad), y: oy + r * (bh + pad),
-                    w: bw, h: bh, ci, hp, maxHp: hp,
-                    hitAnim: 0, scale: 0, dead: false
-                });
-            }
+        for (let i = 0; i < 50; i++) {
+            x += vx; y += vy;
+            if (x < this.BALL_R)          { x = this.BALL_R;          vx =  Math.abs(vx); }
+            if (x > this.W - this.BALL_R) { x = this.W - this.BALL_R; vx = -Math.abs(vx); }
+            if (y < this.BLOCK_TOP - 5)   break;
+            if (i % 2 === 0) this.aimDots.push({ x, y, a: 1 - i / 50 });
         }
     }
 
-    _resetBall() {
-        const spd = this.baseSpeed + this.level * 0.25;
-        this.balls = [{
-            x: this.paddle.x, y: this.paddle.y - 12,
-            dx: 0, dy: 0, r: 6,
-            speed: spd, attached: true,
-            trail: []
-        }];
+    // ═══════════════════════════════════
+    //  GAME FLOW
+    // ═══════════════════════════════════
+
+    _startGame() {
+        this.score          = 0;
+        this.round          = 0;
+        this.ballCount      = 1;
+        this.combo          = 0;
+        this.maxCombo       = 0;
+        this.blocks         = [];
+        this.balls          = [];
+        this.pickups        = [];
+        this.parts          = [];
+        this.floatTexts     = [];
+        this.rings          = [];
+        this.bgT            = 0;
+        this.time           = 0;
+        this.firstLandX     = null;
+        this.launched       = 0;
+        this.returned       = 0;
+        this.pendingBalls   = 0;
+        this.isDragging     = false;
+        this.aimDots        = [];
+        this._gameOverCalled = false;
+
+        this.ufo.x          = this.W / 2;
+        this.ufo.targetX    = this.W / 2;
+        this.ufo.shootFlash = 0;
+        this.ufo.catchGlow  = 0;
+
+        this._genRound();
+        this.state = this.STATE.AIMING;
+        this.onScore(0);
     }
 
-    // ─── Events ───
+    _genRound() {
+        this.round++;
 
-    _bind() {
-        this._onMM = e => {
-            const r = this.canvas.getBoundingClientRect();
-            this.paddle.targetX = (e.clientX - r.left) * (this.W / r.width);
-        };
-        this._onTS = e => {
-            e.preventDefault();
-            const r = this.canvas.getBoundingClientRect();
-            const tx = (e.touches[0].clientX - r.left) * (this.W / r.width);
-            const ty = (e.touches[0].clientY - r.top) * (this.H / r.height);
+        // Drop existing blocks
+        const dropAmount = Math.min(
+            this.BLOCK_H + this.BLOCK_PAD,
+            (this.BLOCK_H + this.BLOCK_PAD) * 0.45
+            + Math.min(this.round * 1.8, (this.BLOCK_H + this.BLOCK_PAD) * 0.55)
+        );
+        this.blocks.forEach(b => { b.y += dropAmount; b.entryScale = 1; });
 
-            const f = this.fsRect;
-            if (tx >= f.x && tx <= f.x + f.w && ty >= f.y && ty <= f.y + f.h) { this._toggleFS(); return; }
+        // Game over check — blocks reached danger zone
+        if (this.blocks.some(b => !b.dead && b.y + b.h >= this.DANGER_Y)) {
+            this._gameOver();
+            return;
+        }
 
-            this.paddle.targetX = tx;
-            this._handleTap();
-        };
-        this._onTM = e => {
-            e.preventDefault();
-            const r = this.canvas.getBoundingClientRect();
-            this.paddle.targetX = (e.touches[0].clientX - r.left) * (this.W / r.width);
-        };
-        this._onClick = () => this._handleTap();
+        // Remove dead blocks
+        this.blocks = this.blocks.filter(b => !b.dead);
 
-        this.canvas.addEventListener('mousemove', this._onMM);
-        this.canvas.addEventListener('touchstart', this._onTS, { passive: false });
-        this.canvas.addEventListener('touchmove', this._onTM, { passive: false });
-        this.canvas.addEventListener('click', this._onClick);
-    }
+        // New row HP
+        const hpBase   = Math.max(1, Math.floor(1 + this.round * 0.55));
+        const variance = Math.max(1, Math.floor(hpBase * 0.45));
+        const gapChance = Math.max(0.08, 0.30 - this.round * 0.008);
 
-    _handleTap() {
-        if (this.state === this.STATE.WAIT) {
-            this.state = this.STATE.PLAY;
-            this.balls.forEach(b => {
-                if (b.attached) {
-                    b.attached = false;
-                    b.dx = (Math.random() - 0.5) * 3;
-                    b.dy = -b.speed;
-                }
+        for (let c = 0; c < this.COLS; c++) {
+            if (Math.random() < gapChance) continue;
+            const hp  = hpBase + Math.floor(Math.random() * variance);
+            const col = this._hpToColor(hp);
+            this.blocks.push({
+                x: 5 + c * (this.BLOCK_W + this.BLOCK_PAD),
+                y: this.BLOCK_TOP,
+                w: this.BLOCK_W,
+                h: this.BLOCK_H,
+                hp, maxHp: hp,
+                color: col,
+                hitAnim:    0,
+                dead:       false,
+                entryScale: 0,
             });
-            this._sfx('click');
-            return;
         }
-        if (this.state === this.STATE.DEAD && this.deathA > 0.8) {
-            this._restart();
-            return;
+
+        // Ball pickup
+        if (this.round > 1 && Math.random() < 0.45) {
+            this.pickups.push({
+                x: 25 + Math.random() * (this.W - 50),
+                y: this.ufo.y - this.UFO_H / 2 - 18,
+                r: 11,
+                collected: false,
+                bob:   Math.random() * Math.PI * 2,
+                pulse: 0,
+            });
         }
-        this.balls.forEach(b => {
-            if (b.attached) {
-                b.attached = false;
-                b.dx = (Math.random() - 0.5) * 3;
-                b.dy = -b.speed;
-                this._sfx('shoot');
-            }
-        });
+
+        // Every 5 rounds bonus ball
+        if (this.round % 5 === 0 && this.round > 0) {
+            this.ballCount++;
+            this.floatTexts.push({
+                x: this.W / 2, y: this.H / 2 - 60,
+                text: `🎁 +1 BALL! Round ${this.round}`,
+                col: '#00FF88', life: 2000, op: 1,
+            });
+            this.flashA   = 0.2;
+            this.flashCol = '#00FF88';
+        }
     }
 
-    _restart() {
-        this.score = 0; this.onScore(0);
-        this.level = 1; this.lives = 3;
-        this.combo = 0; this.maxCombo = 0;
-        this.deathA = 0; this.flashA = 0;
-        this.parts = []; this.pops = []; this.rings = [];
-        this._genLevel(); this._resetBall();
-        this.state = this.STATE.WAIT;
+    _hpToColor(hp) {
+        if (hp <= 1)  return 'blue';
+        if (hp <= 3)  return 'teal';
+        if (hp <= 6)  return 'green';
+        if (hp <= 10) return 'yellow';
+        if (hp <= 15) return 'orange';
+        if (hp <= 22) return 'red';
+        if (hp <= 32) return 'purple';
+        return 'pink';
     }
 
-    _toggleFS() {
-        const el = this.canvas.parentElement || this.canvas;
-        const isFS = !!(document.fullscreenElement || document.webkitFullscreenElement);
-        if (!isFS) { (el.requestFullscreen || el.webkitRequestFullscreen || function(){}).call(el); }
-        else { (document.exitFullscreen || document.webkitExitFullscreen || function(){}).call(document); }
-        setTimeout(() => this.resize(), 200);
+    // ═══════════════════════════════════
+    //  SHOOTING
+    // ═══════════════════════════════════
+
+    _shootAll() {
+        if (this.state !== this.STATE.AIMING) return;
+
+        this.state        = this.STATE.SHOOTING;
+        this.aimDots      = [];
+        this.launched     = 0;
+        this.returned     = 0;
+        this.firstLandX   = null;
+        this.pendingBalls = this.ballCount;
+
+        this.ufo.shootFlash = 1;
+        this.ufo.engineGlow = 1;
+
+        const angle = this.aimAngle;
+
+        for (let i = 0; i < this.ballCount; i++) {
+            setTimeout(() => {
+                if (this.destroyed || this.state === this.STATE.DEAD) return;
+
+                const spread = this.ballCount > 1
+                    ? (i - (this.ballCount - 1) / 2) * 0.055
+                    : 0;
+                const a  = angle + spread;
+                const vx = Math.cos(a) * this.BALL_SPD;
+                const vy = Math.sin(a) * this.BALL_SPD;
+
+                this.balls.push({
+                    x: this.ufo.x,
+                    y: this.ufo.y - this.UFO_H / 2 - this.BALL_R - 2,
+                    vx, vy,
+                    r:      this.BALL_R,
+                    active: true,
+                    trail:  [],
+                    id:     i,
+                });
+                this.launched++;
+                this.ufo.shootFlash = 0.8;
+            }, i * 130);
+        }
     }
 
-    // ─── Update ───
+    // ═══════════════════════════════════
+    //  UPDATE
+    // ═══════════════════════════════════
 
-    update(ts, dt) {
-        if (this.paused) return;
+    update(dt) {
+        const S = dt / 16.67;
+        this.bgT  += dt * 0.001;
         this.time += dt;
-        this.stars.forEach(s => s.ph += s.sp);
 
-        if (this.shakeT > 0) {
-            this.shakeX = (Math.random() - .5) * 6 * (this.shakeT / 16);
-            this.shakeY = (Math.random() - .5) * 3 * (this.shakeT / 16);
-            this.shakeT--;
-        } else { this.shakeX = 0; this.shakeY = 0; }
+        // Stars twinkle
+        this.stars.forEach(s => s.ph += s.sp * S);
 
-        if (this.flashA > 0) this.flashA = Math.max(0, this.flashA - 0.04);
+        // FX decay
+        if (this.flashA   > 0) this.flashA   = Math.max(0, this.flashA   - 0.04 * S);
+        if (this.shakeAmt > 0) this.shakeAmt = Math.max(0, this.shakeAmt - 0.6  * S);
 
+        // UFO animations
+        this.ufo.hoverOffset = Math.sin(this.bgT * 3.2) * 3.5;
+        this.ufo.engineGlow  = Math.max(0, this.ufo.engineGlow  - 0.04 * S);
+        this.ufo.shootFlash  = Math.max(0, this.ufo.shootFlash  - 0.06 * S);
+        this.ufo.catchGlow   = Math.max(0, this.ufo.catchGlow   - 0.05 * S);
+        this.ufo.lights.forEach(l => l.phase += 0.06 * S);
+
+        // UFO smooth follow
+        const diff = this.ufo.targetX - this.ufo.x;
+        this.ufo.x += diff * 0.07 * S;
+        this.ufo.x  = Math.max(this.UFO_W / 2 + 6, Math.min(this.W - this.UFO_W / 2 - 6, this.ufo.x));
+
+        // Block animations
         this.blocks.forEach(b => {
-            b.scale = Math.min(1, b.scale + 0.06);
-            b.hitAnim = Math.max(0, b.hitAnim - 0.06);
+            b.entryScale = Math.min(1, b.entryScale + 0.09 * S);
+            b.hitAnim    = Math.max(0, b.hitAnim    - 0.11 * S);
         });
 
+        // Pickups bob
+        this.pickups.forEach(p => { p.bob += 0.06 * S; p.pulse = Math.sin(p.bob) * 4; });
+
+        // Particles
         this.parts = this.parts.filter(p => {
-            p.x += p.vx; p.y += p.vy; p.vy += p.g;
-            p.vx *= 0.96; p.life -= p.dec; p.r *= 0.96;
-            return p.life > 0 && p.r > 0.3;
+            p.x  += p.vx * S; p.y += p.vy * S;
+            p.vy += 0.18 * S; p.vx *= 0.97;
+            p.life -= 0.032 * S;
+            return p.life > 0;
         });
-        this.rings = this.rings.filter(r => { r.r += 2.5; r.a -= 0.035; return r.a > 0; });
-        this.pops = this.pops.filter(p => { p.y -= 1.1; p.life -= dt; p.op = Math.min(1, p.life / 500); return p.life > 0; });
 
-        if (this.state === this.STATE.DEAD) { this.deathA = Math.min(1, this.deathA + 0.016); return; }
-        if (this.state === this.STATE.WAIT) {
-            this.paddle.x += (this.paddle.targetX - this.paddle.x) * 0.15;
-            this.paddle.x = Math.max(this.paddle.w / 2 + 5, Math.min(this.W - this.paddle.w / 2 - 5, this.paddle.x));
-            this.balls.forEach(b => { if (b.attached) { b.x = this.paddle.x; b.y = this.paddle.y - b.r - 2; } });
-            return;
-        }
+        // Float texts
+        this.floatTexts = this.floatTexts.filter(t => {
+            t.y   -= 0.75 * S;
+            t.life -= dt;
+            t.op   = Math.min(1, t.life / 380);
+            return t.life > 0;
+        });
 
-        this.paddle.x += (this.paddle.targetX - this.paddle.x) * 0.18;
-        this.paddle.x = Math.max(this.paddle.w / 2 + 5, Math.min(this.W - this.paddle.w / 2 - 5, this.paddle.x));
+        // Rings
+        this.rings = this.rings.filter(r => {
+            r.radius += 3 * S;
+            r.alpha  -= 0.04 * S;
+            return r.alpha > 0;
+        });
 
-        this.paddle.trail.push({ x: this.paddle.x, y: this.paddle.y });
-        if (this.paddle.trail.length > 8) this.paddle.trail.shift();
+        if (this.state !== this.STATE.SHOOTING) return;
 
-        for (let i = this.balls.length - 1; i >= 0; i--) {
+        // ── Ball physics ──
+        for (let i = 0; i < this.balls.length; i++) {
             const b = this.balls[i];
-            if (b.attached) { b.x = this.paddle.x; b.y = this.paddle.y - b.r - 2; continue; }
+            if (!b.active) continue;
 
-            b.trail.push({ x: b.x, y: b.y });
-            if (b.trail.length > 6) b.trail.shift();
+            // Trail
+            b.trail.unshift({ x: b.x, y: b.y });
+            if (b.trail.length > 9) b.trail.pop();
 
-            b.x += b.dx;
-            b.y += b.dy;
+            b.x += b.vx * S;
+            b.y += b.vy * S;
 
-            if (b.x - b.r < 2) { b.x = b.r + 2; b.dx = Math.abs(b.dx); this._sfx('bounce'); }
-            if (b.x + b.r > this.W - 2) { b.x = this.W - b.r - 2; b.dx = -Math.abs(b.dx); this._sfx('bounce'); }
-            if (b.y - b.r < 2) { b.y = b.r + 2; b.dy = Math.abs(b.dy); this._sfx('bounce'); }
-
-            const pw = this.paddle.w / 2 + 4;
-            if (b.dy > 0 &&
-                b.y + b.r >= this.paddle.y - this.paddle.h / 2 &&
-                b.y - b.r <= this.paddle.y + this.paddle.h / 2 &&
-                b.x >= this.paddle.x - pw && b.x <= this.paddle.x + pw) {
-
-                const hit = (b.x - this.paddle.x) / pw;
-                const angle = hit * Math.PI / 3;
-                const spd = Math.sqrt(b.dx * b.dx + b.dy * b.dy);
-                b.dx = Math.sin(angle) * spd;
-                b.dy = -Math.abs(Math.cos(angle) * spd);
-                b.y = this.paddle.y - this.paddle.h / 2 - b.r - 1;
-                this.combo = 0;
-                this._sfx('bounce');
-                this.shakeT = 3;
+            // Walls
+            if (b.x - b.r < 0) {
+                b.x  = b.r;
+                b.vx = Math.abs(b.vx);
+                this._wallFx(b.x, b.y);
+            }
+            if (b.x + b.r > this.W) {
+                b.x  = this.W - b.r;
+                b.vx = -Math.abs(b.vx);
+                this._wallFx(b.x, b.y);
             }
 
-            for (let j = this.blocks.length - 1; j >= 0; j--) {
+            // Ceiling
+            if (b.y - b.r < this.BLOCK_TOP) {
+                b.y  = this.BLOCK_TOP + b.r;
+                b.vy = Math.abs(b.vy);
+            }
+
+            // ── Block collision ──
+            let hitBlock = false;
+            for (let j = 0; j < this.blocks.length; j++) {
                 const bl = this.blocks[j];
                 if (bl.dead) continue;
 
-                if (b.x + b.r > bl.x && b.x - b.r < bl.x + bl.w &&
-                    b.y + b.r > bl.y && b.y - b.r < bl.y + bl.h) {
+                const cx   = Math.max(bl.x, Math.min(b.x, bl.x + bl.w));
+                const cy   = Math.max(bl.y, Math.min(b.y, bl.y + bl.h));
+                const dist = Math.hypot(b.x - cx, b.y - cy);
 
-                    const oleft = (b.x + b.r) - bl.x;
-                    const oright = (bl.x + bl.w) - (b.x - b.r);
-                    const otop = (b.y + b.r) - bl.y;
-                    const obot = (bl.y + bl.h) - (b.y - b.r);
-                    const min = Math.min(oleft, oright, otop, obot);
+                if (dist < b.r) {
+                    const oL = (b.x + b.r) - bl.x;
+                    const oR = (bl.x + bl.w) - (b.x - b.r);
+                    const oT = (b.y + b.r) - bl.y;
+                    const oB = (bl.y + bl.h) - (b.y - b.r);
+                    const m  = Math.min(oL, oR, oT, oB);
 
-                    if (min === oleft) b.dx = -Math.abs(b.dx);
-                    else if (min === oright) b.dx = Math.abs(b.dx);
-                    else if (min === otop) b.dy = -Math.abs(b.dy);
-                    else b.dy = Math.abs(b.dy);
+                    if      (m === oL) { b.vx = -Math.abs(b.vx); b.x = bl.x - b.r - 1; }
+                    else if (m === oR) { b.vx =  Math.abs(b.vx); b.x = bl.x + bl.w + b.r + 1; }
+                    else if (m === oT) { b.vy = -Math.abs(b.vy); b.y = bl.y - b.r - 1; }
+                    else               { b.vy =  Math.abs(b.vy); b.y = bl.y + bl.h + b.r + 1; }
 
                     bl.hp--;
                     bl.hitAnim = 1;
+                    this.combo++;
+                    if (this.combo > this.maxCombo) this.maxCombo = this.combo;
+
+                    const mult = this.combo >= 8 ? 4 : this.combo >= 5 ? 3 : this.combo >= 3 ? 2 : 1;
+                    const pts  = Math.max(1, this.round) * mult;
+                    this.score += pts;
+
+                    if (this.score > this.best) {
+                        this.best = this.score;
+                        localStorage.setItem('bvb3_best', this.best);
+                    }
+
+                    // Score update (not game over)
+                    this.onScore(this.score);
+
+                    this.floatTexts.push({
+                        x:    bl.x + bl.w / 2,
+                        y:    bl.y - 4,
+                        text: this.combo >= 5 ? `🔥×${mult} +${pts}` : `+${pts}`,
+                        col:  this.combo >= 5 ? '#FFD700' : '#ffffff',
+                        life: 700, op: 1,
+                    });
 
                     if (bl.hp <= 0) {
                         bl.dead = true;
-                        this.combo++;
-                        this.maxCombo = Math.max(this.maxCombo, this.combo);
-
-                        const bc = this.BCOLORS[bl.ci];
-                        const pts = bc.pts * Math.max(1, this.combo);
-                        this.score += pts;
+                        this._blockBurst(bl);
+                        this.shakeAmt = Math.min(9, 2 + Math.floor(bl.maxHp / 5));
+                        const bonus = bl.maxHp * this.round * 2;
+                        this.score += bonus;
                         this.onScore(this.score);
-                        if (this.score > this.bestScore) {
-                            this.bestScore = this.score;
-                            localStorage.setItem('bvb2_best', this.bestScore);
-                        }
-
-                        const cx = bl.x + bl.w / 2, cy = bl.y + bl.h / 2;
-                        this._burst(cx, cy, bc.fill, 10);
-                        this.rings.push({ x: cx, y: cy, r: bl.w * 0.4, a: 0.7, col: bc.fill });
-                        this.pops.push({
-                            x: cx, y: cy - 10,
-                            text: this.combo > 1 ? `+${pts} ×${this.combo}` : `+${pts}`,
-                            col: this.combo > 3 ? '#FFD700' : bc.fill,
-                            life: 1000, op: 1
+                        this.floatTexts.push({
+                            x:    bl.x + bl.w / 2,
+                            y:    bl.y - 18,
+                            text: `💥 +${bonus}`,
+                            col:  this.COLORS[bl.color].fill,
+                            life: 1000, op: 1,
                         });
-
-                        this.shakeT = Math.min(12, this.combo * 2);
-                        this.flashA = Math.min(0.2, 0.04 + this.combo * 0.02);
-                        this.flashC = bc.fill;
-                        this._sfx(this.combo > 3 ? 'combo' : 'score');
-                    } else {
-                        this._sfx('hit');
                     }
+
+                    hitBlock = true;
                     break;
                 }
             }
+            if (!hitBlock) this.combo = 0;
 
-            if (b.y > this.H + 20) {
-                this.balls.splice(i, 1);
+            // ── Pickup collision ──
+            this.pickups.forEach(pu => {
+                if (pu.collected) return;
+                if (Math.hypot(b.x - pu.x, b.y - (pu.y + pu.pulse)) < b.r + pu.r) {
+                    pu.collected = true;
+                    this.ballCount++;
+                    this.flashA   = 0.22;
+                    this.flashCol = '#FF8800';
+                    this.floatTexts.push({
+                        x: pu.x, y: pu.y - 24,
+                        text: '+1 BALL 🏆', col: '#FF8800', life: 1300, op: 1
+                    });
+                    this.rings.push({ x: pu.x, y: pu.y, radius: 8, alpha: 1, col: '#FF8800' });
+                    this._burst(pu.x, pu.y, '#FF8800', 10);
+                }
+            });
+            this.pickups = this.pickups.filter(p => !p.collected);
+
+            // ── Ball returns to UFO zone ──
+            if (b.y + b.r >= this.ufo.y - this.UFO_H / 2 - 5) {
+                b.active = false;
+                if (this.firstLandX === null) this.firstLandX = b.x;
+                this.returned++;
+                this.ufo.targetX  = b.x;
+                this.ufo.catchGlow = 1;
+                this.rings.push({ x: b.x, y: this.ufo.y, radius: 6, alpha: 0.85, col: '#AAAAFF' });
             }
         }
 
-        if (this.balls.length === 0) {
-            this.lives--;
-            this.combo = 0;
-            this.shakeT = 14;
-            this.flashA = 0.4; this.flashC = '#FF0044';
-            this._sfx('fail');
+        // Clean dead blocks
+        this.blocks = this.blocks.filter(b => !b.dead);
 
-            if (this.lives <= 0) {
-                this._gameOver();
-            } else {
-                this._resetBall();
-                this.state = this.STATE.WAIT;
-            }
+        // All balls returned?
+        const allBack = this.balls.every(b => !b.active);
+        const sentAll = this.launched >= this.pendingBalls;
+        if (sentAll && allBack && this.returned >= this.pendingBalls) {
+            this._roundEnd();
         }
-
-        if (this.blocks.every(b => b.dead)) {
-            this.level++;
-            this.score += 500 * this.level;
-            this.onScore(this.score);
-            this._genLevel();
-            this._resetBall();
-            this.state = this.STATE.WAIT;
-            this.flashA = 0.25; this.flashC = '#00FF88';
-            this.shakeT = 10;
-            this._sfx('levelUp');
-            this.pops.push({ x: this.W / 2, y: this.H / 2 - 20, text: `LEVEL ${this.level}!`, col: '#00FF88', life: 1500, op: 1 });
-        }
-
-        this.blocks = this.blocks.filter(b => !b.dead || b.hitAnim > 0);
     }
 
+    _roundEnd() {
+        if (this.firstLandX !== null) {
+            this.ufo.targetX = Math.max(
+                this.UFO_W / 2 + 8,
+                Math.min(this.W - this.UFO_W / 2 - 8, this.firstLandX)
+            );
+        }
+        this.balls   = [];
+        this.combo   = 0;
+        this.state   = this.STATE.AIMING;
+        this.aimDots = [];
+
+        setTimeout(() => {
+            if (!this.destroyed && this.state === this.STATE.AIMING) {
+                this._genRound();
+            }
+        }, 280);
+    }
+
+    // ── FIXED: Game Over — sirf ek baar callback call hoga ──
     _gameOver() {
+        if (this.state === this.STATE.DEAD) return;
         this.state = this.STATE.DEAD;
-        this.deathA = 0;
-        if (this.score > this.bestScore) {
-            this.bestScore = this.score;
-            localStorage.setItem('bvb2_best', this.bestScore);
+        this.bgT   = 0;
+        this.balls = [];
+
+        if (this.score > this.best) {
+            this.best = this.score;
+            localStorage.setItem('bvb3_best', this.best);
         }
-        setTimeout(() => { if (!this.destroyed) this.onScore(this.score, true); }, 1200);
-        this._sfx('gameOver');
+
+        // ── CRITICAL FIX: Game over callback sirf ek baar ──
+        if (!this._gameOverCalled) {
+            this._gameOverCalled = true;
+            // Thoda delay do taaki score screen render ho sake
+            setTimeout(() => {
+                if (!this.destroyed) {
+                    this.onScore(this.score, true);
+                }
+            }, 400);
+        }
+
+        this.flashA   = 0.65;
+        this.flashCol = '#FF1133';
+        this.shakeAmt = 18;
+        this._burst(this.W / 2, this.H / 2, '#FF3344', 45);
+        this._burst(this.W / 2, this.H / 2, '#FF8800', 20);
     }
+
+    // ═══════════════════════════════════
+    //  FX
+    // ═══════════════════════════════════
 
     _burst(x, y, col, n) {
-        for (let i = 0; i < n && this.parts.length < this.MAX_PARTS; i++) {
-            const a = Math.random() * Math.PI * 2, sp = Math.random() * 5 + 2;
-            this.parts.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, r: Math.random() * 4 + 1.5, life: 1, dec: 0.04, col, g: 0.1 });
+        for (let i = 0; i < n && this.parts.length < 220; i++) {
+            const a = Math.random() * Math.PI * 2;
+            const s = Math.random() * 6 + 1.5;
+            this.parts.push({
+                x, y,
+                vx: Math.cos(a) * s,
+                vy: Math.sin(a) * s - 2.5,
+                r:  Math.random() * 5 + 1,
+                life: 1, col
+            });
         }
     }
 
-    // ─── Draw ───
+    _blockBurst(bl) {
+        const col = this.COLORS[bl.color].fill;
+        const cx  = bl.x + bl.w / 2;
+        const cy  = bl.y + bl.h / 2;
+        this._burst(cx, cy, col, 14);
+        this.rings.push({ x: cx, y: cy, radius: bl.w * 0.25, alpha: 0.9, col });
+        this.flashA   = Math.min(this.flashA + 0.05, 0.28);
+        this.flashCol = col;
+    }
 
-    draw(ts) {
+    _wallFx(x, y) {
+        this.parts.push({
+            x, y,
+            vx: (Math.random() - 0.5) * 3,
+            vy: -Math.random() * 3,
+            r:  3, life: 0.55, col: '#AABBFF'
+        });
+    }
+
+    // ═══════════════════════════════════
+    //  DRAW
+    // ═══════════════════════════════════
+
+    draw() {
         const ctx = this.ctx;
-        ctx.fillStyle = '#050510';
-        ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
 
+        let sx = 0, sy = 0;
+        if (this.shakeAmt > 0) {
+            sx = (Math.random() - 0.5) * this.shakeAmt;
+            sy = (Math.random() - 0.5) * this.shakeAmt * 0.5;
+        }
         ctx.save();
-        if (this.shakeX || this.shakeY) ctx.translate(this.S(this.shakeX), this.S(this.shakeY));
+        ctx.translate(sx, sy);
 
         this._drawBG();
         this._drawRings();
-        this._drawBlocks(ts);
-        this._drawPaddle(ts);
-        this._drawBalls(ts);
-        this._drawParts();
-        this._drawPops();
+        this._drawBlocks();
+        this._drawPickups();
+        this._drawAimLine();
+        this._drawBalls();
+        this._drawUFO();
+        this._drawParticles();
+        this._drawFloatTexts();
+        this._drawFloor();
+        this._drawHUD();
+        this._drawBottomBar();
 
-        if (this.flashA > 0) {
-            ctx.globalAlpha = this.flashA; ctx.fillStyle = this.flashC;
-            ctx.fillRect(0, 0, this.canvas.width, this.canvas.height); ctx.globalAlpha = 1;
-        }
-
-        // Vignette — skip on mobile for performance
-        if (!this.isMobile) {
-            const vg = ctx.createRadialGradient(this.X(this.W/2), this.X(this.H/2), this.S(this.H*0.25), this.X(this.W/2), this.X(this.H/2), this.S(this.H*0.82));
-            vg.addColorStop(0, 'transparent'); vg.addColorStop(1, 'rgba(0,0,5,0.5)');
-            ctx.fillStyle = vg; ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        if (this.flashA > 0.01) {
+            ctx.globalAlpha = this.flashA;
+            ctx.fillStyle   = this.flashCol;
+            ctx.fillRect(0, 0, this.W, this.H);
+            ctx.globalAlpha = 1;
         }
 
         ctx.restore();
 
-        this._drawHUD(ts);
-        this._drawFSBtn(ts);
-
-        if (this.state === this.STATE.WAIT && this.level === 1 && this.balls[0]?.attached) this._drawWait(ts);
-        if (this.state === this.STATE.DEAD) this._drawDeath(ts);
+        if (this.state === this.STATE.MENU) this._drawMenu();
+        if (this.state === this.STATE.DEAD) this._drawDead();
     }
 
+    // ── Background ──
     _drawBG() {
         const ctx = this.ctx;
-        // Simplified BG on mobile
-        if (this.isMobile) {
-            ctx.fillStyle = '#080820';
-            ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-        } else {
-            const g = ctx.createRadialGradient(this.X(this.W/2), this.X(this.H/2), 0, this.X(this.W/2), this.X(this.H/2), this.S(this.H));
-            g.addColorStop(0, '#0a0820'); g.addColorStop(0.6, '#060515'); g.addColorStop(1, '#030210');
-            ctx.fillStyle = g; ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-        }
+        const g = ctx.createLinearGradient(0, 0, 0, this.H);
+        g.addColorStop(0,   '#070720');
+        g.addColorStop(0.5, '#0b0b2e');
+        g.addColorStop(1,   '#040416');
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, this.W, this.H);
+
+        // Stars
         this.stars.forEach(s => {
-            ctx.globalAlpha = 0.1 + ((Math.sin(s.ph) + 1) / 2) * 0.45;
-            ctx.fillStyle = '#dde8ff';
-            this._circle(s.x, s.y, s.r); ctx.fill();
+            ctx.globalAlpha = 0.1 + ((Math.sin(s.ph) + 1) * 0.5) * 0.65;
+            ctx.fillStyle   = '#cce8ff';
+            ctx.beginPath();
+            ctx.arc(s.x * this.W, s.y * this.H, s.r, 0, Math.PI * 2);
+            ctx.fill();
         });
         ctx.globalAlpha = 1;
+
+        // Nebula glow
+        const cx = this.W / 2, cy = this.H * 0.42;
+        const nb = ctx.createRadialGradient(cx, cy, 0, cx, cy, this.W * 0.6);
+        nb.addColorStop(0,   'rgba(70,25,130,0.20)');
+        nb.addColorStop(0.5, 'rgba(40,15,90,0.08)');
+        nb.addColorStop(1,   'transparent');
+        ctx.fillStyle = nb;
+        ctx.fillRect(0, 0, this.W, this.H);
     }
 
-    _drawBlocks(ts) {
+    // ── Blocks ──
+    _drawBlocks() {
         const ctx = this.ctx;
         this.blocks.forEach(bl => {
-            if (bl.dead && bl.hitAnim <= 0) return;
-            const bc = this.BCOLORS[bl.ci];
-            const sc = bl.scale * (bl.dead ? bl.hitAnim : 1);
-            const cx = bl.x + bl.w / 2, cy = bl.y + bl.h / 2;
+            if (bl.dead) return;
+            const col = this.COLORS[bl.color];
+            const sc  = bl.entryScale * (1 + bl.hitAnim * 0.09);
+            const bx  = bl.x + bl.w / 2;
+            const by  = bl.y + bl.h / 2;
+            const hpR = bl.hp / bl.maxHp;
+            const w2  = bl.w / 2;
+            const h2  = bl.h / 2;
 
             ctx.save();
-            ctx.translate(this.X(cx), this.X(cy));
+            ctx.translate(bx, by);
+            ctx.scale(sc, sc);
 
-            const hitSc = bl.hitAnim > 0.5 ? 1 + (bl.hitAnim - 0.5) * 0.15 : 1;
-            ctx.scale(sc * hitSc, sc * hitSc);
+            ctx.shadowColor   = col.fill;
+            ctx.shadowBlur    = bl.hitAnim > 0.3 ? 24 : 8;
+            ctx.shadowOffsetY = 2;
 
-            if (bl.dead) { ctx.globalAlpha = bl.hitAnim; }
-
-            const bg = ctx.createLinearGradient(this.S(-bl.w/2), this.S(-bl.h/2), this.S(bl.w/2), this.S(bl.h/2));
-            bg.addColorStop(0, bl.hitAnim > 0.5 ? '#fff' : bc.lt);
-            bg.addColorStop(0.5, bc.fill);
-            bg.addColorStop(1, bc.dk);
-            ctx.fillStyle = bg;
-            ctx.beginPath();
-            const dw = this.S(bl.w), dh = this.S(bl.h), dr = this.S(4);
-            ctx.roundRect(this.S(-bl.w/2), this.S(-bl.h/2), dw, dh, dr);
+            ctx.globalAlpha = 0.62 + hpR * 0.38;
+            ctx.fillStyle   = bl.hitAnim > 0.55 ? '#ffffff' : col.fill;
+            this._rr(ctx, -w2, -h2, bl.w, bl.h, 10);
             ctx.fill();
 
-            ctx.strokeStyle = `rgba(255,255,255,${bl.hitAnim > 0 ? 0.5 : 0.12})`;
-            ctx.lineWidth = this.S(0.8);
+            ctx.shadowBlur    = 0;
+            ctx.shadowOffsetY = 0;
+
+            // Shine
+            ctx.globalAlpha = 0.88;
+            const sh = ctx.createLinearGradient(-w2, -h2, w2, h2 * 0.35);
+            sh.addColorStop(0, 'rgba(255,255,255,0.42)');
+            sh.addColorStop(1, 'rgba(255,255,255,0)');
+            ctx.fillStyle = sh;
+            this._rr(ctx, -w2, -h2, bl.w, bl.h, 10);
+            ctx.fill();
+
+            // Border
+            ctx.globalAlpha = 1;
+            ctx.strokeStyle = bl.hitAnim > 0.4 ? '#ffffff' : col.dark;
+            ctx.lineWidth   = bl.hitAnim > 0.4 ? 2.5 : 1.4;
+            this._rr(ctx, -w2, -h2, bl.w, bl.h, 10);
             ctx.stroke();
 
-            if (bl.hp > 1 && !bl.dead) {
-                ctx.shadowBlur = 0;
-                ctx.fillStyle = '#fff';
-                ctx.font = `bold ${this.X(Math.min(bl.h * 0.55, 11))}px ${this.FT}`;
-                ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-                ctx.fillText(String(bl.hp), 0, this.S(1));
-            }
-
-            ctx.fillStyle = 'rgba(255,255,255,0.18)';
-            ctx.fillRect(this.S(-bl.w/2 + 2), this.S(-bl.h/2 + 1.5), this.S(bl.w * 0.5), this.S(2.5));
+            // HP text
+            ctx.shadowBlur = 0;
+            const fs = Math.min(20, Math.max(10, bl.h * 0.40));
+            ctx.font         = `bold ${fs}px Arial`;
+            ctx.textAlign    = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillStyle    = 'rgba(0,0,0,0.38)';
+            ctx.fillText(bl.hp, 1, 2);
+            ctx.fillStyle = hpR < 0.3 ? '#FF6666' : col.text;
+            ctx.fillText(bl.hp, 0, 0);
 
             ctx.restore();
         });
     }
 
-    _drawPaddle(ts) {
-        const ctx = this.ctx;
-        const p = this.paddle;
-
-        p.trail.forEach((t, i) => {
-            const ratio = i / p.trail.length;
-            ctx.globalAlpha = ratio * 0.15;
-            ctx.fillStyle = '#00D4FF';
-            this._rrect(t.x - p.w * ratio * 0.4, p.y - p.h / 2, p.w * ratio * 0.8, p.h, 6);
-            ctx.fill();
-        });
-        ctx.globalAlpha = 1;
-
-        const pg = ctx.createLinearGradient(this.X(p.x - p.w/2), 0, this.X(p.x + p.w/2), 0);
-        pg.addColorStop(0, '#00D4FF'); pg.addColorStop(0.5, '#0088FF'); pg.addColorStop(1, '#00D4FF');
-        ctx.fillStyle = pg;
-        this._rrect(p.x - p.w/2, p.y - p.h/2, p.w, p.h, 7);
-        ctx.fill();
-
-        ctx.strokeStyle = 'rgba(255,255,255,0.25)'; ctx.lineWidth = this.S(1);
-        this._rrect(p.x - p.w/2, p.y - p.h/2, p.w, p.h, 7);
-        ctx.stroke();
-
-        ctx.fillStyle = 'rgba(255,255,255,0.3)';
-        ctx.fillRect(this.X(p.x - p.w/2 + 4), this.X(p.y - p.h/2 + 2), this.S(p.w * 0.4), this.S(3));
-
-        for (let i = 0; i < this.lives; i++) {
-            ctx.fillStyle = i === 0 ? '#FF006E' : '#FF006E88';
-            this._circle(p.x - 14 + i * 14, p.y + p.h / 2 + 10, 4);
-            ctx.fill();
-        }
+    _rr(ctx, x, y, w, h, r) {
+        ctx.beginPath();
+        ctx.moveTo(x + r, y);
+        ctx.lineTo(x + w - r, y);
+        ctx.quadraticCurveTo(x + w, y,     x + w, y + r);
+        ctx.lineTo(x + w, y + h - r);
+        ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+        ctx.lineTo(x + r, y + h);
+        ctx.quadraticCurveTo(x,     y + h, x,     y + h - r);
+        ctx.lineTo(x, y + r);
+        ctx.quadraticCurveTo(x,     y,     x + r, y);
+        ctx.closePath();
     }
 
-    _drawBalls(ts) {
+    // ── UFO ──
+    _drawUFO() {
+        const ctx = this.ctx;
+        const u   = this.ufo;
+        const ux  = u.x;
+        const uy  = u.y + u.hoverOffset;
+        const uw  = this.UFO_W;
+        const uh  = this.UFO_H;
+
+        ctx.save();
+        ctx.translate(ux, uy);
+
+        // Engine beam (shooting)
+        if (u.shootFlash > 0.05) {
+            ctx.globalAlpha = u.shootFlash * 0.5;
+            const beamG = ctx.createLinearGradient(0, -uh / 2, 0, -uh / 2 - 80);
+            beamG.addColorStop(0, '#00D4FF');
+            beamG.addColorStop(1, 'transparent');
+            ctx.fillStyle = beamG;
+            ctx.beginPath();
+            ctx.moveTo(-8, -uh / 2);
+            ctx.lineTo( 8, -uh / 2);
+            ctx.lineTo( 3, -uh / 2 - 80);
+            ctx.lineTo(-3, -uh / 2 - 80);
+            ctx.closePath();
+            ctx.fill();
+            ctx.globalAlpha = 1;
+        }
+
+        // Engine glow
+        const egA = 0.35 + u.engineGlow * 0.35 + Math.sin(this.bgT * 5) * 0.1;
+        const eg  = ctx.createRadialGradient(0, uh * 0.35, 0, 0, uh * 0.35, uw * 0.45);
+        eg.addColorStop(0,   `rgba(0,200,255,${egA})`);
+        eg.addColorStop(0.5, `rgba(80,0,200,${egA * 0.4})`);
+        eg.addColorStop(1,   'transparent');
+        ctx.fillStyle = eg;
+        ctx.beginPath();
+        ctx.ellipse(0, uh * 0.35, uw * 0.45, uh * 0.35, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Saucer dish
+        const dg = ctx.createLinearGradient(-uw / 2, uh * 0.1, uw / 2, uh / 2);
+        dg.addColorStop(0,   '#1A4FAA');
+        dg.addColorStop(0.5, '#2266CC');
+        dg.addColorStop(1,   '#0A2866');
+        ctx.fillStyle = dg;
+        ctx.beginPath();
+        ctx.ellipse(0, uh * 0.2, uw / 2, uh * 0.3, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(80,150,255,0.45)';
+        ctx.lineWidth   = 1.2;
+        ctx.stroke();
+
+        // Dome
+        const dmg = ctx.createRadialGradient(-uw * 0.12, -uh * 0.15, 0, 0, 0, uw * 0.42);
+        dmg.addColorStop(0,    '#BBDDFF');
+        dmg.addColorStop(0.35, '#55AADD');
+        dmg.addColorStop(0.7,  '#2266BB');
+        dmg.addColorStop(1,    '#081A44');
+        ctx.fillStyle = dmg;
+        ctx.beginPath();
+        ctx.ellipse(0, 0, uw * 0.42, uh * 0.58, 0, Math.PI, 0);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(100,200,255,0.75)';
+        ctx.lineWidth   = 1.4;
+        ctx.stroke();
+
+        // Rim lights
+        u.lights.forEach((l, i) => {
+            const ang = l.phase;
+            const lx  = Math.cos(ang) * uw * 0.38;
+            const ly  = uh * 0.24 + Math.sin(ang) * 2.5;
+            const on  = Math.sin(this.bgT * 5 + i * 1.6) > 0;
+            ctx.fillStyle = on ? l.col : '#111130';
+            ctx.beginPath();
+            ctx.arc(lx, ly, 4, 0, Math.PI * 2);
+            ctx.fill();
+            if (on) {
+                ctx.shadowBlur  = 10;
+                ctx.shadowColor = l.col;
+                ctx.beginPath();
+                ctx.arc(lx, ly, 4, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.shadowBlur = 0;
+            }
+        });
+
+        // Cockpit
+        const cg = ctx.createRadialGradient(-4, -10, 0, 0, -6, 14);
+        cg.addColorStop(0,   'rgba(200,245,255,0.92)');
+        cg.addColorStop(0.4, 'rgba(80,180,240,0.5)');
+        cg.addColorStop(1,   'rgba(20,80,160,0.22)');
+        ctx.fillStyle = cg;
+        ctx.beginPath();
+        ctx.ellipse(0, -6, 12, 9, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(180,240,255,0.5)';
+        ctx.lineWidth   = 0.8;
+        ctx.stroke();
+
+        // Alien eyes
+        [-1, 1].forEach(side => {
+            ctx.fillStyle = '#00FF88';
+            ctx.beginPath();
+            ctx.arc(side * 4.5, -6, 2, 0, Math.PI * 2);
+            ctx.fill();
+        });
+
+        // Catch glow
+        if (u.catchGlow > 0.05) {
+            ctx.globalAlpha = u.catchGlow * 0.55;
+            ctx.strokeStyle = '#00FF88';
+            ctx.lineWidth   = 3;
+            ctx.beginPath();
+            ctx.ellipse(0, uh * 0.25, uw * 0.42, uh * 0.28, 0, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.globalAlpha = 1;
+        }
+
+        ctx.restore();
+    }
+
+    // ── Aim line ──
+    _drawAimLine() {
+        if (!this.isDragging || !this.aimDots.length || this.state !== this.STATE.AIMING) return;
+        const ctx = this.ctx;
+
+        this.aimDots.forEach((d, i) => {
+            const last = i === this.aimDots.length - 1;
+            ctx.globalAlpha = d.a * (last ? 1 : 0.78);
+            if (last) {
+                ctx.fillStyle = '#ffffff';
+                ctx.save();
+                ctx.translate(d.x, d.y);
+                ctx.rotate(Math.PI / 4);
+                ctx.fillRect(-6, -6, 12, 12);
+                ctx.restore();
+            } else {
+                ctx.fillStyle = '#ffffff';
+                ctx.beginPath();
+                ctx.arc(d.x, d.y, 4, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        });
+        ctx.globalAlpha = 1;
+    }
+
+    // ── Balls ──
+    _drawBalls() {
         const ctx = this.ctx;
         this.balls.forEach(b => {
+            if (!b.active) return;
+
+            // Trail
             b.trail.forEach((t, i) => {
-                const ratio = i / b.trail.length;
-                ctx.globalAlpha = ratio * 0.3;
-                ctx.fillStyle = '#00D4FF';
-                this._circle(t.x, t.y, b.r * ratio * 0.7);
+                const a  = (1 - i / b.trail.length) * 0.3;
+                const tr = b.r * (1 - i / b.trail.length * 0.65);
+                ctx.globalAlpha = a;
+                ctx.fillStyle   = '#FF9900';
+                ctx.beginPath();
+                ctx.arc(t.x, t.y, tr, 0, Math.PI * 2);
                 ctx.fill();
             });
             ctx.globalAlpha = 1;
 
-            const bg = ctx.createRadialGradient(this.X(b.x - b.r * 0.3), this.X(b.y - b.r * 0.3), 0, this.X(b.x), this.X(b.y), this.S(b.r));
-            bg.addColorStop(0, '#fff'); bg.addColorStop(0.4, '#eef8ff'); bg.addColorStop(1, '#00D4FF');
+            ctx.shadowColor = '#FF9900';
+            ctx.shadowBlur  = 18;
+            const bg = ctx.createRadialGradient(b.x - 3, b.y - 3, 0, b.x, b.y, b.r);
+            bg.addColorStop(0,    '#FFF0A0');
+            bg.addColorStop(0.35, '#FF9000');
+            bg.addColorStop(0.75, '#CC5500');
+            bg.addColorStop(1,    '#882200');
             ctx.fillStyle = bg;
-            this._circle(b.x, b.y, b.r); ctx.fill();
+            ctx.beginPath();
+            ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.shadowBlur = 0;
 
-            ctx.strokeStyle = 'rgba(255,255,255,0.3)'; ctx.lineWidth = this.S(1);
-            this._circle(b.x, b.y, b.r); ctx.stroke();
+            ctx.fillStyle = 'rgba(255,255,255,0.65)';
+            ctx.beginPath();
+            ctx.arc(b.x - b.r * 0.3, b.y - b.r * 0.3, b.r * 0.28, 0, Math.PI * 2);
+            ctx.fill();
         });
     }
 
-    _drawRings() { this.rings.forEach(r => { this.ctx.save(); this.ctx.globalAlpha = r.a; this.ctx.strokeStyle = r.col; this.ctx.lineWidth = this.S(2 * r.a); this._circle(r.x, r.y, r.r); this.ctx.stroke(); this.ctx.restore(); }); }
-    _drawParts() { this.parts.forEach(p => { this.ctx.save(); this.ctx.globalAlpha = Math.max(0, p.life); this.ctx.fillStyle = p.col; this._circle(p.x, p.y, Math.max(0.3, p.r * p.life)); this.ctx.fill(); this.ctx.restore(); }); }
-    _drawPops() { this.pops.forEach(p => { this._txt(p.text, p.x, p.y, { sz: 12, wt: 'bold', col: p.col, al: 'center', op: p.op, stroke: true, sc: 'rgba(0,0,0,0.5)', sw: 2.5, ff: this.FT }); }); }
+    // ── Pickups ──
+    _drawPickups() {
+        const ctx = this.ctx;
+        this.pickups.forEach(pu => {
+            if (pu.collected) return;
+            const dy = pu.y + pu.pulse;
 
-    _drawHUD(ts) {
-        const ctx = this.ctx, W = this.W;
-        const hg = ctx.createLinearGradient(0, 0, 0, this.X(48));
-        hg.addColorStop(0, 'rgba(0,0,0,0.78)'); hg.addColorStop(1, 'rgba(0,0,0,0.05)');
-        ctx.fillStyle = hg; ctx.fillRect(0, 0, this.canvas.width, this.X(48));
-
-        this._txt(this.score.toLocaleString(), W / 2, 22, { sz: 18, wt: 'bold', col: '#fff', al: 'center', ff: this.FT });
-        if (this.bestScore > 0) this._txt(`BEST  ${this.bestScore.toLocaleString()}`, W / 2, 38, { sz: 8, col: 'rgba(255,215,0,0.45)', al: 'center', ff: this.FU });
-
-        ctx.fillStyle = 'rgba(0,212,255,0.2)'; ctx.strokeStyle = 'rgba(0,212,255,0.45)'; ctx.lineWidth = this.S(1);
-        this._rrect(8, 8, 52, 22, 6); ctx.fill(); ctx.stroke();
-        this._txt(`LVL ${this.level}`, 34, 20, { sz: 11, wt: 'bold', col: '#00D4FF', al: 'center', ff: this.FT });
-
-        this._txt(`❤️ ${this.lives}`, W - 12, 20, { sz: 11, wt: 'bold', col: '#FF006E', al: 'right', ff: this.FT });
-
-        if (this.combo > 1) {
-            this._txt(`×${this.combo} COMBO`, W / 2, this.H - 65, {
-                sz: 13, wt: 'bold', col: '#FFD700', al: 'center',
-                op: Math.min(1, 0.5 + Math.sin(ts / 200) * 0.5),
-                stroke: true, sc: 'rgba(0,0,0,0.5)', sw: 2, ff: this.FT
-            });
-        }
-    }
-
-    _drawFSBtn(ts) {
-        const ctx = this.ctx, bw = 44, bh = 44, mg = 10;
-        const bx = this.W - bw - mg, by = this.H - bh - mg;
-        this.fsRect = { x: bx, y: by, w: bw, h: bh };
-        const pulse = 0.45 + Math.sin(ts / 1400) * 0.18;
-        ctx.save(); ctx.globalAlpha = pulse;
-        ctx.fillStyle = 'rgba(0,0,10,0.55)'; ctx.strokeStyle = 'rgba(255,255,255,0.2)'; ctx.lineWidth = this.S(1.2);
-        this._rrect(bx, by, bw, bh, 10); ctx.fill(); ctx.stroke();
-        const cx = bx + bw / 2, cy = by + bh / 2, ic = 7;
-        ctx.strokeStyle = '#fff'; ctx.lineWidth = this.S(1.8); ctx.lineCap = 'round';
-        [[-ic, -(ic-3), -ic, -ic, -(ic-3), -ic], [ic-3, -ic, ic, -ic, ic, -(ic-3)],
-         [-ic, ic-3, -ic, ic, -(ic-3), ic], [ic-3, ic, ic, ic, ic, ic-3]
-        ].forEach(([x1,y1,x2,y2,x3,y3]) => {
+            ctx.shadowColor = '#FF9900';
+            ctx.shadowBlur  = 16;
+            const g = ctx.createRadialGradient(pu.x - 3, dy - 3, 0, pu.x, dy, pu.r);
+            g.addColorStop(0,   '#FFE090');
+            g.addColorStop(0.4, '#FF8C00');
+            g.addColorStop(1,   '#BB4400');
+            ctx.fillStyle = g;
             ctx.beginPath();
-            ctx.moveTo(this.X(cx+x1), this.X(cy+y1));
-            ctx.lineTo(this.X(cx+x2), this.X(cy+y2));
-            ctx.lineTo(this.X(cx+x3), this.X(cy+y3));
+            ctx.arc(pu.x, dy, pu.r, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.shadowBlur = 0;
+
+            ctx.fillStyle = 'rgba(255,255,255,0.55)';
+            ctx.beginPath();
+            ctx.arc(pu.x - 3, dy - 3, pu.r * 0.3, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.strokeStyle = `rgba(255,180,0,${0.3 + Math.sin(pu.bob) * 0.2})`;
+            ctx.lineWidth   = 1.5;
+            ctx.beginPath();
+            ctx.arc(pu.x, dy, pu.r + 5 + Math.sin(pu.bob) * 2, 0, Math.PI * 2);
             ctx.stroke();
         });
-        ctx.restore();
     }
 
-    _drawWait(ts) {
-        const cx = this.W / 2, cy = this.H / 2, cw = Math.min(this.W - 40, 280), ch = 105;
-        this.ctx.fillStyle = 'rgba(4,2,16,0.86)';
-        this._rrect(cx - cw/2, cy - ch/2, cw, ch, 16); this.ctx.fill();
-        this.ctx.strokeStyle = 'rgba(0,212,255,0.35)'; this.ctx.lineWidth = this.S(1.5);
-        this._rrect(cx - cw/2, cy - ch/2, cw, ch, 16); this.ctx.stroke();
-        this.ctx.fillStyle = 'rgba(0,212,255,0.1)';
-        this.ctx.fillRect(this.X(cx - cw/2), this.X(cy - ch/2), this.X(cw), this.S(3));
-
-        this._txt('BLOCK VS BALL', cx, cy - 20, { sz: 20, wt: 'bold', col: '#00D4FF', al: 'center', ff: this.FT });
-        this.ctx.fillStyle = 'rgba(255,255,255,0.06)';
-        this.ctx.fillRect(this.X(cx - cw * .36), this.X(cy - 3), this.X(cw * .72), this.S(1));
-        this._txt('Move paddle to control', cx, cy + 14, { sz: 11, col: 'rgba(180,200,220,0.6)', al: 'center', ff: this.FU });
-        const bob = Math.sin(this.time / 440) * 4;
-        this._txt('Tap to launch ball', cx, cy + ch / 2 - 10 + bob, {
-            sz: 10, col: `rgba(0,212,255,${0.4 + Math.sin(this.time / 440) * 0.4})`, al: 'center', ff: this.FU
+    // ── Particles ──
+    _drawParticles() {
+        const ctx = this.ctx;
+        this.parts.forEach(p => {
+            ctx.globalAlpha = Math.max(0, p.life);
+            ctx.fillStyle   = p.col;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, Math.max(0.1, p.r * p.life), 0, Math.PI * 2);
+            ctx.fill();
         });
-    }
-
-    _drawDeath(ts) {
-        const ctx = this.ctx, cx = this.W / 2, cy = this.H / 2, a = this.deathA;
-        ctx.fillStyle = `rgba(0,0,0,${a * 0.76})`; ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-        if (a < 0.5) return;
-        const pa = Math.min(1, (a - 0.5) / 0.5);
-        const pw = Math.min(this.W - 32, 290), ph = 260, px = cx - pw / 2, py = cy - ph / 2;
-
-        ctx.save(); ctx.globalAlpha = pa;
-        ctx.fillStyle = 'rgba(6,2,18,0.97)';
-        this._rrect(px, py, pw, ph, 20); ctx.fill();
-        ctx.strokeStyle = 'rgba(0,180,255,0.45)'; ctx.lineWidth = this.S(1.5);
-        this._rrect(px, py, pw, ph, 20); ctx.stroke();
-        ctx.fillStyle = 'rgba(0,180,255,0.1)'; ctx.fillRect(this.X(px), this.X(py), this.X(pw), this.S(3));
         ctx.globalAlpha = 1;
+    }
 
-        this._txt('GAME OVER', cx, py + 44, { sz: 22, wt: 'bold', col: '#FF006E', al: 'center', op: pa, ff: this.FT });
-
-        ctx.fillStyle = `rgba(255,255,255,${0.07 * pa})`;
-        ctx.fillRect(this.X(px + 22), this.X(py + 62), this.X(pw - 44), this.S(1));
-
-        const rows = [
-            { l: 'SCORE', v: this.score.toLocaleString(), c: this.score >= this.bestScore ? '#00fff5' : '#fff' },
-            { l: 'BEST', v: this.bestScore.toLocaleString(), c: this.score >= this.bestScore ? '#FFD700' : '#aaa' },
-            { l: 'LEVEL', v: String(this.level), c: '#00D4FF' },
-            { l: 'MAX COMBO', v: `×${this.maxCombo}`, c: '#FFD700' },
-            { l: 'LIVES', v: '0', c: '#FF006E' }
-        ];
-        rows.forEach((r, i) => {
-            const ry = py + 82 + i * 28;
-            this._txt(r.l, px + 22, ry, { sz: 10, wt: '600', col: `rgba(140,160,180,${pa})`, ff: this.FU });
-            this._txt(r.v, px + pw - 22, ry, { sz: i === 0 ? 16 : 13, wt: 'bold', col: r.c, al: 'right', op: pa, ff: this.FT });
+    // ── Float texts ──
+    _drawFloatTexts() {
+        const ctx = this.ctx;
+        this.floatTexts.forEach(t => {
+            ctx.globalAlpha  = t.op;
+            ctx.font         = 'bold 14px Arial';
+            ctx.textAlign    = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.strokeStyle  = 'rgba(0,0,0,0.55)';
+            ctx.lineWidth    = 3;
+            ctx.lineJoin     = 'round';
+            ctx.strokeText(t.text, t.x, t.y);
+            ctx.fillStyle    = t.col;
+            ctx.fillText(t.text, t.x, t.y);
         });
+        ctx.globalAlpha = 1;
+    }
 
-        if (this.score > 0 && this.score >= this.bestScore) {
-            ctx.fillStyle = 'rgba(255,215,0,0.1)'; ctx.strokeStyle = 'rgba(255,215,0,0.4)'; ctx.lineWidth = this.S(1);
-            this._rrect(cx - 52, py + 70, 104, 18, 6); ctx.fill(); ctx.stroke();
-            this._txt('✦ NEW BEST ✦', cx, py + 81, { sz: 9, wt: 'bold', col: '#FFD700', al: 'center', bl: 'middle', op: pa, ff: this.FT });
+    // ── Rings ──
+    _drawRings() {
+        const ctx = this.ctx;
+        this.rings.forEach(r => {
+            ctx.globalAlpha = Math.max(0, r.alpha);
+            ctx.strokeStyle = r.col;
+            ctx.lineWidth   = 2 * r.alpha;
+            ctx.beginPath();
+            ctx.arc(r.x, r.y, r.radius, 0, Math.PI * 2);
+            ctx.stroke();
+        });
+        ctx.globalAlpha = 1;
+    }
+
+    // ── Floor ──
+    _drawFloor() {
+        const ctx = this.ctx;
+        ctx.shadowColor = '#5533FF';
+        ctx.shadowBlur  = 10;
+        ctx.fillStyle   = '#5533CC';
+        ctx.fillRect(0, this.FLOOR_Y - 1, this.W, 2);
+        ctx.shadowBlur  = 0;
+
+        const fg = ctx.createLinearGradient(0, this.FLOOR_Y, 0, this.FLOOR_Y + 18);
+        fg.addColorStop(0, 'rgba(85,51,200,0.15)');
+        fg.addColorStop(1, 'transparent');
+        ctx.fillStyle = fg;
+        ctx.fillRect(0, this.FLOOR_Y, this.W, 18);
+    }
+
+    // ── HUD ──
+    _drawHUD() {
+        const ctx = this.ctx;
+
+        ctx.fillStyle = 'rgba(5,8,38,0.97)';
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(this.W, 0);
+        ctx.lineTo(this.W, 56);
+        ctx.quadraticCurveTo(this.W * 0.72, 78, this.W / 2, 80);
+        ctx.quadraticCurveTo(this.W * 0.28, 78, 0, 56);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.strokeStyle = '#2244BB';
+        ctx.lineWidth   = 2;
+        ctx.beginPath();
+        ctx.moveTo(0, 56);
+        ctx.quadraticCurveTo(this.W * 0.28, 78, this.W / 2, 80);
+        ctx.quadraticCurveTo(this.W * 0.72, 78, this.W, 56);
+        ctx.stroke();
+
+        ctx.font         = '13px Arial';
+        ctx.fillStyle    = '#FFD700';
+        ctx.textAlign    = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('👑 ' + this.best.toLocaleString(), this.W / 2, 20);
+
+        ctx.font      = 'bold 28px Arial';
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText(this.score.toLocaleString(), this.W / 2, 53);
+
+        this._btn(this.W - 52, 24, 18, 'ⓘ', '#1A5FFF');
+        this._btn(this.W - 20, 24, 18, '⏸', '#1A5FFF');
+
+        ctx.font         = '11px Arial';
+        ctx.fillStyle    = 'rgba(180,200,255,0.3)';
+        ctx.textAlign    = 'left';
+        ctx.textBaseline = 'alphabetic';
+        ctx.fillText('ROUND ' + this.round, 10, 88);
+
+        if (this.combo >= 3) {
+            const ca = 0.55 + Math.sin(this.time / 110) * 0.35;
+            ctx.globalAlpha = ca;
+            ctx.font        = 'bold 13px Arial';
+            ctx.fillStyle   = this.combo >= 8 ? '#FF3300' : this.combo >= 5 ? '#FFD700' : '#FF8800';
+            ctx.textAlign   = 'right';
+            ctx.fillText(`🔥 COMBO ×${this.combo}`, this.W - 8, 88);
+            ctx.globalAlpha = 1;
+        }
+    }
+
+    _btn(x, y, r, icon, col) {
+        const ctx = this.ctx;
+        ctx.fillStyle    = col;
+        ctx.strokeStyle  = 'rgba(100,170,255,0.55)';
+        ctx.lineWidth    = 1.5;
+        ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        ctx.font         = '12px Arial';
+        ctx.fillStyle    = '#fff';
+        ctx.textAlign    = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(icon, x, y + 1);
+        ctx.textBaseline = 'alphabetic';
+    }
+
+    // ── Bottom Bar ──
+    _drawBottomBar() {
+        const ctx  = this.ctx;
+        const barY = this.H - this.BAR_H;
+
+        ctx.fillStyle = 'rgba(3,3,20,0.98)';
+        ctx.fillRect(0, barY, this.W, this.BAR_H);
+
+        ctx.shadowColor = '#5533CC';
+        ctx.shadowBlur  = 7;
+        ctx.strokeStyle = '#5533CC';
+        ctx.lineWidth   = 2;
+        ctx.beginPath(); ctx.moveTo(0, barY); ctx.lineTo(this.W, barY); ctx.stroke();
+        ctx.shadowBlur  = 0;
+
+        const maxIcons = Math.min(this.ballCount, 9);
+        for (let i = 0; i < maxIcons; i++) {
+            const bx = 14 + i * 14;
+            const bg = ctx.createRadialGradient(bx - 2, barY + 20, 0, bx, barY + 22, 6);
+            bg.addColorStop(0,   '#FFE090');
+            bg.addColorStop(0.5, '#FF8C00');
+            bg.addColorStop(1,   '#AA4400');
+            ctx.fillStyle = bg;
+            ctx.beginPath(); ctx.arc(bx, barY + 22, 6, 0, Math.PI * 2); ctx.fill();
+        }
+        if (this.ballCount > 9) {
+            ctx.font         = 'bold 11px Arial';
+            ctx.fillStyle    = '#FF8800';
+            ctx.textAlign    = 'left';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(`+${this.ballCount - 9}`, 14 + 9 * 14 + 2, barY + 22);
         }
 
-        ctx.fillStyle = `rgba(255,255,255,${0.07 * pa})`;
-        ctx.fillRect(this.X(px + 22), this.X(py + ph - 48), this.X(pw - 44), this.S(1));
+        ctx.textBaseline = 'alphabetic';
+        ctx.font         = 'bold 12px Arial';
+        ctx.fillStyle    = '#aaaadd';
+        ctx.textAlign    = 'left';
+        ctx.fillText('BALLS', 10, barY + 44);
+        ctx.font         = 'bold 20px Arial';
+        ctx.fillStyle    = '#ffffff';
+        ctx.fillText('×' + this.ballCount, 10, barY + 62);
 
-        const blink = 0.38 + Math.sin(this.time / 380) * 0.45;
-        this._txt('● TAP TO PLAY AGAIN ●', cx, py + ph - 18, { sz: 11, col: 'rgba(150,220,255,0.85)', al: 'center', op: blink * pa, ff: this.FU });
+        ctx.textAlign = 'center';
+        ctx.font      = 'bold 14px Arial';
+        ctx.fillStyle = '#4DA6FF';
+        ctx.fillText('BLOCK', this.W / 2, barY + 28);
+        ctx.font      = 'bold 14px Arial';
+        ctx.fillStyle = '#FFD700';
+        ctx.fillText('VS BALL', this.W / 2, barY + 46);
+
+        if (this.state === this.STATE.AIMING && !this.isDragging) {
+            const blink = 0.3 + Math.sin(this.time / 380) * 0.42;
+            ctx.globalAlpha = blink;
+            ctx.font        = '10px Arial';
+            ctx.fillStyle   = '#7799FF';
+            ctx.fillText('↑ DRAG UP TO AIM & RELEASE', this.W / 2, barY + 62);
+            ctx.globalAlpha = 1;
+        }
+    }
+
+    // ── Menu ──
+    _drawMenu() {
+        const ctx = this.ctx;
+        ctx.fillStyle = 'rgba(0,0,12,0.86)';
+        ctx.fillRect(0, 0, this.W, this.H);
+
+        const cx = this.W / 2, cy = this.H / 2;
+
+        ctx.fillStyle   = 'rgba(10,12,55,0.97)';
+        ctx.strokeStyle = '#2244AA';
+        ctx.lineWidth   = 1.5;
+        this._rr(ctx, cx - 145, cy - 155, 290, 115, 20);
+        ctx.fill(); ctx.stroke();
+
+        ctx.fillStyle = '#2255CC';
+        this._rr(ctx, cx - 145, cy - 155, 290, 4, 4);
+        ctx.fill();
+
+        ctx.textAlign    = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.font         = 'bold 38px Arial';
+        ctx.fillStyle    = '#4DA6FF';
+        ctx.fillText('BLOCK', cx, cy - 117);
+        ctx.font         = 'bold 24px Arial';
+        ctx.fillStyle    = '#FFD700';
+        ctx.fillText('VS BALL', cx, cy - 84);
+        ctx.font         = '12px Arial';
+        ctx.fillStyle    = 'rgba(180,180,255,0.45)';
+        ctx.fillText('Best: ' + this.best.toLocaleString(), cx, cy - 58);
+
+        // UFO preview
+        ctx.save();
+        ctx.translate(cx, cy + 20 + Math.sin(this.bgT * 2.8) * 6);
+        this._drawUFOSmall(ctx, 64, 26);
+        ctx.restore();
+
+        // Ball
+        const ballY = cy + 72;
+        ctx.shadowColor = '#FF9900'; ctx.shadowBlur = 22;
+        const pg = ctx.createRadialGradient(cx - 4, ballY - 4, 0, cx, ballY, 15);
+        pg.addColorStop(0,   '#FFF090');
+        pg.addColorStop(0.4, '#FF9000');
+        pg.addColorStop(1,   '#AA4400');
+        ctx.fillStyle = pg;
+        ctx.beginPath(); ctx.arc(cx, ballY, 15, 0, Math.PI * 2); ctx.fill();
+        ctx.shadowBlur  = 0;
+        ctx.fillStyle   = 'rgba(255,255,255,0.6)';
+        ctx.beginPath(); ctx.arc(cx - 4, ballY - 4, 4, 0, Math.PI * 2); ctx.fill();
+
+        const blink = 0.4 + Math.sin(this.bgT * 2.8) * 0.45;
+        ctx.globalAlpha = blink;
+        ctx.font        = 'bold 22px Arial';
+        ctx.fillStyle   = '#00FF88';
+        ctx.fillText('▶  TAP TO START', cx, cy + 110);
+        ctx.globalAlpha = 1;
+
+        const tips = [
+            'Drag from UFO to aim • Release to fire',
+            'Collect 🟠 pickups = +1 ball next round',
+            'Every 5 rounds you get a bonus ball!',
+            'Blocks drop slowly — take your time 🎯',
+        ];
+        tips.forEach((t, i) => {
+            ctx.font      = '11px Arial';
+            ctx.fillStyle = `rgba(160,160,220,${0.28 + i * 0.02})`;
+            ctx.fillText(t, cx, cy + 138 + i * 18);
+        });
+    }
+
+    _drawUFOSmall(ctx, uw, uh) {
+        const dg = ctx.createLinearGradient(-uw/2, uh*0.1, uw/2, uh/2);
+        dg.addColorStop(0, '#1A4FAA'); dg.addColorStop(1, '#0A2866');
+        ctx.fillStyle = dg;
+        ctx.beginPath();
+        ctx.ellipse(0, uh*0.2, uw/2, uh*0.3, 0, 0, Math.PI*2);
+        ctx.fill();
+
+        const dmg = ctx.createRadialGradient(-uw*0.12, -uh*0.15, 0, 0, 0, uw*0.42);
+        dmg.addColorStop(0, '#BBDDFF'); dmg.addColorStop(1, '#081A44');
+        ctx.fillStyle = dmg;
+        ctx.beginPath();
+        ctx.ellipse(0, 0, uw*0.42, uh*0.58, 0, Math.PI, 0);
+        ctx.closePath(); ctx.fill();
+        ctx.strokeStyle = 'rgba(100,200,255,0.7)';
+        ctx.lineWidth   = 1.2; ctx.stroke();
+
+        const cols = ['#FF006E','#FFD700','#00FF88','#00D4FF'];
+        cols.forEach((c, i) => {
+            const ang = this.bgT*3 + i*Math.PI/2;
+            const lx  = Math.cos(ang)*uw*0.36;
+            const ly  = uh*0.24;
+            ctx.fillStyle = Math.sin(this.bgT*5+i)>0 ? c : '#111130';
+            ctx.beginPath(); ctx.arc(lx, ly, 3.5, 0, Math.PI*2); ctx.fill();
+        });
+
+        const eg = ctx.createRadialGradient(0, uh*0.35, 0, 0, uh*0.35, uw*0.38);
+        eg.addColorStop(0, 'rgba(0,200,255,0.4)');
+        eg.addColorStop(1, 'transparent');
+        ctx.fillStyle = eg;
+        ctx.beginPath(); ctx.arc(0, uh*0.35, uw*0.38, 0, Math.PI*2); ctx.fill();
+    }
+
+    // ── Game Over ──
+    _drawDead() {
+        const ctx  = this.ctx;
+        const fade = Math.min(1, this.bgT / 0.9);
+
+        ctx.fillStyle = `rgba(0,0,12,${fade * 0.86})`;
+        ctx.fillRect(0, 0, this.W, this.H);
+        if (fade < 0.35) return;
+
+        const pa = Math.min(1, (fade - 0.35) / 0.65);
+        const cx = this.W / 2;
+        const cy = this.H / 2;
+        const pw = Math.min(this.W - 30, 295);
+        const ph = 285;
+
+        ctx.save();
+        ctx.globalAlpha = pa;
+
+        ctx.fillStyle   = 'rgba(5,5,28,0.98)';
+        ctx.strokeStyle = 'rgba(180,70,220,0.55)';
+        ctx.lineWidth   = 1.5;
+        this._rr(ctx, cx-pw/2, cy-ph/2, pw, ph, 20);
+        ctx.fill(); ctx.stroke();
+
+        ctx.fillStyle = 'rgba(180,70,220,0.4)';
+        this._rr(ctx, cx-pw/2, cy-ph/2, pw, 4, 4);
+        ctx.fill();
+
+        ctx.textAlign    = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.shadowColor  = '#FF3366';
+        ctx.shadowBlur   = 18;
+        ctx.font         = 'bold 32px Arial';
+        ctx.fillStyle    = '#FF3366';
+        ctx.fillText('GAME OVER', cx, cy - ph/2 + 42);
+        ctx.shadowBlur   = 0;
+
+        ctx.fillStyle = 'rgba(255,255,255,0.07)';
+        ctx.fillRect(cx - pw/2 + 20, cy - ph/2 + 66, pw - 40, 1);
+
+        const isNewBest = this.score >= this.best && this.score > 0;
+        const stats = [
+            { label:'SCORE',     val: this.score.toLocaleString(), col: isNewBest ? '#00FFDD' : '#ffffff', big: true  },
+            { label:'BEST',      val: this.best.toLocaleString(),  col: isNewBest ? '#FFD700' : '#777777', big: false },
+            { label:'ROUND',     val: String(this.round),          col: '#AA66FF',                         big: false },
+            { label:'BALLS',     val: '×' + this.ballCount,       col: '#FF8800',                         big: false },
+            { label:'MAX COMBO', val: '×' + this.maxCombo,        col: '#FF4400',                         big: false },
+        ];
+
+        stats.forEach((s, i) => {
+            const ry = cy - ph/2 + 86 + i * 36;
+            ctx.font         = '11px Arial';
+            ctx.fillStyle    = 'rgba(160,140,210,1)';
+            ctx.textAlign    = 'left';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(s.label, cx - pw/2 + 24, ry);
+            ctx.font      = `bold ${s.big ? 24 : 17}px Arial`;
+            ctx.fillStyle = s.col;
+            ctx.textAlign = 'right';
+            ctx.fillText(s.val, cx + pw/2 - 24, ry);
+            if (i < stats.length - 1) {
+                ctx.fillStyle = 'rgba(255,255,255,0.04)';
+                ctx.fillRect(cx - pw/2 + 20, ry + 16, pw - 40, 1);
+            }
+        });
+
+        if (isNewBest) {
+            const badgeY = cy - ph/2 + 82;
+            ctx.fillStyle   = 'rgba(255,215,0,0.13)';
+            ctx.strokeStyle = 'rgba(255,215,0,0.55)';
+            ctx.lineWidth   = 1;
+            this._rr(ctx, cx - 68, badgeY, 136, 24, 7);
+            ctx.fill(); ctx.stroke();
+            ctx.font         = 'bold 11px Arial';
+            ctx.fillStyle    = '#FFD700';
+            ctx.textAlign    = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('✦ NEW BEST SCORE! ✦', cx, badgeY + 12);
+        }
+
+        ctx.fillStyle = 'rgba(255,255,255,0.07)';
+        ctx.fillRect(cx - pw/2 + 20, cy + ph/2 - 58, pw - 40, 1);
+
+        if (this.bgT > 1.8) {
+            const bp = 0.4 + Math.sin(this.bgT * 3) * 0.45;
+            ctx.globalAlpha  = pa * bp;
+            ctx.font         = 'bold 16px Arial';
+            ctx.fillStyle    = '#CC55FF';
+            ctx.textAlign    = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('● TAP TO PLAY AGAIN ●', cx, cy + ph/2 - 30);
+        }
+
         ctx.restore();
     }
 
-    // ─── Loop ───
+    // ═══════════════════════════════════
+    //  MAIN LOOP
+    // ═══════════════════════════════════
 
     _loop(ts) {
         if (this.destroyed) return;
-        const dt = Math.min(ts - (this.lastTime || ts), 50);
-        this.lastTime = ts;
-        this.update(ts, dt);
-        this.draw(ts);
-        this.animId = requestAnimationFrame(t => this._loop(t));
+        const dt = Math.min(ts - (this.lastTS || ts), 48);
+        this.lastTS = ts;
+        if (!this.paused) this.update(dt);
+        this.draw();
+        this.raf = requestAnimationFrame(t => this._loop(t));
+    }
+
+    // ═══════════════════════════════════
+    //  PUBLIC API
+    // ═══════════════════════════════════
+
+    resize() {
+        this._resize();
+        this._initLayout();
     }
 
     togglePause() {
-        this.paused = this.isPaused = !this.paused;
-        if (!this.paused) this.lastTime = performance.now();
+        this.paused = !this.paused;
+        if (!this.paused) this.lastTS = performance.now();
         return this.paused;
-    }
-
-    resize() {
-        // FIX: resize bhi parent-based use karo
-        const parent = this.canvas.parentElement;
-        if (parent && parent.clientWidth > 10 && parent.clientHeight > 10) {
-            const w = parent.clientWidth;
-            const h = parent.clientHeight;
-            this.canvas.width  = Math.round(w * this.dpr);
-            this.canvas.height = Math.round(h * this.dpr);
-            this.canvas.style.width  = w + 'px';
-            this.canvas.style.height = h + 'px';
-        } else {
-            this._setupHD();
-        }
-        this.W = this.canvas.width / this.dpr;
-        this.H = this.canvas.height / this.dpr;
-        this.paddle.y = this.H - 42;
-        this.paddle.w = Math.min(this.W * 0.28, 120);
-        this.COLS = Math.min(8, Math.floor((this.W - 20) / 48));
-        this.stars = this._mkStars(this.isMobile ? 20 : 45);
     }
 
     destroy() {
         this.destroyed = true;
-        cancelAnimationFrame(this.animId);
-        this.canvas.removeEventListener('mousemove', this._onMM);
-        this.canvas.removeEventListener('touchstart', this._onTS);
-        this.canvas.removeEventListener('touchmove', this._onTM);
-        this.canvas.removeEventListener('click', this._onClick);
+        cancelAnimationFrame(this.raf);
+        this.canvas.removeEventListener('mousedown',  this._evD);
+        this.canvas.removeEventListener('mousemove',  this._evM);
+        this.canvas.removeEventListener('mouseup',    this._evU);
+        this.canvas.removeEventListener('touchstart', this._evD);
+        this.canvas.removeEventListener('touchmove',  this._evM);
+        this.canvas.removeEventListener('touchend',   this._evU);
     }
 }

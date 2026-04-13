@@ -1,953 +1,781 @@
 'use strict';
 
-class ColorUp {
-    constructor(canvas, onScore) {
-        this.canvas  = canvas;
-        this.onScore = onScore;
+window.initColorUp = function(canvas, onScore) {
 
-        // ── FIX 1: DPR max 2 instead of 3 — mobile lag fix ──
-        this.dpr = Math.min(window.devicePixelRatio || 1, 2);
-        this.setupHDCanvas();
+    onScore = onScore || function(){};
 
-        this.ctx = canvas.getContext('2d', { alpha: false, desynchronized: true });
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
 
-        this.W = canvas.width  / this.dpr;
-        this.H = canvas.height / this.dpr;
+    // Canvas setup
+    (function setupCanvas() {
+        const p = canvas.parentElement;
+        const w = (p && p.clientWidth  > 10) ? p.clientWidth  : window.innerWidth;
+        const h = (p && p.clientHeight > 10) ? p.clientHeight : window.innerHeight;
+        canvas.width  = Math.round(w * dpr);
+        canvas.height = Math.round(h * dpr);
+        canvas.style.width  = w + 'px';
+        canvas.style.height = h + 'px';
+    })();
 
-        this.isMobile = ('ontouchstart' in window) || window.innerWidth < 768;
+    const ctx = canvas.getContext('2d', { alpha: false });
 
-        this.FONT_TITLE = '"Orbitron", "Segoe UI", monospace';
-        this.FONT_UI    = '"Rajdhani", "Segoe UI", sans-serif';
-        this.loadFonts();
+    let W = canvas.width  / dpr;
+    let H = canvas.height / dpr;
 
-        this.score      = 0;
-        this.bestScore  = parseInt(localStorage.getItem('colorup_best') || '0');
-        this.paused     = false;
-        this.destroyed  = false;
-        this.gameState  = 'playing';
-        this.combo      = 0;
-        this.maxCombo   = 0;
+    let destroyed = false;
+    let paused    = false;
+    let raf       = null;
+    let lastTS    = 0;
 
-        this.PALETTE = [
-            { fill: '#FF006E', light: '#FF77BB', dark: '#CC0055', name: 'PINK'   },
-            { fill: '#00D4FF', light: '#77EEFF', dark: '#0099CC', name: 'CYAN'   },
-            { fill: '#00FF88', light: '#77FFB8', dark: '#00CC66', name: 'GREEN'  },
-            { fill: '#FFD700', light: '#FFE966', dark: '#CCA800', name: 'GOLD'   },
-            { fill: '#B947D9', light: '#D888F0', dark: '#8833AA', name: 'PURPLE' },
-        ];
+    const COLORS = [
+        { id: 0, fill: '#22CC44', stroke: '#119922', name: 'GREEN'  },
+        { id: 1, fill: '#FFD700', stroke: '#CC9900', name: 'YELLOW' },
+        { id: 2, fill: '#EE2233', stroke: '#AA1122', name: 'RED'    },
+        { id: 3, fill: '#00BBEE', stroke: '#0088AA', name: 'BLUE'   },
+    ];
 
-        this.playerColorIdx = 0;
-        this.player = {
-            x: this.W / 2,
-            y: this.H - 80,
-            r: this.isMobile ? 20 : 22,
-            pulseT: 0,
-            trail: []
-        };
+    const STATE = { READY: 0, PLAYING: 1, DEAD: 2 };
+    let gameState = STATE.READY;
 
-        this.gates      = [];
-        this.speed      = 2.2;
-        this.gateTimer  = 0;
-        this.gateSpacing = 130;
+    let score    = 0;
+    let best     = parseInt(localStorage.getItem('colorup_v5_best') || '0');
+    let combo    = 0;
+    let maxCombo = 0;
 
-        this.particles    = [];
-        this.floatTexts   = [];
-        this.screenShake  = { x: 0, y: 0, timer: 0, force: 0 };
-        this.flashAlpha   = 0;
-        this.flashColor   = '#fff';
-        this.bgTime       = 0;
-        this.stars        = this.makeStars(this.isMobile ? 35 : 60);
-        this.rings        = [];
+    const BALL_R = 16;
+    const ball = {
+        visX: 0, visY: 0, logY: 0, targetX: 0,
+        colorIdx: -1,
+        bouncing: false, bounceFromY: 0, bounceToY: 0, bounceT: 0, bounceDur: 0,
+        trail: [], pulseT: 0,
+    };
 
-        this.colorSwitchAnim = { progress: 0, active: false, fromIdx: 0 };
-        this.deathTimer = 0;
-        this.playerTargetX = this.W / 2;
-        this.lastMoveDir   = 0;
+    const QUADS_PER_FULL = 3;
+    let plates         = [];
+    let targetPlateIdx = -1;
+    let seqCount       = 0;
+    let nextBallColor  = -1;
 
-        this.spawnInitialGates();
+    let PLATE_H       = 44;
+    let PLATE_GAP     = 6;
+    let PLATE_W       = 0;
+    let PLATE_SPACING = 0;
 
-        this.boundClick     = this.handleClick.bind(this);
-        this.boundTouch     = this.handleTouch.bind(this);
-        this.boundMouseMove = this.handleMouseMove.bind(this);
-        this.boundTouchMove = this.handleTouchMove.bind(this);
+    let scrollSpeed     = 0.85;
+    const BOUNCE_DUR_BASE = 700;
 
-        canvas.addEventListener('click',     this.boundClick);
-        canvas.addEventListener('touchstart', this.boundTouch,    { passive: false });
-        canvas.addEventListener('mousemove',  this.boundMouseMove);
-        canvas.addEventListener('touchmove',  this.boundTouchMove, { passive: false });
+    let particles  = [];
+    let floatTexts = [];
+    let rings      = [];
+    let flashA     = 0;
+    let flashCol   = '#fff';
+    let shakeX = 0, shakeY = 0, shakeT = 0;
+    let bgT    = 0;
+    let deadTimer = 0;
 
-        this.lastTime = 0;
-        this.animId   = requestAnimationFrame(t => this.loop(t));
+    const stars = mkStars(50);
+
+    let dragging = false;
+    let _ev = {};
+
+    initLayout();
+    bindInput();
+
+    raf = requestAnimationFrame(loop);
+
+    // ── Title ──
+    const titleEl = document.getElementById('current-game-title');
+    if (titleEl) titleEl.textContent = 'Color Up';
+
+    // ════════════════════════════
+    //  LAYOUT
+    // ════════════════════════════
+    function initLayout() {
+        W = canvas.width  / dpr;
+        H = canvas.height / dpr;
+        PLATE_GAP     = 6;
+        PLATE_W       = (W - 5 * PLATE_GAP) / 4;
+        PLATE_H       = 44;
+        PLATE_SPACING = Math.min(240, H * 0.28);
+
+        const startY  = H + BALL_R + 20;
+        ball.visX     = W / 2;
+        ball.visY     = startY;
+        ball.logY     = startY;
+        ball.targetX  = W / 2;
     }
 
-    // ── FIX 2: setupHDCanvas uses parent element for reliable mobile height ──
-    setupHDCanvas() {
-        const parent = this.canvas.parentElement;
-        let w, h;
-
-        if (parent && parent.clientWidth > 10 && parent.clientHeight > 10) {
-            w = parent.clientWidth;
-            h = parent.clientHeight;
-        } else {
-            const rect = this.canvas.getBoundingClientRect();
-            w = (rect.width  > 10 ? rect.width  : this.canvas.clientWidth)  || window.innerWidth;
-            h = (rect.height > 10 ? rect.height : this.canvas.clientHeight) || window.innerHeight;
-        }
-
-        this.canvas.width  = Math.round(w * this.dpr);
-        this.canvas.height = Math.round(h * this.dpr);
-        this.canvas.style.width  = w + 'px';
-        this.canvas.style.height = h + 'px';
-    }
-
-    loadFonts() {
-        if (document.fonts) {
-            document.fonts.ready.then(() => {
-                if (document.fonts.check('12px Orbitron')) this.FONT_TITLE = 'Orbitron, monospace';
-                if (document.fonts.check('12px Rajdhani')) this.FONT_UI    = 'Rajdhani, sans-serif';
-            });
-        }
-    }
-
-    dX(x)  { return Math.round(x * this.dpr); }
-    dY(y)  { return Math.round(y * this.dpr); }
-    dS(s)  { return s * this.dpr; }
-    dSr(s) { return Math.round(s * this.dpr); }
-
-    drawText(ctx, text, x, y, opts = {}) {
-        const {
-            size        = 14,
-            weight      = 'bold',
-            color       = '#fff',
-            align       = 'left',
-            baseline    = 'alphabetic',
-            family      = null,
-            glow        = false,
-            glowColor   = null,
-            glowBlur    = 0,
-            stroke      = false,
-            strokeColor = 'rgba(0,0,0,0.85)',
-            strokeWidth = 3,
-            opacity     = 1,
-        } = opts;
-
-        if (opacity <= 0) return;
-        ctx.save();
-        ctx.globalAlpha  = Math.min(1, opacity);
-        ctx.textAlign    = align;
-        ctx.textBaseline = baseline;
-        ctx.font = `${weight} ${Math.round(size * this.dpr)}px ${family || (size > 15 ? this.FONT_TITLE : this.FONT_UI)}`;
-
-        const px = this.dX(x), py = this.dY(y);
-
-        if (stroke) {
-            ctx.strokeStyle = strokeColor;
-            ctx.lineWidth   = strokeWidth * this.dpr;
-            ctx.lineJoin    = 'round';
-            ctx.strokeText(text, px, py);
-        }
-
-        // Glow — skip on mobile for performance
-        if (glow && glowBlur > 0 && !this.isMobile) {
-            ctx.save();
-            ctx.shadowBlur  = glowBlur * this.dpr * 2;
-            ctx.shadowColor = glowColor || color;
-            ctx.fillStyle   = glowColor || color;
-            ctx.globalAlpha = Math.min(1, opacity) * 0.5;
-            ctx.fillText(text, px, py);
-            ctx.restore();
-        }
-
-        ctx.shadowBlur  = 0;
-        ctx.shadowColor = 'transparent';
-        ctx.globalAlpha = Math.min(1, opacity);
-        ctx.fillStyle   = color;
-        ctx.fillText(text, px, py);
-        ctx.restore();
-    }
-
-    drawRoundRect(ctx, x, y, w, h, r) {
-        const dx = this.dX(x), dy = this.dY(y);
-        const dw = this.dSr(w), dh = this.dSr(h);
-        const dr = this.dS(r);
-        ctx.beginPath();
-        ctx.moveTo(dx + dr, dy);
-        ctx.arcTo(dx+dw, dy,    dx+dw, dy+dh, dr);
-        ctx.arcTo(dx+dw, dy+dh, dx,    dy+dh, dr);
-        ctx.arcTo(dx,    dy+dh, dx,    dy,    dr);
-        ctx.arcTo(dx,    dy,    dx+dw, dy,    dr);
-        ctx.closePath();
-    }
-
-    drawCircle(ctx, x, y, r) {
-        ctx.beginPath();
-        ctx.arc(this.dX(x), this.dY(y), Math.max(0.5, this.dS(r)), 0, Math.PI * 2);
-    }
-
-    hexToRgba(hex, a) {
-        if (!hex || hex[0] !== '#') return hex;
-        const r = parseInt(hex.slice(1,3),16);
-        const g = parseInt(hex.slice(3,5),16);
-        const b = parseInt(hex.slice(5,7),16);
-        return `rgba(${r},${g},${b},${Math.max(0,Math.min(1,a))})`;
-    }
-
-    makeStars(n) {
+    function mkStars(n) {
         return Array.from({ length: n }, () => ({
-            x:     Math.random() * (this.W || 400),
-            y:     Math.random() * (this.H || 700),
-            r:     Math.random() * 1.4 + 0.2,
-            phase: Math.random() * Math.PI * 2,
-            speed: Math.random() * 0.016 + 0.004,
-            color: Math.random() > 0.8 ? '#B947D9' : Math.random() > 0.6 ? '#00D4FF' : '#fff'
+            x: Math.random(), y: Math.random(),
+            r: Math.random() * 1.2 + 0.2,
+            ph: Math.random() * Math.PI * 2,
+            sp: Math.random() * 0.012 + 0.003,
         }));
     }
 
-    spawnInitialGates() {
-        for (let i = 0; i < 5; i++)
-            this.addGate(-i * this.gateSpacing - 40);
+    // ════════════════════════════
+    //  INPUT
+    // ════════════════════════════
+    function bindInput() {
+        const onTD = e => { e.preventDefault(); pDown(e.touches[0].clientX); };
+        const onTM = e => { e.preventDefault(); pMove(e.touches[0].clientX); };
+        const onTE = e => { e.preventDefault(); pUp(); };
+        const onMD = e => pDown(e.clientX);
+        const onMM = e => { if (dragging) pMove(e.clientX); };
+        const onMU = ()  => pUp();
+
+        canvas.addEventListener('touchstart', onTD, { passive: false });
+        canvas.addEventListener('touchmove',  onTM, { passive: false });
+        canvas.addEventListener('touchend',   onTE, { passive: false });
+        canvas.addEventListener('mousedown',  onMD);
+        window.addEventListener('mousemove',  onMM);
+        window.addEventListener('mouseup',    onMU);
+
+        _ev = { onTD, onTM, onTE, onMD, onMM, onMU };
     }
 
-    addGate(y) {
-        const leftColor = Math.floor(Math.random() * this.PALETTE.length);
-        let rightColor;
-        do { rightColor = Math.floor(Math.random() * this.PALETTE.length); }
-        while (rightColor === leftColor);
-
-        const isBonus = Math.random() < 0.08;
-
-        this.gates.push({
-            y,
-            leftColor:  isBonus ? leftColor : leftColor,
-            rightColor: isBonus ? leftColor : rightColor,
-            isBonus,
-            passed: false,
-            hitFlash: 0,
-            midX: this.W / 2,
-            h: 28
-        });
+    function pDown(cx) {
+        if (gameState === STATE.READY) { startGame(); return; }
+        if (gameState === STATE.DEAD && deadTimer > 800) { startGame(); return; }
+        if (gameState === STATE.PLAYING) { dragging = true; pMove(cx); }
     }
 
-    handleClick(e) {
-        if (this.gameState === 'dead') { this.restart(); return; }
-        if (this.paused) return;
-        this.switchColor();
+    function pMove(cx) {
+        if (!dragging || gameState !== STATE.PLAYING) return;
+        const rect  = canvas.getBoundingClientRect();
+        const scale = W / rect.width;
+        const gx    = (cx - rect.left) * scale;
+        ball.targetX = Math.max(BALL_R, Math.min(W - BALL_R, gx));
     }
 
-    handleTouch(e) {
-        e.preventDefault();
-        if (this.gameState === 'dead') { this.restart(); return; }
-        if (this.paused) return;
-        this.switchColor();
+    function pUp() { dragging = false; }
+
+    // ════════════════════════════
+    //  GAME START
+    // ════════════════════════════
+    function startGame() {
+        score = 0; combo = 0; maxCombo = 0;
+        scrollSpeed = 0.85; seqCount = 0;
+        plates = []; targetPlateIdx = -1;
+        particles = []; floatTexts = []; rings = [];
+        flashA = 0; shakeT = 0; deadTimer = 0;
+        dragging = false; nextBallColor = -1;
+
+        ball.colorIdx = -1;
+        ball.visX     = W / 2;
+        ball.targetX  = W / 2;
+        const startY  = H + BALL_R + 10;
+        ball.visY     = startY;
+        ball.logY     = startY;
+        ball.bouncing = false;
+        ball.trail    = [];
+        ball.pulseT   = 0;
+
+        gameState = STATE.PLAYING;
+        onScore(0);
+
+        buildInitialLayout();
+        launchToPlate(0);
     }
 
-    handleMouseMove(e) {
-        if (this.gameState !== 'playing' || this.paused) return;
-        const rect = this.canvas.getBoundingClientRect();
-        this.playerTargetX = (e.clientX - rect.left) * (this.W / rect.width);
+    function buildInitialLayout() {
+        let y = H * 0.58;
+        const firstColor = Math.floor(Math.random() * COLORS.length);
+        plates.push({ type:'full', colorIdx:firstColor, y, passed:false, flashT:0, correct:false });
+        seqCount = 1;
+        nextBallColor = firstColor;
+        y -= PLATE_SPACING;
+        for (let i = 0; i < 9; i++) { spawnNext(y); y -= PLATE_SPACING; }
     }
 
-    handleTouchMove(e) {
-        e.preventDefault();
-        if (this.gameState !== 'playing' || this.paused) return;
-        const rect = this.canvas.getBoundingClientRect();
-        this.playerTargetX = (e.touches[0].clientX - rect.left) * (this.W / rect.width);
-    }
-
-    switchColor() {
-        this.colorSwitchAnim = {
-            active: true,
-            progress: 0,
-            fromIdx: this.playerColorIdx
-        };
-        this.playerColorIdx = (this.playerColorIdx + 1) % this.PALETTE.length;
-        if (window.audioManager) audioManager.play('click');
-
-        this.rings.push({
-            x: this.player.x,
-            y: this.player.y,
-            r: this.player.r,
-            maxR: 60,
-            opacity: 0.7,
-            color: this.PALETTE[this.playerColorIdx].fill
-        });
-    }
-
-    restart() {
-        this.score          = 0;
-        this.combo          = 0;
-        this.maxCombo       = 0;
-        this.speed          = 2.2;
-        this.gates          = [];
-        this.particles      = [];
-        this.floatTexts     = [];
-        this.rings          = [];
-        this.player.x       = this.W / 2;
-        this.playerTargetX  = this.W / 2;
-        this.playerColorIdx = 0;
-        this.player.trail   = [];
-        this.player.pulseT  = 0;
-        this.deathTimer     = 0;
-        this.gameState      = 'playing';
-        this.onScore(0);
-        this.spawnInitialGates();
-    }
-
-    update(dt) {
-        if (this.paused) return;
-
-        this.bgTime += dt * 0.001;
-        this.stars.forEach(s => s.phase += s.speed);
-
-        if (this.screenShake.timer > 0) {
-            const f = this.screenShake.force * (this.screenShake.timer / 12);
-            this.screenShake.x = (Math.random()-0.5)*f;
-            this.screenShake.y = (Math.random()-0.5)*f*0.4;
-            this.screenShake.timer--;
-        } else { this.screenShake.x = 0; this.screenShake.y = 0; }
-
-        if (this.flashAlpha > 0) this.flashAlpha = Math.max(0, this.flashAlpha - 0.025);
-
-        for (let i = this.rings.length-1; i >= 0; i--) {
-            const rg = this.rings[i];
-            rg.r      += 3.5;
-            rg.opacity -= 0.045;
-            if (rg.opacity <= 0) this.rings.splice(i, 1);
+    function spawnNext(y) {
+        const pos = seqCount % (QUADS_PER_FULL + 1);
+        if (pos === 0) {
+            const colorIdx = Math.floor(Math.random() * COLORS.length);
+            plates.push({ type:'full', colorIdx, y, passed:false, flashT:0, correct:false });
+            nextBallColor = colorIdx;
+        } else {
+            spawnQuad(y, nextBallColor);
         }
+        seqCount++;
+    }
 
-        if (this.colorSwitchAnim.active) {
-            this.colorSwitchAnim.progress += dt / 160;
-            if (this.colorSwitchAnim.progress >= 1) this.colorSwitchAnim.active = false;
-        }
-
-        if (this.gameState === 'dead') {
-            this.deathTimer += dt;
-            this.updateParticles();
-            this.updateFloatTexts();
-            return;
-        }
-
-        const px  = this.player.x;
-        const tx  = Math.max(this.player.r + 5, Math.min(this.W - this.player.r - 5, this.playerTargetX));
-        this.player.x += (tx - px) * 0.14;
-
-        this.player.trail.unshift({ x: this.player.x, y: this.player.y });
-        if (this.player.trail.length > 14) this.player.trail.pop();
-
-        this.player.pulseT += dt * 0.005;
-
-        for (let i = this.gates.length - 1; i >= 0; i--) {
-            this.gates[i].y += this.speed * (dt / 16.67);
-            if (this.gates[i].hitFlash > 0) this.gates[i].hitFlash--;
-            if (this.gates[i].y > this.H + 50) this.gates.splice(i, 1);
-        }
-
-        this.gateTimer += dt;
-        const spawnInterval = Math.max(55, 105 - this.speed * 8);
-        if (this.gateTimer > spawnInterval) {
-            this.gateTimer = 0;
-            const topY = this.gates.length > 0 ? Math.min(...this.gates.map(g => g.y)) : 0;
-            if (topY > 60) this.addGate(-30);
-        }
-
-        for (let i = this.gates.length - 1; i >= 0; i--) {
-            const g = this.gates[i];
-            if (g.passed) continue;
-
-            const py  = this.player.y;
-            const pr  = this.player.r;
-            const gTop = g.y - g.h / 2;
-            const gBot = g.y + g.h / 2;
-
-            if (py + pr > gTop && py - pr < gBot) {
-                g.passed = true;
-                const isLeft    = this.player.x < g.midX;
-                const gateColor = isLeft ? g.leftColor : g.rightColor;
-
-                if (g.isBonus || gateColor === this.playerColorIdx) {
-                    this.combo++;
-                    if (this.combo > this.maxCombo) this.maxCombo = this.combo;
-
-                    const pts = g.isBonus ? 25 : (10 + (this.combo > 1 ? (this.combo-1)*5 : 0));
-                    this.score += pts;
-                    if (this.score > this.bestScore) {
-                        this.bestScore = this.score;
-                        localStorage.setItem('colorup_best', this.bestScore);
-                    }
-                    this.onScore(this.score);
-
-                    const col = this.PALETTE[this.playerColorIdx].fill;
-                    this.spawnParticles(this.player.x, g.y, col, 14);
-                    g.hitFlash = 12;
-
-                    const label = this.combo > 2
-                        ? `x${this.combo} COMBO  +${pts}`
-                        : `+${pts}`;
-                    const textCol = this.combo > 2 ? '#FFD700' : '#00FF88';
-                    this.floatTexts.push({ x: this.player.x, y: g.y - 20, text: label, color: textCol, life: 65, maxLife: 65, vy: -1.1, scale: 0.3, opacity: 0 });
-
-                    if (this.combo > 2) {
-                        this.rings.push({ x: this.player.x, y: g.y, r: 10, maxR: 90, opacity: 0.8, color: '#FFD700' });
-                        this.screenShake.timer = 5; this.screenShake.force = 3;
-                    }
-
-                    this.speed = Math.min(6.5, 2.2 + this.score / 120);
-                    this.gateSpacing = Math.max(90, 130 - this.score / 30);
-
-                    if (window.audioManager) audioManager.play('score');
-                } else {
-                    this.combo = 0;
-                    this.spawnParticles(this.player.x, g.y, '#FF006E', 20);
-                    this.flashAlpha = 0.38; this.flashColor = '#FF006E';
-                    this.screenShake.timer = 14; this.screenShake.force = 8;
-                    this.floatTexts.push({ x: this.W/2, y: this.H/2-30, text: 'WRONG COLOR!', color: '#FF006E', life: 80, maxLife: 80, vy: -0.6, scale: 0.2, opacity: 0 });
-                    this.gameState = 'dead';
-                    if (window.audioManager) audioManager.play('fail');
-                    this.onScore(this.score, true);
+    function spawnQuad(y, ballColor) {
+        const safeIdx = Math.floor(Math.random() * 4);
+        const colors  = Array.from({ length: 4 }, () => Math.floor(Math.random() * COLORS.length));
+        if (ballColor >= 0) {
+            colors[safeIdx] = ballColor;
+            for (let i = 0; i < 4; i++) {
+                if (i === safeIdx) continue;
+                if (colors[i] === ballColor) {
+                    let c; do { c = Math.floor(Math.random() * COLORS.length); } while (c === ballColor);
+                    colors[i] = c;
                 }
             }
         }
-
-        this.updateParticles();
-        this.updateFloatTexts();
+        plates.push({ type:'quad', colors, safeIdx, y, passed:false, hitIdx:-1, flashT:0, correct:false });
     }
 
-    updateParticles() {
-        for (let i = this.particles.length-1; i >= 0; i--) {
-            const p = this.particles[i];
-            p.x += p.vx; p.y += p.vy; p.vy += 0.12; p.vx *= 0.97;
-            p.life--; p.size *= 0.955;
-            if (p.life <= 0 || p.size < 0.3) this.particles.splice(i, 1);
+    function refillTop() {
+        let topY = H;
+        for (const p of plates) { if (p.y < topY) topY = p.y; }
+        while (topY > -PLATE_SPACING * 0.2) { topY -= PLATE_SPACING; spawnNext(topY); }
+    }
+
+    // ════════════════════════════
+    //  BOUNCE
+    // ════════════════════════════
+    function launchToPlate(idx) {
+        if (idx < 0 || idx >= plates.length) return;
+        const plate = plates[idx];
+        targetPlateIdx = idx;
+        const fromY = ball.logY, toY = plate.y;
+        const dist  = Math.abs(fromY - toY);
+        const dur   = Math.max(480, Math.min(950, (dist / PLATE_SPACING) * BOUNCE_DUR_BASE));
+        ball.bouncing    = true;
+        ball.bounceFromY = fromY;
+        ball.bounceToY   = toY;
+        ball.bounceT     = 0;
+        ball.bounceDur   = dur;
+    }
+
+    // ════════════════════════════
+    //  UPDATE
+    // ════════════════════════════
+    function update(dt) {
+        const S = dt / 16.67;
+        bgT         += dt * 0.001;
+        ball.pulseT += dt * 0.004;
+        stars.forEach(s => { s.ph += s.sp * S; });
+        updateFX(S, dt);
+
+        if (gameState === STATE.DEAD)    { deadTimer += dt; return; }
+        if (gameState !== STATE.PLAYING) return;
+
+        scrollSpeed = Math.min(3.0, 0.85 + score * 0.006);
+
+        const scroll = scrollSpeed * S;
+        for (const p of plates) p.y += scroll;
+
+        ball.visX += (ball.targetX - ball.visX) * 0.20 * S;
+
+        if (ball.bouncing) {
+            ball.bounceT += dt / ball.bounceDur;
+            if (ball.bounceT >= 1) {
+                ball.bounceT  = 1; ball.bouncing = false;
+                ball.logY = ball.bounceToY; ball.visY = ball.logY;
+                onArrived();
+            } else {
+                const t  = ball.bounceT;
+                const ft = ease(t);
+                ball.logY = ball.bounceFromY + (ball.bounceToY - ball.bounceFromY) * ft;
+                ball.visY = ball.logY - Math.sin(t * Math.PI) * (PLATE_SPACING * 0.40);
+            }
+            ball.trail.unshift({ x: ball.visX, y: ball.visY, c: ball.colorIdx });
+            if (ball.trail.length > 18) ball.trail.pop();
+        }
+
+        plates = plates.filter(p => !p.passed || p.y < H + 100);
+        refillTop();
+
+        if (ball.bouncing && targetPlateIdx >= 0) {
+            const tp = plates[targetPlateIdx];
+            if (tp) ball.bounceToY = tp.y;
         }
     }
 
-    updateFloatTexts() {
-        for (let i = this.floatTexts.length-1; i >= 0; i--) {
-            const t = this.floatTexts[i];
-            t.y    += t.vy; t.life--;
-            t.opacity = t.life < 20 ? t.life/20 : (t.maxLife - t.life < 12 ? (t.maxLife - t.life)/12 : 1);
-            t.scale  += (1 - t.scale) * 0.16;
-            if (t.life <= 0) this.floatTexts.splice(i, 1);
+    function ease(t) { return t < 0.5 ? 2*t*t : -1+(4-2*t)*t; }
+
+    // ════════════════════════════
+    //  COLLISION
+    // ════════════════════════════
+    function onArrived() {
+        const idx   = targetPlateIdx;
+        const plate = plates[idx];
+        if (!plate || plate.passed) { goToNext(idx); return; }
+        plate.passed = true; plate.flashT = 1;
+        if (plate.type === 'full') hitFull(plate, idx);
+        else hitQuad(plate, idx);
+    }
+
+    function hitFull(plate, idx) {
+        ball.colorIdx  = plate.colorIdx;
+        plate.correct  = true;
+        const col      = COLORS[plate.colorIdx];
+        burst(ball.visX, ball.visY, col.fill, 18);
+        rings.push({ x:ball.visX, y:ball.visY, r:BALL_R, maxR:88, alpha:0.92, col:col.fill });
+        rings.push({ x:ball.visX, y:ball.visY, r:BALL_R+12, maxR:115, alpha:0.50, col:col.fill });
+        floatTexts.push({ x:ball.visX, y:ball.visY-36, text:col.name+'!', col:col.fill, life:900, op:1 });
+        flashA = 0.22; flashCol = col.fill;
+        goToNext(idx);
+    }
+
+    function hitQuad(plate, idx) {
+        const colIdx = getColAt(ball.visX);
+        plate.hitIdx = colIdx;
+        if (colIdx < 0) { die(); return; }
+
+        if (plate.colors[colIdx] === ball.colorIdx) {
+            plate.correct = true;
+            combo++;
+            if (combo > maxCombo) maxCombo = combo;
+            const bonus = combo > 3 ? Math.floor(combo * 0.5) : 0;
+            const pts   = 1 + bonus;
+            score += pts;
+            if (score > best) { best = score; localStorage.setItem('colorup_v5_best', best); }
+            onScore(score);
+
+            const col = COLORS[ball.colorIdx].fill;
+            burst(ball.visX, ball.visY, col, 13);
+            rings.push({ x:ball.visX, y:ball.visY, r:BALL_R, maxR:65, alpha:0.85, col });
+            const label = combo > 2 ? `×${combo}  +${pts}` : `+${pts}`;
+            floatTexts.push({ x:ball.visX, y:ball.visY-32, text:label, col:combo>2?'#FFD700':'#00FF88', life:780, op:1 });
+            if (combo >= 5) { shakeT = 3; flashA = 0.08; flashCol = col; }
+            goToNext(idx);
+        } else {
+            die();
         }
     }
 
-    spawnParticles(x, y, color, count) {
-        // Limit particles on mobile
-        const maxNew = this.isMobile ? Math.min(count, 8) : count;
-        for (let i = 0; i < maxNew; i++) {
-            const a  = Math.random() * Math.PI * 2;
-            const sp = Math.random() * 6 + 2;
-            this.particles.push({
-                x, y,
-                vx: Math.cos(a)*sp, vy: Math.sin(a)*sp - 1.5,
-                color, size: Math.random()*6+2,
-                life: Math.floor(Math.random()*18+14), decay: 0.035
-            });
+    function goToNext(fromIdx) {
+        let nextIdx = -1, nextY = -Infinity;
+        for (let i = 0; i < plates.length; i++) {
+            const p = plates[i];
+            if (p.passed) continue;
+            if (p.y < ball.logY && p.y > nextY) { nextY = p.y; nextIdx = i; }
+        }
+        if (nextIdx >= 0) launchToPlate(nextIdx);
+    }
+
+    function getColAt(bx) {
+        for (let i = 0; i < 4; i++) {
+            const px = PLATE_GAP + i * (PLATE_W + PLATE_GAP);
+            if (bx >= px && bx <= px + PLATE_W) return i;
+        }
+        return -1;
+    }
+
+    function die() {
+        gameState = STATE.DEAD; deadTimer = 0;
+        ball.bouncing = false; dragging = false;
+        const col = ball.colorIdx >= 0 ? COLORS[ball.colorIdx].fill : '#ffffff';
+        burst(ball.visX, ball.visY, col, 24);
+        burst(ball.visX, ball.visY, '#FF2244', 16);
+        flashA = 0.65; flashCol = '#FF1133'; shakeT = 18; combo = 0;
+        onScore(score, true);
+    }
+
+    // ════════════════════════════
+    //  FX
+    // ════════════════════════════
+    function burst(x, y, col, n) {
+        for (let i = 0; i < n && particles.length < 220; i++) {
+            const a = Math.random() * Math.PI * 2, s = Math.random() * 5.5 + 1.5;
+            particles.push({ x, y, vx:Math.cos(a)*s, vy:Math.sin(a)*s-2.5, r:Math.random()*5+1.5, life:1, col });
         }
     }
 
-    draw(timestamp) {
-        const ctx = this.ctx;
+    function updateFX(S, dt) {
+        if (flashA > 0) flashA = Math.max(0, flashA - 0.020 * S);
+        if (shakeT > 0) {
+            shakeT = Math.max(0, shakeT - S);
+            shakeX = (Math.random() - 0.5) * shakeT * 0.85;
+            shakeY = (Math.random() - 0.5) * shakeT * 0.42;
+        } else { shakeX = 0; shakeY = 0; }
+        rings      = rings.filter(r => { r.r += 3.8*S; r.alpha -= 0.034*S; return r.alpha > 0; });
+        particles  = particles.filter(p => { p.x += p.vx*S; p.y += p.vy*S; p.vy += 0.2*S; p.vx *= 0.96; p.life -= 0.028*S; return p.life > 0; });
+        floatTexts = floatTexts.filter(t => { t.y -= 0.90*S; t.life -= dt; t.op = Math.min(1, t.life/300); return t.life > 0; });
+        for (const p of plates) { if (p.flashT > 0) p.flashT = Math.max(0, p.flashT - 0.055*S); }
+    }
 
-        ctx.fillStyle = '#050510';
-        ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    // ════════════════════════════
+    //  DRAW
+    // ════════════════════════════
+    function draw() {
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.fillStyle = '#160828';
+        ctx.fillRect(0, 0, W, H);
 
         ctx.save();
-        if (this.screenShake.x || this.screenShake.y)
-            ctx.translate(this.dS(this.screenShake.x), this.dS(this.screenShake.y));
+        ctx.translate(shakeX || 0, shakeY || 0);
 
-        this.drawBackground(ctx);
-        this.drawLaneDivider(ctx);
-        this.drawRingsFX(ctx);
-        this.drawGates(ctx);
-        this.drawPlayerTrail(ctx);
-        this.drawPlayer(ctx, timestamp);
-        this.drawParticles(ctx);
-        this.drawFloatTexts(ctx);
+        drawBG();
+        drawColGuides();
+        drawPlates();
+        drawTrail();
+        drawBall();
+        drawRings();
+        drawParticles();
+        drawFloatTexts();
 
-        if (this.flashAlpha > 0) {
-            ctx.fillStyle = this.hexToRgba(this.flashColor, this.flashAlpha);
-            ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        if (flashA > 0.005) {
+            ctx.globalAlpha = flashA; ctx.fillStyle = flashCol;
+            ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1;
         }
-
-        this.drawHUD(ctx);
-
-        if (this.gameState === 'dead') this.drawDeathScreen(ctx);
-
         ctx.restore();
+
+        drawHUD();
+        if (gameState === STATE.READY) drawReady();
+        if (gameState === STATE.DEAD)  drawDead();
     }
 
-    drawBackground(ctx) {
-        const W = this.W, H = this.H, t = this.bgTime;
+    function drawBG() {
+        const g = ctx.createLinearGradient(0, 0, 0, H);
+        g.addColorStop(0, 'rgba(72,8,118,0.22)'); g.addColorStop(1, 'rgba(8,2,26,0.18)');
+        ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+        stars.forEach(s => {
+            ctx.globalAlpha = 0.05 + ((Math.sin(s.ph)+1)*0.5)*0.26;
+            ctx.fillStyle = '#cce8ff';
+            ctx.beginPath(); ctx.arc(s.x*W, s.y*H, s.r, 0, Math.PI*2); ctx.fill();
+        });
+        ctx.globalAlpha = 1;
+    }
 
-        if (this.isMobile) {
-            // Simplified BG for mobile
-            ctx.fillStyle = '#080518';
-            ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-        } else {
-            const bg = ctx.createRadialGradient(
-                this.dX(W*(0.5+Math.sin(t*0.4)*0.08)), this.dY(H*0.38), 0,
-                this.dX(W/2), this.dY(H/2), this.dS(H)
-            );
-            bg.addColorStop(0,   '#0e0520');
-            bg.addColorStop(0.5, '#070415');
-            bg.addColorStop(1,   '#030210');
-            ctx.fillStyle = bg;
-            ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-        }
-
-        // Stars — skip every other on mobile
-        const step = this.isMobile ? 2 : 1;
-        for (let i = 0; i < this.stars.length; i += step) {
-            const s = this.stars[i];
-            const alpha = 0.08 + ((Math.sin(s.phase)+1)/2)*0.55;
-            ctx.globalAlpha = alpha;
-            ctx.fillStyle   = s.color;
-            ctx.beginPath();
-            ctx.arc(this.dX(s.x), this.dY(s.y), Math.max(0.5, this.dS(s.r)), 0, Math.PI*2);
-            ctx.fill();
+    function drawColGuides() {
+        if (gameState !== STATE.PLAYING) return;
+        for (let i = 0; i < 4; i++) {
+            const px = PLATE_GAP + i * (PLATE_W + PLATE_GAP);
+            ctx.globalAlpha = 0.042; ctx.fillStyle = COLORS[i].fill;
+            ctx.fillRect(px, 0, PLATE_W, H);
         }
         ctx.globalAlpha = 1;
+    }
 
-        // Vignette — skip on mobile
-        if (!this.isMobile) {
-            const vg = ctx.createRadialGradient(
-                this.dX(W/2), this.dY(H/2), this.dS(H*0.1),
-                this.dX(W/2), this.dY(H/2), this.dS(H*0.95)
-            );
-            vg.addColorStop(0, 'rgba(0,0,0,0)');
-            vg.addColorStop(1, 'rgba(0,0,0,0.58)');
-            ctx.fillStyle = vg;
-            ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    function drawPlates() {
+        for (const plate of plates) {
+            if (plate.type === 'full') drawFull(plate);
+            else drawQuad(plate);
         }
     }
 
-    drawLaneDivider(ctx) {
-        const col = this.PALETTE[this.playerColorIdx].fill;
+    function drawFull(plate) {
+        const col = COLORS[plate.colorIdx];
+        const h   = PLATE_H + 12;
+        const x   = PLATE_GAP, w = W - PLATE_GAP * 2;
+        const y   = plate.y - h / 2, R = h / 2;
         ctx.save();
-        ctx.globalAlpha = 0.08 + Math.sin(this.bgTime*2)*0.02;
-        ctx.strokeStyle = col;
-        ctx.lineWidth   = this.dS(1.5);
-        ctx.setLineDash([this.dSr(8), this.dSr(14)]);
-        ctx.beginPath();
-        ctx.moveTo(this.dX(this.W/2), 0);
-        ctx.lineTo(this.dX(this.W/2), this.dY(this.H));
-        ctx.stroke();
-        ctx.setLineDash([]);
+        ctx.globalAlpha = plate.passed ? Math.max(0, plate.flashT*0.55) : 0.94;
+        if (!plate.passed) { ctx.shadowColor = col.fill; ctx.shadowBlur = 26; }
+        const g = ctx.createLinearGradient(x, y, x, y+h);
+        g.addColorStop(0, lighten(col.fill, 60)); g.addColorStop(0.5, col.fill); g.addColorStop(1, col.stroke);
+        ctx.fillStyle = (plate.flashT > 0.55 && plate.correct) ? '#ffffff' : g;
+        rr(x, y, w, h, R); ctx.fill(); ctx.shadowBlur = 0;
+        ctx.globalAlpha = plate.passed ? 0 : 0.85;
+        ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2.5;
+        rr(x, y, w, h, R); ctx.stroke();
+        if (!plate.passed) {
+            ctx.globalAlpha = 0.22; ctx.fillStyle = '#ffffff';
+            rr(x+7, y+3, w-14, h*0.32, R*0.5); ctx.fill();
+            ctx.globalAlpha = 0.94;
+            ctx.font = 'bold 15px Arial'; ctx.fillStyle = '#ffffff';
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.shadowColor = 'rgba(0,0,0,0.55)'; ctx.shadowBlur = 5;
+            ctx.fillText(col.name, W/2, plate.y); ctx.shadowBlur = 0;
+        }
         ctx.restore();
     }
 
-    drawRingsFX(ctx) {
-        for (const rg of this.rings) {
+    function drawQuad(plate) {
+        const h = PLATE_H, R = h/2;
+        for (let i = 0; i < 4; i++) {
+            const colorIdx = plate.colors[i], col = COLORS[colorIdx];
+            const px = PLATE_GAP + i*(PLATE_W+PLATE_GAP), w = PLATE_W;
+            const y  = plate.y - h/2;
+            const isHit   = plate.hitIdx === i;
+            const isMatch = !plate.passed && ball.colorIdx >= 0 && colorIdx === ball.colorIdx;
+            const flash   = isHit ? plate.flashT : 0;
             ctx.save();
-            ctx.globalAlpha = rg.opacity;
-            ctx.strokeStyle = rg.color;
-            ctx.lineWidth   = this.dS(2.5 * rg.opacity);
-            if (!this.isMobile) { ctx.shadowBlur = this.dS(12); ctx.shadowColor = rg.color; }
-            ctx.beginPath();
-            ctx.arc(this.dX(rg.x), this.dY(rg.y), this.dS(rg.r), 0, Math.PI*2);
-            ctx.stroke();
-            ctx.shadowBlur = 0;
-            ctx.restore();
-        }
-    }
-
-    drawGates(ctx) {
-        const W = this.W;
-
-        this.gates.forEach(g => {
-            const leftCol  = this.PALETTE[g.leftColor];
-            const rightCol = this.PALETTE[g.rightColor];
-            const gw = g.midX - 6;
-            const gh = g.h;
-            const flashBoost = g.hitFlash > 0 ? 0.35 : 0;
-
-            // LEFT gate
-            ctx.save();
-            const lgFill = ctx.createLinearGradient(0, this.dY(g.y - gh/2), 0, this.dY(g.y + gh/2));
-            lgFill.addColorStop(0,   this.hexToRgba(leftCol.light, 0.28 + flashBoost));
-            lgFill.addColorStop(0.5, this.hexToRgba(leftCol.fill,  0.38 + flashBoost));
-            lgFill.addColorStop(1,   this.hexToRgba(leftCol.dark,  0.24 + flashBoost));
-            ctx.fillStyle = lgFill;
-            this.drawRoundRect(ctx, 2, g.y - gh/2, gw - 2, gh, 6);
-            ctx.fill();
-
-            ctx.save();
-            if (!this.isMobile) { ctx.shadowBlur = this.dS(g.hitFlash > 0 ? 18 : 8); ctx.shadowColor = leftCol.fill; }
-            ctx.strokeStyle = this.hexToRgba(leftCol.fill, 0.85);
-            ctx.lineWidth   = this.dS(g.hitFlash > 0 ? 2.5 : 1.5);
-            this.drawRoundRect(ctx, 2, g.y - gh/2, gw - 2, gh, 6);
-            ctx.stroke();
-            ctx.shadowBlur = 0;
-            ctx.restore();
-
-            const isMatchLeft = g.leftColor === this.playerColorIdx;
-            this.drawText(ctx, leftCol.name, gw/2, g.y, {
-                size: 9.5, weight: '800', color: leftCol.light,
-                align: 'center', baseline: 'middle',
-                opacity: 0.65 + (isMatchLeft ? 0.3 : 0),
-                stroke: true, strokeColor: 'rgba(0,0,0,0.7)', strokeWidth: 2.5,
-                family: this.FONT_TITLE
-            });
-
-            if (isMatchLeft) {
-                ctx.save();
-                ctx.globalAlpha = 0.7 + Math.sin(this.bgTime*4)*0.2;
-                ctx.fillStyle   = leftCol.light;
-                ctx.beginPath();
-                ctx.arc(this.dX(gw/2), this.dY(g.y - gh/2 - 9), this.dS(4), 0, Math.PI*2);
-                ctx.fill();
-                ctx.restore();
-            }
-            ctx.restore();
-
-            // RIGHT gate
-            ctx.save();
-            const rgFill = ctx.createLinearGradient(0, this.dY(g.y - gh/2), 0, this.dY(g.y + gh/2));
-            rgFill.addColorStop(0,   this.hexToRgba(rightCol.light, 0.28 + flashBoost));
-            rgFill.addColorStop(0.5, this.hexToRgba(rightCol.fill,  0.38 + flashBoost));
-            rgFill.addColorStop(1,   this.hexToRgba(rightCol.dark,  0.24 + flashBoost));
-            ctx.fillStyle = rgFill;
-            this.drawRoundRect(ctx, g.midX + 4, g.y - gh/2, W - g.midX - 6, gh, 6);
-            ctx.fill();
-
-            ctx.save();
-            if (!this.isMobile) { ctx.shadowBlur = this.dS(g.hitFlash > 0 ? 18 : 8); ctx.shadowColor = rightCol.fill; }
-            ctx.strokeStyle = this.hexToRgba(rightCol.fill, 0.85);
-            ctx.lineWidth   = this.dS(g.hitFlash > 0 ? 2.5 : 1.5);
-            this.drawRoundRect(ctx, g.midX + 4, g.y - gh/2, W - g.midX - 6, gh, 6);
-            ctx.stroke();
-            ctx.shadowBlur = 0;
-            ctx.restore();
-
-            const isMatchRight = g.rightColor === this.playerColorIdx;
-            const rightCx = g.midX + (W - g.midX) / 2;
-            this.drawText(ctx, rightCol.name, rightCx, g.y, {
-                size: 9.5, weight: '800', color: rightCol.light,
-                align: 'center', baseline: 'middle',
-                opacity: 0.65 + (isMatchRight ? 0.3 : 0),
-                stroke: true, strokeColor: 'rgba(0,0,0,0.7)', strokeWidth: 2.5,
-                family: this.FONT_TITLE
-            });
-
-            if (isMatchRight) {
-                ctx.save();
-                ctx.globalAlpha = 0.7 + Math.sin(this.bgTime*4)*0.2;
-                ctx.fillStyle   = rightCol.light;
-                ctx.beginPath();
-                ctx.arc(this.dX(rightCx), this.dY(g.y - gh/2 - 9), this.dS(4), 0, Math.PI*2);
-                ctx.fill();
-                ctx.restore();
-            }
-
-            if (g.isBonus) {
-                this.drawText(ctx, '★ BONUS', W/2, g.y - gh/2 - 14, {
-                    size: 9, weight: '900', color: '#FFD700',
-                    align: 'center', baseline: 'middle',
-                    family: this.FONT_TITLE
-                });
-            }
-
-            ctx.restore();
-        });
-    }
-
-    drawPlayerTrail(ctx) {
-        const col = this.PALETTE[this.playerColorIdx].fill;
-        // Reduce trail on mobile
-        const step = this.isMobile ? 2 : 1;
-        for (let i = 0; i < this.player.trail.length; i += step) {
-            const pt = this.player.trail[i];
-            const alpha = (1 - i/this.player.trail.length) * 0.35;
-            const r     = this.player.r * (1 - i/this.player.trail.length) * 0.7;
-            if (r < 0.5) continue;
-            ctx.save();
+            if (isMatch) { ctx.shadowColor = col.fill; ctx.shadowBlur = 20; }
+            if (flash > 0) { ctx.shadowColor = plate.correct?'#00FF88':'#FF2244'; ctx.shadowBlur = 30*flash; }
+            let alpha = plate.passed ? (isHit ? Math.max(0,plate.flashT*0.65) : 0) : (0.85+(isMatch?0.15:0));
             ctx.globalAlpha = alpha;
-            ctx.fillStyle   = col;
-            ctx.beginPath();
-            ctx.arc(this.dX(pt.x), this.dY(pt.y), Math.max(0.5, this.dS(r)), 0, Math.PI*2);
-            ctx.fill();
-            ctx.restore();
-        }
-    }
-
-    drawPlayer(ctx, timestamp) {
-        const pl  = this.player;
-        const col = this.PALETTE[this.playerColorIdx];
-        const pulse = 1 + Math.sin(pl.pulseT * 2.2) * 0.06;
-        const r   = pl.r * pulse;
-
-        // Outer glow ring — skip on mobile
-        if (!this.isMobile) {
-            ctx.save();
-            ctx.shadowBlur  = this.dS(22);
-            ctx.shadowColor = col.fill;
-            ctx.strokeStyle = this.hexToRgba(col.fill, 0.5);
-            ctx.lineWidth   = this.dS(2.5);
-            ctx.beginPath();
-            ctx.arc(this.dX(pl.x), this.dY(pl.y), this.dS(r + 6), 0, Math.PI*2);
-            ctx.stroke();
-            ctx.shadowBlur = 0;
-            ctx.restore();
-        }
-
-        ctx.save();
-        const grad = ctx.createRadialGradient(
-            this.dX(pl.x - r*0.3), this.dY(pl.y - r*0.3), this.dS(r*0.1),
-            this.dX(pl.x),         this.dY(pl.y),          this.dS(r)
-        );
-        grad.addColorStop(0,   col.light);
-        grad.addColorStop(0.5, col.fill);
-        grad.addColorStop(1,   col.dark);
-        ctx.fillStyle = grad;
-        if (!this.isMobile) { ctx.shadowBlur = this.dS(16); ctx.shadowColor = col.fill; }
-        ctx.beginPath();
-        ctx.arc(this.dX(pl.x), this.dY(pl.y), this.dS(r), 0, Math.PI*2);
-        ctx.fill();
-        ctx.shadowBlur = 0;
-
-        ctx.strokeStyle = 'rgba(255,255,255,0.7)';
-        ctx.lineWidth   = this.dS(1.8);
-        ctx.stroke();
-
-        ctx.fillStyle = 'rgba(255,255,255,0.28)';
-        ctx.beginPath();
-        ctx.arc(this.dX(pl.x - r*0.25), this.dY(pl.y - r*0.25), this.dS(r*0.38), 0, Math.PI*2);
-        ctx.fill();
-        ctx.restore();
-
-        if (this.colorSwitchAnim.active) {
-            const prog  = this.colorSwitchAnim.progress;
-            const eased = 1 - Math.pow(1-prog, 2);
-            ctx.save();
-            ctx.globalAlpha = (1 - prog) * 0.6;
-            ctx.strokeStyle = this.PALETTE[this.colorSwitchAnim.fromIdx].fill;
-            ctx.lineWidth   = this.dS(2.5 * (1-prog));
-            ctx.beginPath();
-            ctx.arc(this.dX(pl.x), this.dY(pl.y), this.dS(r + 10*eased), 0, Math.PI*2);
-            ctx.stroke();
-            ctx.restore();
-        }
-
-        this.drawText(ctx, col.name, pl.x, pl.y - r - 10, {
-            size: 8.5, weight: '800', color: col.light,
-            align: 'center', baseline: 'middle',
-            family: this.FONT_TITLE
-        });
-    }
-
-    drawParticles(ctx) {
-        ctx.save();
-        for (const p of this.particles) {
-            ctx.globalAlpha = Math.min(1, p.life / 14);
-            ctx.fillStyle   = p.color;
-            ctx.beginPath();
-            ctx.arc(this.dX(p.x), this.dY(p.y), Math.max(0.4, this.dS(p.size)), 0, Math.PI*2);
-            ctx.fill();
-        }
-        ctx.restore();
-    }
-
-    drawFloatTexts(ctx) {
-        for (const t of this.floatTexts) {
-            const sc = Math.min(1, t.scale);
-            this.drawText(ctx, t.text, t.x, t.y, {
-                size: 13 * sc, weight: '900', color: t.color,
-                align: 'center', baseline: 'middle',
-                opacity: t.opacity,
-                stroke: true, strokeColor: 'rgba(0,0,0,0.7)', strokeWidth: 3,
-                family: this.FONT_TITLE
-            });
-        }
-    }
-
-    drawHUD(ctx) {
-        const W = this.W, H = this.H;
-        const col = this.PALETTE[this.playerColorIdx];
-
-        const topGrd = ctx.createLinearGradient(0, 0, 0, this.dY(52));
-        topGrd.addColorStop(0, 'rgba(0,0,0,0.82)');
-        topGrd.addColorStop(1, 'rgba(0,0,0,0.04)');
-        ctx.fillStyle = topGrd;
-        ctx.fillRect(0, 0, this.canvas.width, this.dY(52));
-
-        this.drawText(ctx, this.fmtNum(this.score), W/2, 22, {
-            size: 18, weight: '900', color: '#00D4FF',
-            align: 'center', family: this.FONT_TITLE
-        });
-        this.drawText(ctx, `BEST: ${this.fmtNum(this.bestScore)}`, W/2, 38, {
-            size: 8, color: 'rgba(255,215,0,0.4)',
-            align: 'center', family: this.FONT_UI
-        });
-
-        const speedPct = Math.min(1, (this.speed - 2.2) / 4.3);
-        const speedCol = speedPct < 0.4 ? '#00FF88' : speedPct < 0.75 ? '#FFD700' : '#FF006E';
-        this.drawText(ctx, `SPD`, 14, 18, {
-            size: 8, weight: '700', color: 'rgba(200,200,220,0.5)',
-            family: this.FONT_UI
-        });
-        this.drawText(ctx, `${this.speed.toFixed(1)}x`, 14, 34, {
-            size: 11, weight: '800', color: speedCol,
-            family: this.FONT_TITLE
-        });
-
-        if (this.combo > 1) {
-            this.drawText(ctx, `×${this.combo}`, W - 14, 18, {
-                size: 15, weight: '900', color: '#FFD700',
-                align: 'right', family: this.FONT_TITLE
-            });
-            this.drawText(ctx, 'COMBO', W - 14, 35, {
-                size: 7.5, weight: '700', color: 'rgba(255,215,0,0.55)',
-                align: 'right', family: this.FONT_UI
-            });
-        }
-
-        this.drawColorBar(ctx);
-
-        if (this.score === 0) {
-            this.drawText(ctx, 'MOVE  to aim  •  TAP  to switch color', W/2, H - 22, {
-                size: 9.5, weight: '600', color: 'rgba(180,180,220,0.55)',
-                align: 'center', family: this.FONT_UI
-            });
-        }
-    }
-
-    drawColorBar(ctx) {
-        const W = this.W, H = this.H;
-        const total = this.PALETTE.length;
-        const bw = 30, bh = 8, gap = 6;
-        const totalW = total * bw + (total-1) * gap;
-        const sx = (W - totalW) / 2;
-        const by = H - 14;
-
-        this.PALETTE.forEach((col, i) => {
-            const bx = sx + i*(bw+gap);
-            const isActive = i === this.playerColorIdx;
-
-            ctx.save();
-            ctx.fillStyle = isActive ? col.fill : this.hexToRgba(col.fill, 0.25);
-            this.drawRoundRect(ctx, bx, by - (isActive ? 4 : 0), bw, isActive ? bh+4 : bh, 3);
-            ctx.fill();
-
-            if (isActive) {
-                ctx.strokeStyle = 'rgba(255,255,255,0.6)';
-                ctx.lineWidth   = this.dS(1);
-                this.drawRoundRect(ctx, bx, by - 4, bw, bh+4, 3);
-                ctx.stroke();
+            const g = ctx.createLinearGradient(px, y, px, y+h);
+            g.addColorStop(0, lighten(col.fill,50)); g.addColorStop(0.5, col.fill); g.addColorStop(1, col.stroke);
+            ctx.fillStyle = (flash>0.55&&isHit) ? (plate.correct?'#44FF88':'#FF3355') : g;
+            rr(px, y, w, h, R); ctx.fill(); ctx.shadowBlur = 0;
+            if (!plate.passed) {
+                ctx.globalAlpha = isMatch?1.0:0.45; ctx.strokeStyle = isMatch?'#ffffff':col.stroke;
+                ctx.lineWidth = isMatch?3.0:1.5; rr(px,y,w,h,R); ctx.stroke();
+                ctx.globalAlpha = 0.20; ctx.fillStyle = '#ffffff';
+                rr(px+4, y+3, w-8, h*0.32, R*0.5); ctx.fill();
+                ctx.globalAlpha = isMatch?1.0:0.35; ctx.fillStyle = '#ffffff';
+                ctx.shadowColor = isMatch?'#ffffff':'transparent'; ctx.shadowBlur = isMatch?10:0;
+                ctx.beginPath(); ctx.arc(px+w/2, plate.y, isMatch?5.5:3.5, 0, Math.PI*2); ctx.fill();
+                ctx.shadowBlur = 0;
             }
             ctx.restore();
-        });
+        }
     }
 
-    drawDeathScreen(ctx) {
-        const W = this.W, H = this.H;
-        const elapsed = this.deathTimer;
-        const alpha   = Math.min(1, elapsed / 400);
+    function drawTrail() {
+        for (let i = 0; i < ball.trail.length; i++) {
+            const t = ball.trail[i], pct = 1 - i/ball.trail.length;
+            const col = t.c >= 0 ? COLORS[t.c].fill : '#aaaacc';
+            ctx.globalAlpha = pct*0.26; ctx.fillStyle = col;
+            ctx.beginPath(); ctx.arc(t.x, t.y, Math.max(1,BALL_R*pct*0.75), 0, Math.PI*2); ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+    }
 
-        ctx.fillStyle = `rgba(0,0,0,${alpha * 0.72})`;
-        ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-
-        if (alpha < 0.3) return;
-
-        const cardAlpha = (alpha - 0.3) / 0.7;
-        const cx = W/2, cy = H/2;
-
+    function drawBall() {
+        const bx = ball.visX, by = ball.visY;
+        const ci = ball.colorIdx;
+        const pulse = 1 + Math.sin(ball.pulseT*2.2)*0.055;
+        const r = BALL_R * pulse;
         ctx.save();
-        ctx.globalAlpha = cardAlpha * 0.95;
-        ctx.fillStyle   = 'rgba(4,2,18,0.92)';
-        this.drawRoundRect(ctx, cx - 155, cy - 100, 310, 200, 20);
-        ctx.fill();
-        ctx.strokeStyle = 'rgba(255,0,110,0.4)';
-        ctx.lineWidth   = this.dS(1.5);
-        this.drawRoundRect(ctx, cx - 155, cy - 100, 310, 200, 20);
-        ctx.stroke();
-        ctx.restore();
-
-        this.drawText(ctx, 'GAME OVER', cx, cy - 62, {
-            size: 24, weight: '900', color: '#FF006E',
-            align: 'center', baseline: 'middle',
-            family: this.FONT_TITLE, opacity: cardAlpha
-        });
-
-        this.drawText(ctx, `SCORE: ${this.fmtNum(this.score)}`, cx, cy - 26, {
-            size: 16, weight: '800', color: '#00D4FF',
-            align: 'center', baseline: 'middle',
-            family: this.FONT_TITLE, opacity: cardAlpha
-        });
-
-        this.drawText(ctx, `BEST: ${this.fmtNum(this.bestScore)}`, cx, cy + 2, {
-            size: 11, weight: '700', color: 'rgba(255,215,0,0.7)',
-            align: 'center', baseline: 'middle',
-            family: this.FONT_UI, opacity: cardAlpha
-        });
-
-        if (this.maxCombo > 1) {
-            this.drawText(ctx, `MAX COMBO  ×${this.maxCombo}`, cx, cy + 26, {
-                size: 11, weight: '700', color: '#FFD700',
-                align: 'center', baseline: 'middle',
-                family: this.FONT_TITLE, opacity: cardAlpha
-            });
-        }
-
-        const blink = Math.sin(this.deathTimer / 320) > 0;
-        if (blink) {
-            this.drawText(ctx, '▶  TAP TO RESTART', cx, cy + 66, {
-                size: 13, weight: '800', color: '#00FF88',
-                align: 'center', baseline: 'middle',
-                family: this.FONT_TITLE, opacity: cardAlpha * 0.9
-            });
-        }
-    }
-
-    fmtNum(n) {
-        if (n >= 1e6) return (n/1e6).toFixed(1)+'M';
-        if (n >= 1e3) return (n/1e3).toFixed(1)+'K';
-        return ''+n;
-    }
-
-    loop(timestamp) {
-        if (this.destroyed) return;
-        const dt = Math.min(timestamp - (this.lastTime || timestamp), 50);
-        this.lastTime = timestamp;
-        this.update(dt);
-        this.draw(timestamp);
-        this.animId = requestAnimationFrame(t => this.loop(t));
-    }
-
-    togglePause() {
-        this.paused = !this.paused;
-        if (!this.paused) this.lastTime = performance.now();
-        return this.paused;
-    }
-
-    resize() {
-        // FIX: resize bhi parent-based use karo
-        const parent = this.canvas.parentElement;
-        if (parent && parent.clientWidth > 10 && parent.clientHeight > 10) {
-            const w = parent.clientWidth;
-            const h = parent.clientHeight;
-            this.canvas.width  = Math.round(w * this.dpr);
-            this.canvas.height = Math.round(h * this.dpr);
-            this.canvas.style.width  = w + 'px';
-            this.canvas.style.height = h + 'px';
+        if (ci < 0) {
+            ctx.shadowColor = 'rgba(200,200,230,0.5)'; ctx.shadowBlur = 12;
+            const bg = ctx.createRadialGradient(bx-r*0.3, by-r*0.35, 0, bx, by, r);
+            bg.addColorStop(0,'#ddddf0'); bg.addColorStop(0.5,'#888899'); bg.addColorStop(1,'#444455');
+            ctx.fillStyle = bg; ctx.beginPath(); ctx.arc(bx,by,r,0,Math.PI*2); ctx.fill();
+            ctx.shadowBlur = 0; ctx.strokeStyle='rgba(255,255,255,0.5)'; ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.arc(bx,by,r,0,Math.PI*2); ctx.stroke();
+            ctx.globalAlpha = 0.75; ctx.font = `bold ${Math.round(r*1.1)}px Arial`;
+            ctx.fillStyle = '#ffffff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillText('?', bx, by+1);
         } else {
-            this.setupHDCanvas();
+            const col = COLORS[ci];
+            ctx.globalAlpha = 0.30; ctx.strokeStyle = col.fill; ctx.lineWidth = 4;
+            ctx.beginPath(); ctx.arc(bx,by,r+9,0,Math.PI*2); ctx.stroke();
+            ctx.globalAlpha = 1; ctx.shadowColor = col.fill; ctx.shadowBlur = 24;
+            const bg = ctx.createRadialGradient(bx-r*0.3, by-r*0.35, 0, bx, by, r);
+            bg.addColorStop(0, lighten(col.fill,75)); bg.addColorStop(0.4,col.fill);
+            bg.addColorStop(0.85,col.stroke); bg.addColorStop(1,col.stroke);
+            ctx.fillStyle = bg; ctx.beginPath(); ctx.arc(bx,by,r,0,Math.PI*2); ctx.fill();
+            ctx.shadowBlur = 0; ctx.strokeStyle='rgba(255,255,255,0.80)'; ctx.lineWidth=2.5;
+            ctx.beginPath(); ctx.arc(bx,by,r,0,Math.PI*2); ctx.stroke();
         }
-        this.W = this.canvas.width  / this.dpr;
-        this.H = this.canvas.height / this.dpr;
-        this.player.x      = this.W / 2;
-        this.player.y      = this.H - 80;
-        this.playerTargetX = this.W / 2;
-        this.stars = this.makeStars(this.isMobile ? 35 : 60);
-        this.gates.forEach(g => g.midX = this.W / 2);
+        ctx.globalAlpha = 0.38; ctx.fillStyle = '#ffffff';
+        ctx.beginPath(); ctx.arc(bx-r*0.28, by-r*0.30, r*0.30, 0, Math.PI*2); ctx.fill();
+        ctx.restore();
     }
 
-    destroy() {
-        this.destroyed = true;
-        cancelAnimationFrame(this.animId);
-        this.canvas.removeEventListener('click',     this.boundClick);
-        this.canvas.removeEventListener('touchstart', this.boundTouch);
-        this.canvas.removeEventListener('mousemove',  this.boundMouseMove);
-        this.canvas.removeEventListener('touchmove',  this.boundTouchMove);
+    function drawRings() {
+        for (const r of rings) {
+            ctx.globalAlpha = Math.max(0,r.alpha); ctx.strokeStyle = r.col;
+            ctx.lineWidth = 2.5*r.alpha; ctx.beginPath(); ctx.arc(r.x,r.y,r.r,0,Math.PI*2); ctx.stroke();
+        }
+        ctx.globalAlpha = 1;
     }
-}
+
+    function drawParticles() {
+        for (const p of particles) {
+            ctx.globalAlpha = Math.max(0,p.life*0.88); ctx.fillStyle = p.col;
+            ctx.beginPath(); ctx.arc(p.x,p.y,Math.max(0.1,p.r*p.life),0,Math.PI*2); ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+    }
+
+    function drawFloatTexts() {
+        for (const t of floatTexts) {
+            ctx.save(); ctx.globalAlpha = t.op;
+            ctx.font = 'bold 18px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.strokeStyle = 'rgba(0,0,0,0.65)'; ctx.lineWidth = 4; ctx.lineJoin = 'round';
+            ctx.strokeText(t.text, t.x, t.y); ctx.fillStyle = t.col; ctx.fillText(t.text, t.x, t.y);
+            ctx.restore();
+        }
+    }
+
+    function drawHUD() {
+        if (gameState === STATE.READY) return;
+        const bW=175, bH=48, bX=W/2-bW/2, bY=10;
+        ctx.fillStyle='rgba(70,15,35,0.88)'; ctx.strokeStyle='rgba(255,255,255,0.10)'; ctx.lineWidth=1;
+        rr(bX,bY,bW,bH,13); ctx.fill(); rr(bX,bY,bW,bH,13); ctx.stroke();
+        ctx.font='bold 27px Arial'; ctx.fillStyle='#ffffff'; ctx.textAlign='center'; ctx.textBaseline='middle';
+        ctx.fillText(score.toLocaleString(), W/2, bY+bH*0.42);
+        if (best > 0) { ctx.font='11px Arial'; ctx.fillStyle='rgba(255,255,255,0.40)'; ctx.fillText('Best  '+best, W/2, bY+bH*0.82); }
+
+        const ci = ball.colorIdx;
+        ctx.fillStyle='rgba(20,5,40,0.85)'; rr(8,10,46,30,8); ctx.fill();
+        if (ci >= 0) {
+            const col = COLORS[ci];
+            ctx.fillStyle=col.fill; ctx.shadowColor=col.fill; ctx.shadowBlur=14;
+            ctx.beginPath(); ctx.arc(31,25,11,0,Math.PI*2); ctx.fill(); ctx.shadowBlur=0;
+            ctx.strokeStyle='#ffffff'; ctx.lineWidth=2;
+            ctx.beginPath(); ctx.arc(31,25,11,0,Math.PI*2); ctx.stroke();
+        } else {
+            ctx.font='bold 13px Arial'; ctx.fillStyle='rgba(180,180,210,0.8)';
+            ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText('?',31,25);
+        }
+
+        const spdPct = (scrollSpeed-0.85)/(3.0-0.85);
+        const spdLvl = Math.min(10, Math.ceil(spdPct*10)+1);
+        ctx.fillStyle='rgba(20,5,40,0.85)'; rr(W-54,10,46,30,8); ctx.fill();
+        ctx.font='bold 10px Arial'; ctx.fillStyle='#CC88FF'; ctx.textAlign='center'; ctx.textBaseline='middle';
+        ctx.fillText('SPD '+spdLvl, W-31, 25);
+
+        if (combo > 2) {
+            const blink = 0.52 + Math.sin(bgT*7)*0.42;
+            ctx.globalAlpha = blink; ctx.font='bold 15px Arial'; ctx.fillStyle='#FFD700';
+            ctx.textAlign='center'; ctx.fillText(`🔥 ${combo} COMBO`, W/2, bY+bH+18); ctx.globalAlpha=1;
+        }
+
+        drawColorBar();
+
+        if (score < 3 && ci >= 0) {
+            const blink = 0.28 + Math.sin(bgT*2.2)*0.30;
+            ctx.globalAlpha=blink; ctx.font='12px Arial'; ctx.fillStyle='rgba(180,180,255,0.9)';
+            ctx.textAlign='center'; ctx.fillText('← DRAG ball to matching color →', W/2, H-14);
+            ctx.globalAlpha=1;
+        }
+    }
+
+    function drawColorBar() {
+        const n=COLORS.length, sw=36, sh=9, gap=10;
+        const totW=n*sw+(n-1)*gap, sx=W/2-totW/2, sy=H-22;
+        COLORS.forEach((col, i) => {
+            const isActive = i === ball.colorIdx;
+            const px=sx+i*(sw+gap), ph=isActive?sh+5:sh, py=sy+(isActive?0:3);
+            ctx.save();
+            ctx.fillStyle=isActive?col.fill:col.fill+'44';
+            ctx.shadowColor=isActive?col.fill:'transparent'; ctx.shadowBlur=isActive?12:0;
+            rr(px,py,sw,ph,ph/2); ctx.fill();
+            if (isActive) { ctx.strokeStyle='rgba(255,255,255,0.72)'; ctx.lineWidth=1.5; rr(px,py,sw,ph,ph/2); ctx.stroke(); }
+            ctx.restore();
+        });
+    }
+
+    function drawReady() {
+        ctx.fillStyle='rgba(0,0,15,0.86)'; ctx.fillRect(0,0,W,H);
+        const cx=W/2, cy=H/2, pw=Math.min(W-28,308), ph=345;
+        ctx.fillStyle='rgba(20,5,44,0.97)'; ctx.strokeStyle='rgba(165,85,255,0.28)'; ctx.lineWidth=1.5;
+        rr(cx-pw/2,cy-ph/2,pw,ph,22); ctx.fill(); rr(cx-pw/2,cy-ph/2,pw,ph,22); ctx.stroke();
+        ctx.textAlign='center'; ctx.textBaseline='middle';
+        ctx.font='bold 38px Arial'; ctx.fillStyle='#00FF88'; ctx.shadowColor='#00FF88'; ctx.shadowBlur=20;
+        ctx.fillText('COLOR UP', cx, cy-ph/2+52); ctx.shadowBlur=0;
+        ctx.font='13px Arial'; ctx.fillStyle='rgba(190,168,255,0.65)';
+        ctx.fillText('Ball bounces up through plates', cx, cy-ph/2+86);
+        ctx.fillText('Drag it to the matching color!', cx, cy-ph/2+106);
+        const steps=[
+            {icon:'⚪',text:'Ball starts colorless'},
+            {icon:'🎨',text:'Full plate → ball gets that color'},
+            {icon:'↔️', text:'Drag to matching column plate'},
+            {icon:'⚡',text:'Speed increases — stay sharp!'},
+        ];
+        steps.forEach((s,i) => {
+            ctx.font='13px Arial'; ctx.fillStyle='rgba(200,185,255,0.72)'; ctx.textAlign='left';
+            ctx.fillText(s.icon+'  '+s.text, cx-pw/2+28, cy-48+i*31);
+        });
+        const n=COLORS.length, sw=46, sh=22, gap=8;
+        let sx=cx-(n*sw+(n-1)*gap)/2;
+        COLORS.forEach(col => {
+            ctx.fillStyle=col.fill; ctx.shadowColor=col.fill; ctx.shadowBlur=12;
+            rr(sx,cy+90,sw,sh,sh/2); ctx.fill(); ctx.shadowBlur=0;
+            ctx.font='bold 9px Arial'; ctx.fillStyle='#ffffff'; ctx.textAlign='center';
+            ctx.fillText(col.name, sx+sw/2, cy+90+sh/2); sx+=sw+gap;
+        });
+        if (best > 0) { ctx.font='bold 14px Arial'; ctx.fillStyle='#FFD700'; ctx.textAlign='center'; ctx.fillText('⭐ Best: '+best, cx, cy+128); }
+        const blink=0.42+Math.sin(bgT*2.8)*0.45;
+        ctx.globalAlpha=blink; ctx.font='bold 21px Arial'; ctx.fillStyle='#00DDFF'; ctx.textAlign='center';
+        ctx.fillText('▶  TAP TO START', cx, cy+ph/2-26); ctx.globalAlpha=1;
+    }
+
+    function drawDead() {
+        const fade=Math.min(1,deadTimer/500);
+        ctx.fillStyle=`rgba(0,0,10,${fade*0.85})`; ctx.fillRect(0,0,W,H);
+        if (fade<0.22) return;
+        const pa=Math.min(1,(fade-0.22)/0.78);
+        const cx=W/2, cy=H/2, pw=Math.min(W-30,300), ph=280;
+        ctx.save(); ctx.globalAlpha=pa;
+        ctx.fillStyle='rgba(4,1,18,0.98)'; ctx.strokeStyle='rgba(255,28,75,0.42)'; ctx.lineWidth=1.5;
+        rr(cx-pw/2,cy-ph/2,pw,ph,22); ctx.fill(); rr(cx-pw/2,cy-ph/2,pw,ph,22); ctx.stroke();
+        ctx.textAlign='center'; ctx.textBaseline='middle';
+        ctx.font='bold 33px Arial'; ctx.fillStyle='#FF2255'; ctx.shadowColor='#FF2255'; ctx.shadowBlur=18;
+        ctx.fillText('GAME OVER', cx, cy-ph/2+44); ctx.shadowBlur=0;
+        ctx.fillStyle='rgba(255,255,255,0.06)'; ctx.fillRect(cx-pw/2+24, cy-ph/2+68, pw-48, 1);
+        const isNewBest = score >= best && score > 0;
+        const stats = [
+            {l:'SCORE',     v:score,          col:isNewBest?'#00FFDD':'#fff', big:true},
+            {l:'BEST',      v:best,            col:isNewBest?'#FFD700':'#888'},
+            {l:'MAX COMBO', v:'×'+maxCombo,   col:'#FF8800'},
+            {l:'SPEED LVL', v:Math.min(10,Math.ceil((scrollSpeed-0.85)/2.15*10)+1), col:'#CC88FF'},
+        ];
+        stats.forEach((s,i) => {
+            const ry=cy-ph/2+90+i*38;
+            ctx.font='11px Arial'; ctx.fillStyle='rgba(145,125,188,1)'; ctx.textAlign='left';
+            ctx.fillText(s.l, cx-pw/2+26, ry);
+            ctx.font=`bold ${s.big?24:17}px Arial`; ctx.fillStyle=s.col; ctx.textAlign='right';
+            ctx.fillText(typeof s.v==='number'?s.v.toLocaleString():s.v, cx+pw/2-26, ry);
+            if (i<stats.length-1) { ctx.fillStyle='rgba(255,255,255,0.04)'; ctx.fillRect(cx-pw/2+22,ry+16,pw-44,1); }
+        });
+        if (isNewBest) {
+            ctx.fillStyle='rgba(255,215,0,0.10)'; ctx.strokeStyle='rgba(255,215,0,0.52)'; ctx.lineWidth=1;
+            rr(cx-75,cy-ph/2+83,150,24,7); ctx.fill(); rr(cx-75,cy-ph/2+83,150,24,7); ctx.stroke();
+            ctx.font='bold 11px Arial'; ctx.fillStyle='#FFD700'; ctx.textAlign='center';
+            ctx.fillText('✦  NEW BEST!  ✦', cx, cy-ph/2+96);
+        }
+        if (deadTimer > 800) {
+            const bp=0.42+Math.sin(bgT*3.2)*0.44;
+            ctx.globalAlpha=pa*bp; ctx.font='bold 17px Arial'; ctx.fillStyle='#CC55FF';
+            ctx.textAlign='center'; ctx.fillText('● TAP TO PLAY AGAIN ●', cx, cy+ph/2-24);
+        }
+        ctx.restore();
+    }
+
+    // ════════════════════════════
+    //  HELPERS
+    // ════════════════════════════
+    function rr(x, y, w, h, r) {
+        r = Math.min(r, w/2, h/2);
+        ctx.beginPath();
+        ctx.moveTo(x+r, y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r);
+        ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath();
+    }
+
+    function lighten(hex, amt) {
+        const num = parseInt(hex.replace('#',''), 16);
+        const r   = Math.min(255, (num>>16)+amt);
+        const g   = Math.min(255, ((num>>8)&0xff)+amt);
+        const b   = Math.min(255, (num&0xff)+amt);
+        return `rgb(${r},${g},${b})`;
+    }
+
+    // ════════════════════════════
+    //  LOOP
+    // ════════════════════════════
+    function loop(ts) {
+        if (destroyed) return;
+        const dt = Math.min(ts - (lastTS || ts), 48);
+        lastTS = ts;
+        if (!paused) update(dt);
+        draw();
+        raf = requestAnimationFrame(loop);
+    }
+
+    // ════════════════════════════
+    //  PUBLIC API
+    // ════════════════════════════
+    const instance = {
+        togglePause() {
+            paused = !paused;
+            if (!paused) lastTS = performance.now();
+            return paused;
+        },
+        resize() {
+            const p = canvas.parentElement;
+            const w = (p && p.clientWidth  > 10) ? p.clientWidth  : window.innerWidth;
+            const h = (p && p.clientHeight > 10) ? p.clientHeight : window.innerHeight;
+            canvas.width  = Math.round(w * dpr);
+            canvas.height = Math.round(h * dpr);
+            canvas.style.width  = w + 'px';
+            canvas.style.height = h + 'px';
+            initLayout();
+        },
+        destroy() {
+            destroyed = true;
+            cancelAnimationFrame(raf);
+            canvas.removeEventListener('touchstart', _ev.onTD);
+            canvas.removeEventListener('touchmove',  _ev.onTM);
+            canvas.removeEventListener('touchend',   _ev.onTE);
+            canvas.removeEventListener('mousedown',  _ev.onMD);
+            window.removeEventListener('mousemove',  _ev.onMM);
+            window.removeEventListener('mouseup',    _ev.onMU);
+        },
+        get isPaused() { return paused; }
+    };
+
+    window._activeGameInstance = instance;
+    return instance;
+
+}; // end window.initColorUp
